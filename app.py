@@ -256,31 +256,59 @@ def decide(aid: int, p: dict = Body(...), user=Depends(auth)):
 
 # ---------- voice ----------
 _whisper = None
+_whisper_lock = threading.Lock()
+HEARING = {"state": "not loaded"}
+
+
+def load_whisper():
+    global _whisper
+    with _whisper_lock:
+        if _whisper is not None:
+            return _whisper
+        import os
+        HEARING["state"] = "loading"
+        try:
+            from faster_whisper import WhisperModel
+            dev = os.environ.get("TRILLION_WHISPER_DEVICE", "cpu")
+            _whisper = WhisperModel(os.environ.get("TRILLION_WHISPER_MODEL", "small"), device=dev,
+                                    compute_type="float16" if dev == "cuda" else "int8")
+            HEARING["state"] = "ready"
+        except ImportError:
+            HEARING["state"] = "not installed"
+            raise
+        except Exception as e:
+            HEARING["state"] = f"failed: {type(e).__name__}"
+            raise
+        return _whisper
 
 
 def transcribe(data):
-    global _whisper
-    from faster_whisper import WhisperModel
-    if _whisper is None:
-        import os
-        dev = os.environ.get("TRILLION_WHISPER_DEVICE", "cpu")
-        _whisper = WhisperModel(os.environ.get("TRILLION_WHISPER_MODEL", "small"), device=dev,
-                                compute_type="float16" if dev == "cuda" else "int8")
-    segs, _ = _whisper.transcribe(io.BytesIO(data), vad_filter=True)
-    return " ".join(s.text.strip() for s in segs).strip()
+    w = load_whisper()
+    segs, _ = w.transcribe(io.BytesIO(data), vad_filter=True, language="en")
+    text = " ".join(s.text.strip() for s in segs).strip()
+    if not text:  # the silence filter can swallow quiet speech; try once without it
+        segs, _ = w.transcribe(io.BytesIO(data), vad_filter=False, language="en")
+        text = " ".join(s.text.strip() for s in segs).strip()
+    return text
 
 
 @app.post("/api/stt")
 async def stt(request: Request, user=Depends(auth)):
     data = await request.body()
-    if len(data) < 800:
-        return {"text": ""}
+    if len(data) < 2000:
+        core.log(user["id"], f"Microphone: the recording was empty ({len(data)} bytes)", "waiting")
+        return {"text": "", "why": "The recording was empty. Tap MIC, speak, then tap it again."}
     try:
-        return {"text": await run_in_threadpool(transcribe, data)}
+        text = await run_in_threadpool(transcribe, data)
     except ImportError:
-        raise HTTPException(501, "Local hearing is not installed yet. Run Setup again.")
+        raise HTTPException(501, "Local hearing is not installed. Run '1 - Setup.bat' again.")
     except Exception as e:
-        raise HTTPException(500, f"Could not understand the recording: {type(e).__name__}")
+        core.log(user["id"], f"Microphone: could not read the recording ({type(e).__name__}: {e})"[:300], "waiting")
+        raise HTTPException(500, f"Could not read the recording: {type(e).__name__}: {str(e)[:120]}")
+    if not text:
+        core.log(user["id"], f"Microphone: heard no words in {len(data) // 1024} KB of sound", "waiting")
+        return {"text": "", "why": "I got the recording but heard no words. Speak closer to the microphone."}
+    return {"text": text}
 
 
 @app.post("/api/tts")
@@ -324,7 +352,7 @@ def state(user=Depends(auth)):
         "notes": {"personal": n("PERSONAL"), "work": n("WORK"),
                   "today": core.q("SELECT COUNT(*) c FROM notes WHERE user_id=? AND ts>=?", (uid, ds), one=True)["c"]},
         "site": SITES.get(s.get("site")) if s.get("site") else None,
-        "day_start": ds, "now": time.time(), "version": VERSION,
+        "day_start": ds, "now": time.time(), "version": VERSION, "hearing": HEARING["state"],
     }
 
 
@@ -554,3 +582,10 @@ def background():
 @app.on_event("startup")
 def start_background():
     threading.Thread(target=background, daemon=True).start()
+
+    def warm():  # load the hearing model up front so the first spoken command is not slow
+        try:
+            load_whisper()
+        except Exception:
+            pass
+    threading.Thread(target=warm, daemon=True).start()

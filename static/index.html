@@ -76,6 +76,7 @@ footer.status{background:#000;border-top:1px solid var(--line);padding:10px 20px
 .talk form{max-width:1100px;margin:0 auto;display:flex;gap:10px}
 .talk input{flex:1;min-width:0;min-height:50px;background:var(--panel);border:1px solid #6b6258;padding:0 16px;font-size:16px}
 .talk button{min-height:50px;min-width:50px;border:1px solid #6b6258;background:var(--panel);font-weight:700;padding:0 16px}
+.talk button.mic{touch-action:manipulation;user-select:none;-webkit-user-select:none}
 .talk button.mic.on{background:var(--green);color:#03240f;border-color:var(--green)}
 .talk .send{background:var(--a);color:#1a1206;border:0}
 .chat{width:100%;max-width:720px;text-align:left;display:flex;flex-direction:column;gap:8px;max-height:260px;overflow:auto}
@@ -123,7 +124,7 @@ footer.status{background:#000;border-top:1px solid var(--line);padding:10px 20px
       <div class="orb"><div class="r1"></div><div class="r2"></div><div class="r3"></div><div class="c"></div></div>
       <div class="kicker" id="kicker">READY</div>
       <h1 class="big" id="big">Standing by</h1>
-      <div class="sub" id="sub">Type below, or hold the microphone button and speak.</div>
+      <div class="sub" id="sub">Type below, or tap MIC, speak, and tap it again to send.</div>
       <div class="btns"><button class="btn" id="stop" hidden>STOP</button><button class="btn" id="clear" style="min-height:36px;font-size:12px">CLEAR CONVERSATION</button></div>
       <div class="chat" id="chat" aria-live="polite"></div>
     </div>
@@ -201,7 +202,7 @@ footer.status{background:#000;border-top:1px solid var(--line);padding:10px 20px
 
 <footer class="status" id="foot"></footer>
 <div class="talk"><form id="talk">
-  <button type="button" class="mic" id="mic" aria-label="Hold to talk">MIC</button>
+  <button type="button" class="mic" id="mic" aria-label="Microphone: tap to talk, tap again to send">MIC</button>
   <input id="say" placeholder="Tell Trillion what to do" aria-label="Message" autocomplete="off">
   <button class="send">SEND</button>
 </form></div>
@@ -213,7 +214,7 @@ const api=async(u,o={})=>{if(o.json!==undefined){o.method=o.method||'POST';o.hea
   const r=await fetch(u,o);if(r.status===401){location.reload();throw new Error('signed out');}
   if(!r.ok){let d='Something went wrong';try{d=(await r.json()).detail||d}catch(e){}throw new Error(d);}return r;};
 const hm=t=>new Date(t*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false});
-let S=null,sending=false,speakNext=false,settingsLoaded=false,cwd='';
+let hold=0,S=null,sending=false,speakNext=false,settingsLoaded=false,cwd='';
 
 document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on',x===b));
@@ -241,9 +242,9 @@ function render(){
   $('brains').innerHTML=S.models.ok?(S.models.list.length?S.models.list.map(m=>`<div class="row"><div>${esc(m.name)}<small>${m.size.toFixed(1)} GB on disk</small></div><span class="tag ${m.loaded?'ok':'muted'}">${m.loaded?'LOADED':'STANDBY'}</span></div>`).join(''):'<div class="bad">Ollama is running but no models are installed. Run Setup.</div>'):'<div class="bad">The local brain (Ollama) is not running.</div>';
   const prog=S.tasks.filter(t=>t.status==='in_progress'),done=S.tasks.filter(t=>t.status==='completed');
   $('stage').className='stage'+(S.busy?' busy':'')+(rec?' listening':'');
-  if(rec){$('kicker').textContent='LISTENING';}
+  if(rec||Date.now()<hold){}
   else if(S.busy&&prog[0]){$('kicker').textContent='NOW WORKING';$('big').textContent=prog[0].detail||'Thinking';$('sub').textContent=prog[0].title;}
-  else if(!sending){$('kicker').textContent='READY';$('big').textContent='Standing by';$('sub').textContent='Type below, or hold the microphone button and speak.';}
+  else if(!sending){$('kicker').textContent='READY';$('big').textContent='Standing by';$('sub').textContent='Type below, or tap MIC, speak, and tap it again to send.';}
   $('stop').hidden=!S.busy;
   $('wn').textContent=S.approvals.length;
   $('waiting').innerHTML=S.approvals.map(a=>`<div class="wait"><b>${esc(a.summary)}</b><div class="two"><button class="btn red" data-a="${a.id}" data-d="approve">Approve</button><button class="btn" data-a="${a.id}" data-d="decline">Decline</button></div></div>`).join('')||'<div class="muted" style="font-size:14px">Nothing needs you right now.</div>';
@@ -256,7 +257,7 @@ function render(){
   $('np').textContent=S.notes.personal;$('nw').textContent=S.notes.work;$('nt').textContent=S.notes.today+' new today';
   const st=S.site;$('site').innerHTML=s.site?`<div style="font-weight:700;overflow-wrap:anywhere">${esc(s.site)}</div>`+(st?`<div class="${st.ok?'ok':'bad'}" style="font-weight:700;margin-top:6px">${st.ok?'Online':'Not answering'}${st.status?' · code '+st.status:''}</div><div class="muted" style="font-size:13px">${st.ms?st.ms+' ms · ':''}checked ${hm(st.checked)}</div>`:'<div class="muted">First check is on its way.</div>'):'<div class="muted">No website set. Add one in Settings.</div>';
   $('log').innerHTML=S.activity.map(a=>`<div><time>${hm(a.ts)}</time><span class="k-${esc(a.kind)}">${esc(a.text)}</span></div>`).join('')||'<div class="muted">Nothing yet today.</div>';
-  $('foot').innerHTML=`<span class="${S.models.ok?'ok':'bad'}">● LOCAL BRAIN</span><span>${s.brain!=='local'?'<span style="color:var(--a)">●</span> '+esc(s.brain.toUpperCase())+' ON':'○ CLOUD BRAIN OFF'}</span><span>${s.voice==='elevenlabs'?'<span style="color:var(--a)">●</span> ELEVENLABS VOICE':'● PC VOICE'}</span><span class="${st&&!st.ok?'bad':'ok'}">${st?(st.ok?'● WEBSITE UP':'▲ WEBSITE DOWN'):'○ WEBSITE'}</span><span class="muted">HOME ${esc(S.user.home)}</span><span class="muted">VERSION ${esc(S.version)}</span>`;
+  $('foot').innerHTML=`<span class="${S.models.ok?'ok':'bad'}">● LOCAL BRAIN</span><span>${s.brain!=='local'?'<span style="color:var(--a)">●</span> '+esc(s.brain.toUpperCase())+' ON':'○ CLOUD BRAIN OFF'}</span><span>${s.voice==='elevenlabs'?'<span style="color:var(--a)">●</span> ELEVENLABS VOICE':'● PC VOICE'}</span><span class="${st&&!st.ok?'bad':'ok'}">${st?(st.ok?'● WEBSITE UP':'▲ WEBSITE DOWN'):'○ WEBSITE'}</span><span class="muted">HOME ${esc(S.user.home)}</span><span class="${S.hearing==='ready'?'ok':(S.hearing==='loading'?'muted':'bad')}">${S.hearing==='ready'?'● HEARING READY':'○ HEARING '+esc(String(S.hearing).toUpperCase())}</span><span class="muted">VERSION ${esc(S.version)}</span>`;
 }
 function alertMsg(m){$('sub').textContent=m;}
 async function tick(){try{S=await (await api('/api/state')).json();render();}catch(e){}}
@@ -279,23 +280,28 @@ async function say(text){
     if(r.status===200){new Audio(URL.createObjectURL(await r.blob())).play();return;}}catch(e){}
   if('speechSynthesis' in window){speechSynthesis.cancel();speechSynthesis.speak(new SpeechSynthesisUtterance(text));}
 }
-let rec=null,chunks=[];
-async function micDown(){
-  if(rec||sending)return;
-  if(!navigator.mediaDevices){alertMsg('The microphone only works on the PC itself (localhost) or over a secure link.');return;}
-  try{const stream=await navigator.mediaDevices.getUserMedia({audio:true});chunks=[];rec=new MediaRecorder(stream);
-    rec.ondataavailable=e=>chunks.push(e.data);
-    rec.onstop=async()=>{stream.getTracks().forEach(t=>t.stop());const blob=new Blob(chunks,{type:rec.mimeType});rec=null;$('mic').classList.remove('on');
-      $('kicker').textContent='HEARING';
-      try{const r=await (await api('/api/stt',{method:'POST',body:blob})).json();if(r.text)send(r.text,true);else alertMsg("I didn't catch that.");}catch(e){alertMsg(e.message);}};
-    rec.start();$('mic').classList.add('on');if(S)render();}catch(e){alertMsg('Microphone blocked: allow it in the browser.');}
+let rec=null,chunks=[],micBusy=false;
+async function micStart(){
+  if(rec||sending||micBusy)return;
+  if(!navigator.mediaDevices||!window.MediaRecorder){alertMsg('The microphone needs the secure https address (or the PC itself).');return;}
+  micBusy=true;
+  try{const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});chunks=[];
+    const r=new MediaRecorder(stream);rec=r;
+    r.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data);};
+    r.onstop=async()=>{stream.getTracks().forEach(t=>t.stop());const blob=new Blob(chunks,{type:r.mimeType||'audio/webm'});rec=null;
+      $('mic').classList.remove('on');$('mic').textContent='MIC';
+      hold=Date.now()+90000;$('kicker').textContent='HEARING';$('big').textContent='Listening back';$('sub').textContent='Working out what you said...';
+      try{const j=await (await api('/api/stt',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:blob})).json();
+        if(j.text){hold=0;send(j.text,true);}else{hold=Date.now()+9000;$('big').textContent='Not heard';alertMsg(j.why||"I didn't catch that.");}}
+      catch(e){hold=Date.now()+9000;$('big').textContent='Not heard';alertMsg(e.message);}};
+    r.start(250);$('mic').classList.add('on');$('mic').textContent='STOP';
+    hold=0;$('kicker').textContent='LISTENING';$('big').textContent='Speak now';$('sub').textContent='Tap STOP when you are done.';
+  }catch(e){alertMsg('Microphone blocked: allow it for this site in the browser settings.');}
+  micBusy=false;
 }
-function micUp(){if(rec&&rec.state==='recording')rec.stop();}
-$('mic').addEventListener('pointerdown',e=>{e.preventDefault();micDown();});
-['pointerup','pointerleave','pointercancel'].forEach(ev=>$('mic').addEventListener(ev,micUp));
-$('mic').addEventListener('keydown',e=>{if((e.key===' '||e.key==='Enter')&&!e.repeat){e.preventDefault();micDown();}});
-$('mic').addEventListener('keyup',e=>{if(e.key===' '||e.key==='Enter')micUp();});
-
+function micStop(){if(rec&&rec.state==='recording')rec.stop();}
+$('mic').addEventListener('click',e=>{e.preventDefault();rec?micStop():micStart();});
+$('mic').addEventListener('contextmenu',e=>e.preventDefault());
 // files
 async function loadFiles(path){
   try{const d=await (await api('/api/files?path='+encodeURIComponent(path||''))).json();cwd=d.folder;
