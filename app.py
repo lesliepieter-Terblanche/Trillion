@@ -282,12 +282,52 @@ def load_whisper():
         return _whisper
 
 
+def decode_audio(data):
+    """Browser recording (webm/ogg/mp4) -> 16 kHz mono float samples. Done here rather than inside
+    faster-whisper, whose own decoder breaks on some PyAV versions."""
+    import numpy as np
+    try:
+        import av
+        buf = []
+        with av.open(io.BytesIO(data), mode="r") as c:
+            rs = av.AudioResampler(format="s16", layout="mono", rate=16000)
+            for frame in c.decode(audio=0):
+                out = rs.resample(frame)
+                for f in (out if isinstance(out, list) else [out]):
+                    if f is not None:
+                        buf.append(f.to_ndarray().reshape(-1))
+            try:
+                for f in (rs.resample(None) or []):
+                    buf.append(f.to_ndarray().reshape(-1))
+            except Exception:
+                pass
+        if buf:
+            return np.concatenate(buf).astype(np.float32) / 32768.0
+    except Exception:
+        pass
+    import os, subprocess, tempfile  # fallback: FFmpeg, installed by Setup
+    with tempfile.NamedTemporaryFile(suffix=".rec", delete=False) as f:
+        f.write(data)
+        name = f.name
+    try:
+        r = subprocess.run(["ffmpeg", "-v", "error", "-i", name, "-f", "s16le", "-ac", "1", "-ar", "16000", "-"],
+                           capture_output=True, timeout=60)
+        if r.returncode != 0 or not r.stdout:
+            raise RuntimeError("could not decode the recording: " + r.stderr.decode(errors="replace")[-160:])
+        return np.frombuffer(r.stdout, dtype=np.int16).astype(np.float32) / 32768.0
+    finally:
+        os.unlink(name)
+
+
 def transcribe(data):
     w = load_whisper()
-    segs, _ = w.transcribe(io.BytesIO(data), vad_filter=True, language="en")
+    audio = decode_audio(data)
+    if audio.size < 4000:  # under a quarter of a second
+        return ""
+    segs, _ = w.transcribe(audio, vad_filter=True, language="en")
     text = " ".join(s.text.strip() for s in segs).strip()
     if not text:  # the silence filter can swallow quiet speech; try once without it
-        segs, _ = w.transcribe(io.BytesIO(data), vad_filter=False, language="en")
+        segs, _ = w.transcribe(audio, vad_filter=False, language="en")
         text = " ".join(s.text.strip() for s in segs).strip()
     return text
 
