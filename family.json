@@ -1,0 +1,5 @@
+[
+  {"name": "Pieter",   "is_admin": true,  "site": "https://www.truehome.co.za",    "brand": "TrueHome",    "accent": "#ffb454"},
+  {"name": "Brandon",  "is_admin": false, "site": "https://www.vapeessence.co.za", "brand": "VapeEssence", "accent": "#3fd8e0"},
+  {"name": "Lewellyn", "is_admin": false, "site": "https://www.tackletrail.co.za", "brand": "TackleTrail", "accent": "#6ee7a8"}
+]

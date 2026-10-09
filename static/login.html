@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trillion · Sign in</title>
+<link rel="icon" href="data:,">
+<style>
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;flex-direction:column;background:#0b0a0f;color:#f5efe6;
+  font-family:"Segoe UI",system-ui,sans-serif;
+  background-image:radial-gradient(800px 500px at 50% 35%,rgba(255,150,60,.20),transparent 70%)}
+header,footer{background:#000;padding:16px 20px;border-bottom:1px solid #2a2622;letter-spacing:.2em;font-weight:800;font-size:20px}
+footer{border-top:1px solid #2a2622;border-bottom:0;font-size:12px;font-weight:400;color:#b3a99c;text-align:center}
+header span{color:#ffb454}
+main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;padding:32px 16px}
+h1{margin:0;font-size:clamp(32px,6vw,64px);letter-spacing:.06em;text-transform:uppercase;text-align:center}
+.who{display:flex;flex-wrap:wrap;gap:18px;justify-content:center}
+.card{width:200px;min-height:150px;background:#15131a;border:1px solid #3a342e;color:#f5efe6;cursor:pointer;
+  padding:20px;text-align:left;font:inherit;display:flex;flex-direction:column;justify-content:flex-end;gap:6px}
+.card:hover,.card:focus-visible{border-color:var(--a);box-shadow:0 0 30px color-mix(in srgb,var(--a) 40%,transparent);outline:0}
+.card b{font-size:24px}.card small{color:#b3a99c}
+.dot{width:14px;height:14px;border-radius:50%;background:var(--a);box-shadow:0 0 16px var(--a);margin-bottom:auto}
+form{display:none;flex-direction:column;gap:12px;width:min(340px,100%)}
+input{min-height:48px;background:#15131a;border:1px solid #6b6258;color:#f5efe6;padding:0 14px;font:inherit;font-size:16px}
+button.go{min-height:48px;background:#ffb454;color:#1a1206;border:0;font:inherit;font-weight:700;letter-spacing:.08em;cursor:pointer}
+button.back{background:none;border:0;color:#b3a99c;font:inherit;cursor:pointer;min-height:44px}
+#err{color:#ff8f8f;min-height:20px;text-align:center}
+</style>
+</head>
+<body>
+<header>TRILLION <span>//</span></header>
+<main>
+  <h1 id="title">Who's here?</h1>
+  <div class="who" id="who"></div>
+  <form id="form">
+    <label for="pw" id="lab">Password</label>
+    <input id="pw" type="password" autocomplete="current-password">
+    <button class="go" type="submit">ENTER</button>
+    <button class="back" type="button" id="back">Choose someone else</button>
+  </form>
+  <div id="err" role="alert"></div>
+</main>
+<footer>Runs on this PC. Nothing here leaves the house unless you switch it on.</footer>
+<script>
+let chosen=null;
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+fetch('/api/users').then(r=>r.json()).then(us=>{
+  $('who').innerHTML=us.map((u,i)=>`<button class="card" style="--a:${esc(u.accent)}" data-i="${i}">
+    <div class="dot"></div><b>${esc(u.name)}</b><small>${esc(u.brand||'')}</small>
+    <small>${u.has_password?'':'First time: create a password'}</small></button>`).join('');
+  document.querySelectorAll('.card').forEach(b=>b.onclick=()=>{
+    chosen=us[b.dataset.i];$('who').style.display='none';$('form').style.display='flex';
+    $('title').textContent='Hello, '+chosen.name;
+    $('lab').textContent=chosen.has_password?'Password':'Create your password (6 or more characters)';
+    $('pw').focus();});
+});
+$('back').onclick=()=>{$('form').style.display='none';$('who').style.display='flex';$('title').textContent="Who's here?";$('err').textContent='';$('pw').value='';};
+$('form').onsubmit=async e=>{e.preventDefault();$('err').textContent='';
+  const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name:chosen.name,password:$('pw').value})});
+  if(r.ok) location.reload(); else $('err').textContent=(await r.json()).detail||'Could not sign in';};
+</script>
+</body>
+</html>
