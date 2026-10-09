@@ -21,6 +21,7 @@ if (-not (Works "python" "--version")) { Get-App "Python.Python.3.12" "Python" }
 if (-not (Works "ollama" "--version")) { Get-App "Ollama.Ollama" "Ollama (the local brain)" }
 if (-not (Works "ffmpeg" "-version")) { Get-App "Gyan.FFmpeg" "FFmpeg" }
 if (-not (Works "git" "--version")) { Get-App "Git.Git" "Git" }
+if (-not (Works "node" "--version")) { Get-App "OpenJS.NodeJS.LTS" "Node.js (needed by connectors)" }
 
 if (-not (Works "python" "--version")) {
   Write-Host "Python did not install correctly. Close this window, restart the PC and run Setup again." -ForegroundColor Red

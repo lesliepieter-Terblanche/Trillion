@@ -36,6 +36,15 @@ SPECS = [
     fn("search_memory", "Search the second brain for things saved earlier.", {"query": S}),
     fn("check_website", "Check whether a website is up and how fast it answers.", {"url": S}),
     fn("system_status", "Get the PC's current processor, memory, disk and graphics card readings.", {}),
+    fn("use_skill", "Load the full instructions of one of the user's installed skills. Call this before doing "
+       "a job that one of the listed skills covers, then follow what it says.", {"name": S}),
+    fn("draft_skill", "Write down a reusable playbook for a job the user does repeatedly. It is saved as a draft "
+       "and only becomes usable after the owner approves it on the Skills page.",
+       {"name": S, "description": S, "instructions": S}),
+    fn("connector_tools", "List what one of the user's connectors can do (its tools and their arguments). "
+       "Call this before connector_call.", {"connector": S}),
+    fn("connector_call", "Use one tool of a connector. Get the exact tool name and arguments from connector_tools first.",
+       {"connector": S, "tool": S, "arguments": {"type": "object"}}, ["connector", "tool"]),
     fn("update_self", "Update Trillion herself to the newest version from GitHub, then restart. Owner only. "
        "Use when the user says update yourself, get the latest version, or pull the update.", {}),
     fn("run_command", "Run a Windows command. Owner only, and always needs approval on the dashboard.",
@@ -77,6 +86,9 @@ def describe(name, a):
         "create_excel": f"Creating Excel workbook {g('path')}",
         "create_powerpoint": f"Creating PowerPoint {g('path')}", "save_note": f"Remembering: {g('title')}",
         "search_memory": f"Searching memory for {g('query')}", "check_website": f"Checking {g('url')}",
+        "use_skill": f"Reading the skill {g('name')}", "draft_skill": f"Drafting a playbook: {g('name')}",
+        "connector_tools": f"Checking what {g('connector')} can do",
+        "connector_call": f"Using {g('connector')}: {g('tool')}",
         "system_status": "Checking the PC", "update_self": "Updating myself from GitHub", "run_command": f"Run command: {g('command')}",
     }.get(name, name)
 
@@ -367,3 +379,48 @@ def t_update_self(user):
     threading.Timer(4, lambda: os._exit(42)).start()  # the start script restarts on code 42
     return {"status": "updated", "version": version(), "what_changed": changes.splitlines()[:10],
             "note": "Restarting in a few seconds. Tell the user the dashboard will reconnect by itself."}
+
+
+# ---------- skills and connectors ----------
+def t_use_skill(user, name):
+    import extend
+    sk = extend.find_skill(user["id"], name)
+    if not sk:
+        return {"error": f"No switched-on skill called {name}.",
+                "available": [x["name"] for x in extend.enabled_skills(user["id"])]}
+    return {"skill": sk["name"], "instructions": (extend.skill_body(sk["slug"]) or "")[:14000],
+            "note": "Follow these instructions with your own tools. You cannot run scripts the skill refers to."}
+
+
+def t_draft_skill(user, name, description, instructions):
+    import extend
+    name = name[:70]
+    if core.q("SELECT 1 FROM skills WHERE slug=?", (extend.slugify(name),)):  # never overwrite an existing skill
+        name = f"{name} (draft {time.strftime('%d %b %H%M')})"
+    slug = extend.save_skill(name, description[:400], instructions[:20000], f"drafted for {user['name']}",
+                             status="draft")
+    core.log(user["id"], f"Waiting on you: new playbook '{name[:60]}' needs approval on the Skills page", "waiting")
+    return {"status": "saved_as_draft", "name": name, "slug": slug,
+            "note": "Tell the user it is waiting for the owner's approval on the Skills page."}
+
+
+def t_connector_tools(user, connector):
+    import extend
+    row = extend.find_connector(user["id"], connector)
+    if not row:
+        return {"error": f"No switched-on connector called {connector}.",
+                "available": [r["name"] for r in extend.enabled_connectors(user["id"])]}
+    return {"connector": row["name"], "tools": extend.brief_tools(extend.client(row).tools())}
+
+
+def t_connector_call(user, connector, tool, arguments=None):
+    import extend
+    row = extend.find_connector(user["id"], connector)
+    if not row:
+        return {"error": f"No switched-on connector called {connector}."}
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments)
+        except Exception:
+            arguments = {}
+    return extend.client(row).call(tool, arguments or {})

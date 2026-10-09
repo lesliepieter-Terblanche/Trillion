@@ -7,9 +7,11 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, RedirectResponse
 
 import core
+import extend
 import tools
 
 core.init()
+extend.init()
 app = FastAPI(title="Trillion")
 COOKIE = "trillion"
 BUSY, STOP, SITES, LAST_PROVIDER = {}, set(), {}, {}
@@ -133,6 +135,9 @@ def system_prompt(user, text):
     s = core.settings(user)
     mem = tools.search_notes(user["id"], text, k=4)
     memory = "\n".join(f"- {m['title']}: {m['body'][:300]}" for m in mem) or "(nothing relevant saved yet)"
+    skills = "\n".join(f"- {k['name']}: {k['description'][:160]}" for k in extend.enabled_skills(user["id"])) or "(none)"
+    connectors = "\n".join(f"- {c['name']}: {(c['description'] or '')[:160]}"
+                           for c in extend.enabled_connectors(user["id"])) or "(none)"
     return f"""You are {s['assistant_name']}, a private AI assistant running on the family's own PC.
 You are talking to {user['name']}{' (the owner)' if user['is_admin'] else ''}. Their business: {s['brand'] or 'none set'} ({s['site'] or 'no site'}).
 Today is {datetime.datetime.now().strftime('%A %d %B %Y, %H:%M')}. Their home folder is {core.user_home(user)}.
@@ -147,7 +152,13 @@ How to work:
 - Replies are spoken aloud: keep them short and natural, no markdown, no lists.
 
 Relevant things you remember:
-{memory}"""
+{memory}
+
+Skills switched on for this user (call use_skill with the name before doing that kind of job):
+{skills}
+
+Connectors switched on for this user (call connector_tools first, then connector_call):
+{connectors}"""
 
 
 UPDATE_RE = re.compile(r"\b(update|upgrade)\s+(yourself|your ?self|herself|trillion|now)\b|"
@@ -507,6 +518,126 @@ def note_add(p: dict = Body(...), user=Depends(auth)):
 @app.delete("/api/notes/{nid}")
 def note_del(nid: int, user=Depends(auth)):
     core.x("DELETE FROM notes WHERE id=? AND user_id=?", (nid, user["id"]))
+    return {"ok": True}
+
+
+# ---------- skills ----------
+@app.get("/api/skills")
+def skills_list(user=Depends(auth)):
+    return extend.list_skills(user["id"])
+
+
+@app.post("/api/skills/preview")
+def skills_preview(p: dict = Body(...), user=Depends(admin)):
+    try:
+        sk = extend.fetch_skill(p.get("url", ""))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"name": sk["name"], "description": sk["description"], "excerpt": sk["body"][:1800],
+            "length": len(sk["body"]), "has_scripts": sk["has_scripts"], "raw_url": sk["raw_url"]}
+
+
+@app.post("/api/skills/install")
+def skills_install(p: dict = Body(...), user=Depends(admin)):
+    try:
+        sk = extend.fetch_skill(p.get("url", ""))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    slug = extend.save_skill(sk["name"], sk["description"], sk["body"], sk["source"], owner_id=user["id"])
+    core.log(user["id"], f"Skill installed: {sk['name']}", "done")
+    return {"slug": slug, "name": sk["name"]}
+
+
+@app.post("/api/skills/{slug}/toggle")
+def skills_toggle(slug: str, p: dict = Body(...), user=Depends(auth)):
+    if not core.q("SELECT 1 FROM skills WHERE slug=? AND status='active'", (slug,)):
+        raise HTTPException(404, "No such skill")
+    extend.set_skill_enabled(user["id"], slug, bool(p.get("enabled")))
+    return {"ok": True}
+
+
+@app.post("/api/skills/{slug}/approve")
+def skills_approve(slug: str, user=Depends(admin)):
+    core.x("UPDATE skills SET status='active' WHERE slug=?", (slug,))
+    extend.set_skill_enabled(user["id"], slug, True)
+    return {"ok": True}
+
+
+@app.get("/api/skills/{slug}")
+def skills_read(slug: str, user=Depends(auth)):
+    body = extend.skill_body(slug)
+    if body is None:
+        raise HTTPException(404, "No such skill")
+    return {"body": body}
+
+
+@app.delete("/api/skills/{slug}")
+def skills_delete(slug: str, user=Depends(admin)):
+    extend.remove_skill(slug)
+    return {"ok": True}
+
+
+# ---------- connectors ----------
+@app.get("/api/connectors")
+def connectors_list(user=Depends(auth)):
+    out = {"connectors": extend.list_connectors(user)}
+    if user["is_admin"]:
+        have = {c["name"] for c in out["connectors"]}
+        out["catalog"] = [c for c in extend.CATALOG if c["name"] not in have]
+        out["people"] = [{"id": u["id"], "name": u["name"]} for u in core.q("SELECT id, name FROM users ORDER BY id")]
+    return out
+
+
+@app.post("/api/connectors")
+def connectors_add(p: dict = Body(...), user=Depends(admin)):
+    cat = next((c for c in extend.CATALOG if c["key"] == p.get("catalog")), None)
+    try:
+        if cat:
+            cid = extend.add_connector(cat["name"], cat["description"], cat["command"], user["id"])
+        else:
+            cid = extend.add_connector(p.get("name", ""), p.get("description", ""), p.get("command", ""), user["id"])
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception:
+        raise HTTPException(400, "A connector with that name already exists.")
+    core.log(user["id"], f"Connector added: {cat['name'] if cat else p.get('name')}", "done")
+    return {"id": cid}
+
+
+@app.post("/api/connectors/{cid}/test")
+def connectors_test(cid: int, user=Depends(admin)):
+    row = core.q("SELECT * FROM connectors WHERE id=?", (cid,), one=True)
+    if not row:
+        raise HTTPException(404, "No such connector")
+    try:
+        t = extend.client(row).tools()
+        return {"ok": True, "tools": [x.get("name") for x in t]}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:400]}
+
+
+@app.post("/api/connectors/{cid}/access")
+def connectors_access(cid: int, p: dict = Body(...), user=Depends(admin)):
+    uid = int(p.get("user_id", 0))
+    if p.get("allowed"):
+        core.x("INSERT OR IGNORE INTO connector_access(connector_id,user_id,enabled) VALUES(?,?,1)", (cid, uid))
+    else:
+        core.x("DELETE FROM connector_access WHERE connector_id=? AND user_id=?", (cid, uid))
+    return {"ok": True}
+
+
+@app.post("/api/connectors/{cid}/toggle")
+def connectors_toggle(cid: int, p: dict = Body(...), user=Depends(auth)):
+    if not core.q("SELECT 1 FROM connector_access WHERE connector_id=? AND user_id=?", (cid, user["id"])):
+        raise HTTPException(403, "The owner has not given this login access to that connector")
+    core.x("UPDATE connector_access SET enabled=? WHERE connector_id=? AND user_id=?",
+           (1 if p.get("enabled") else 0, cid, user["id"]))
+    return {"ok": True}
+
+
+@app.delete("/api/connectors/{cid}")
+def connectors_delete(cid: int, user=Depends(admin)):
+    extend.remove_connector(cid)
     return {"ok": True}
 
 

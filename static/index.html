@@ -101,6 +101,7 @@ footer.status{background:#000;border-top:1px solid var(--line);padding:10px 20px
     <button data-v="control" class="on">CONTROL ROOM</button>
     <button data-v="files">FILES</button>
     <button data-v="memory">MEMORY</button>
+    <button data-v="skills">SKILLS</button>
     <button data-v="settings">SETTINGS</button>
     <button data-v="family" id="navfam" hidden>FAMILY</button>
   </nav>
@@ -168,6 +169,30 @@ footer.status{background:#000;border-top:1px solid var(--line);padding:10px 20px
     <div><button class="btn pri" id="nadd">SAVE NOTE</button></div></div>
 </div>
 
+<div class="view" id="v-skills">
+  <h2>Skills</h2>
+  <div class="muted">A skill is a written playbook for doing one kind of job well. Switch on the ones you want her to use for your login.</div>
+  <div id="sklist" style="display:flex;flex-direction:column;gap:12px"></div>
+  <div class="panel" id="skadd" hidden><b>Add a skill from GitHub</b>
+    <div class="muted">Paste the address of a skill folder or SKILL.md on github.com. You see what it says before anything is installed.</div>
+    <form id="skform" style="display:flex;gap:10px;flex-wrap:wrap"><input id="skurl" aria-label="GitHub link" placeholder="https://github.com/owner/repo/tree/main/skills/name" style="flex:1;min-width:220px;min-height:44px;background:#0b0a0f;border:1px solid #6b6258;padding:0 12px"><button class="btn pri">PREVIEW</button></form>
+    <div class="msg" id="skmsg"></div>
+    <div id="skprev"></div>
+  </div>
+  <h2 style="margin-top:10px">Connectors</h2>
+  <div class="muted">A connector is a helper program that gives her a new ability, such as driving a browser. Only the owner can add one, and chooses which logins may use it.</div>
+  <div class="grid2" id="cnlist"></div>
+  <div class="panel" id="cnadd" hidden><b>Add a connector</b>
+    <div class="bad" style="font-size:14px">A connector runs on this PC with full access. Add only ones from sources you trust.</div>
+    <div id="cncat" style="display:flex;flex-direction:column;gap:10px"></div>
+    <b style="margin-top:6px">Or add your own</b>
+    <label class="field"><span>Name</span><input id="cnname"></label>
+    <label class="field"><span>What it does</span><input id="cndesc"></label>
+    <label class="field"><span>Command that starts it</span><input id="cncmd" placeholder="npx -y some-mcp-server"></label>
+    <div><button class="btn pri" id="cnsave">ADD CONNECTOR</button> <span class="msg" id="cnmsg"></span></div>
+  </div>
+</div>
+
 <div class="view" id="v-settings">
   <h2>Settings</h2>
   <div class="grid2">
@@ -219,7 +244,7 @@ let hold=0,S=null,sending=false,speakNext=false,settingsLoaded=false,cwd='';
 document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on',x===b));
   document.querySelectorAll('.view').forEach(v=>v.classList.toggle('on',v.id==='v-'+b.dataset.v));
-  ({files:()=>loadFiles(cwd),memory:()=>loadNotes(''),settings:loadSettings,family:loadFamily}[b.dataset.v]||(()=>{}))();});
+  ({files:()=>loadFiles(cwd),memory:()=>loadNotes(''),skills:loadSkills,settings:loadSettings,family:loadFamily}[b.dataset.v]||(()=>{}))();});
 $('out').onclick=async()=>{await api('/api/logout',{method:'POST'});location.reload();};
 
 function gauge(label,val,max,unit,pct){return `<div class="g" style="margin-bottom:16px"><label><span>${label}</span><b>${val}<small> ${unit}</small></b></label><div class="bar"><i style="width:${Math.min(100,Math.max(0,pct))}%"></i></div></div>`;}
@@ -318,6 +343,38 @@ async function loadNotes(qs){const ns=await (await api('/api/notes?query='+encod
 $('nsearch').onsubmit=e=>{e.preventDefault();loadNotes($('nq').value.trim());};
 $('nadd').onclick=async()=>{try{await api('/api/notes',{json:{title:$('nt2').value,body:$('nb').value,domain:$('nd').value}});$('nt2').value=$('nb').value='';loadNotes('');}catch(e){$('nmsg').textContent=e.message;}};
 $('review').onclick=async()=>{$('nmsg').textContent='Reviewing today...';try{const r=await (await api('/api/review',{method:'POST'})).json();$('nmsg').textContent=r.learned+' new things learned.';loadNotes('');}catch(e){$('nmsg').textContent=e.message;}};
+// skills and connectors
+async function loadSkills(){
+  const adm=S&&S.user.is_admin;$('skadd').hidden=!adm;$('cnadd').hidden=!adm;
+  const sk=await (await api('/api/skills')).json();
+  $('sklist').innerHTML=sk.map(k=>`<div class="panel" style="gap:8px"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center"><b style="font-size:17px">${esc(k.name)}</b>
+    ${k.status==='draft'?'<span class="tag bad">DRAFT · NEEDS APPROVAL</span>':`<label style="display:flex;gap:10px;align-items:center;min-height:44px"><input type="checkbox" data-sk="${esc(k.slug)}" ${k.enabled?'checked':''} style="width:22px;height:22px"> On for me</label>`}</div>
+    <div class="muted">${esc(k.description)}</div><div class="muted" style="font-size:12px;overflow-wrap:anywhere">From: ${esc(k.source||'')}</div>
+    <div class="btns" style="justify-content:flex-start"><button class="btn" data-skv="${esc(k.slug)}" style="min-height:40px;font-size:12px">READ IT</button>${adm&&k.status==='draft'?`<button class="btn pri" data-ska="${esc(k.slug)}" style="min-height:40px;font-size:12px">APPROVE</button>`:''}${adm?`<button class="btn" data-skd="${esc(k.slug)}" style="min-height:40px;font-size:12px">REMOVE</button>`:''}</div><pre id="skb-${esc(k.slug)}" hidden style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto;background:#0b0a0f;padding:12px;font-size:13px;margin:0"></pre></div>`).join('')||'<div class="muted">No skills installed yet.</div>';
+  document.querySelectorAll('[data-sk]').forEach(b=>b.onchange=()=>api('/api/skills/'+b.dataset.sk+'/toggle',{json:{enabled:b.checked}}));
+  document.querySelectorAll('[data-skv]').forEach(b=>b.onclick=async()=>{const el=$('skb-'+b.dataset.skv);if(el.hidden){el.textContent=(await (await api('/api/skills/'+b.dataset.skv)).json()).body;}el.hidden=!el.hidden;});
+  document.querySelectorAll('[data-ska]').forEach(b=>b.onclick=async()=>{await api('/api/skills/'+b.dataset.ska+'/approve',{method:'POST'});loadSkills();});
+  document.querySelectorAll('[data-skd]').forEach(b=>b.onclick=async()=>{await api('/api/skills/'+b.dataset.skd,{method:'DELETE'});loadSkills();});
+  const cn=await (await api('/api/connectors')).json();
+  $('cnlist').innerHTML=cn.connectors.map(c=>`<div class="panel" style="gap:8px"><div style="display:flex;justify-content:space-between;gap:12px;align-items:center"><b style="font-size:17px">${esc(c.name)}</b><span class="tag ${c.running?'ok':'muted'}">${c.running?'RUNNING':'IDLE'}</span></div>
+    <div class="muted">${esc(c.description||'')}</div>${c.command?`<div class="muted" style="font-size:12px;font-family:var(--mono);overflow-wrap:anywhere">${esc(c.command)}</div>`:''}
+    ${c.allowed?`<label style="display:flex;gap:10px;align-items:center;min-height:44px"><input type="checkbox" data-cn="${c.id}" ${c.enabled?'checked':''} style="width:22px;height:22px"> On for me</label>`:'<div class="muted">Not given to your login.</div>'}
+    ${adm?`<div style="font-size:14px">Who may use it:</div><div style="display:flex;flex-wrap:wrap;gap:4px 18px">${cn.people.map(u=>`<label style="display:flex;gap:8px;align-items:center;min-height:44px"><input type="checkbox" data-cna="${c.id}" data-u="${u.id}" ${c.access.includes(u.id)?'checked':''} style="width:20px;height:20px"> ${esc(u.name)}</label>`).join('')}</div>
+    <div class="btns" style="justify-content:flex-start"><button class="btn pri" data-cnt="${c.id}" style="min-height:40px;font-size:12px">TEST</button><button class="btn" data-cnd="${c.id}" style="min-height:40px;font-size:12px">REMOVE</button></div><div class="msg" id="cnm-${c.id}" style="overflow-wrap:anywhere"></div>`:''}</div>`).join('')||'<div class="muted">No connectors added yet.</div>';
+  document.querySelectorAll('[data-cn]').forEach(b=>b.onchange=()=>api('/api/connectors/'+b.dataset.cn+'/toggle',{json:{enabled:b.checked}}));
+  document.querySelectorAll('[data-cna]').forEach(b=>b.onchange=async()=>{await api('/api/connectors/'+b.dataset.cna+'/access',{json:{user_id:+b.dataset.u,allowed:b.checked}});loadSkills();});
+  document.querySelectorAll('[data-cnd]').forEach(b=>b.onclick=async()=>{await api('/api/connectors/'+b.dataset.cnd,{method:'DELETE'});loadSkills();});
+  document.querySelectorAll('[data-cnt]').forEach(b=>b.onclick=async()=>{const m=$('cnm-'+b.dataset.cnt);m.className='msg';m.textContent='Starting it. The first time can take a minute or two...';
+    try{const r=await (await api('/api/connectors/'+b.dataset.cnt+'/test',{method:'POST'})).json();m.className='msg '+(r.ok?'ok':'bad');m.textContent=r.ok?'Works. It gives her '+r.tools.length+' tools: '+r.tools.slice(0,12).join(', ')+(r.tools.length>12?' ...':''):r.error;}catch(e){m.className='msg bad';m.textContent=e.message;}});
+  if(adm){$('cncat').innerHTML=(cn.catalog||[]).map(c=>`<div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:10px"><div style="flex:1;min-width:200px"><b>${esc(c.name)}</b><div class="muted" style="font-size:13px">${esc(c.description)} Needs ${esc(c.needs)}.</div></div><button class="btn pri" data-cat="${esc(c.key)}">ADD</button></div>`).join('');
+    document.querySelectorAll('[data-cat]').forEach(b=>b.onclick=async()=>{try{await api('/api/connectors',{json:{catalog:b.dataset.cat}});loadSkills();}catch(e){$('cnmsg').textContent=e.message;}});}
+}
+$('skform').onsubmit=async e=>{e.preventDefault();const url=$('skurl').value.trim();$('skprev').innerHTML='';$('skmsg').className='msg';$('skmsg').textContent='Fetching it...';
+  try{const p=await (await api('/api/skills/preview',{json:{url}})).json();$('skmsg').textContent='';
+    $('skprev').innerHTML=`<div style="border-left:2px solid var(--a);padding-left:14px;display:flex;flex-direction:column;gap:8px"><b style="font-size:17px">${esc(p.name)}</b><div class="muted">${esc(p.description)}</div>${p.has_scripts?'<div class="bad" style="font-size:14px">This skill refers to scripts or commands. She will follow its written steps but cannot run its scripts yet, so parts of it may not work.</div>':''}<pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto;background:#0b0a0f;padding:12px;font-size:13px;margin:0">${esc(p.excerpt)}${p.length>1800?'\n...':''}</pre><div><button class="btn pri" id="skgo">INSTALL THIS SKILL</button></div></div>`;
+    $('skgo').onclick=async()=>{try{await api('/api/skills/install',{json:{url}});$('skprev').innerHTML='';$('skurl').value='';$('skmsg').className='msg ok';$('skmsg').textContent='Installed and switched on for you.';loadSkills();}catch(e){$('skmsg').className='msg bad';$('skmsg').textContent=e.message;}};
+  }catch(e){$('skmsg').className='msg bad';$('skmsg').textContent=e.message;}};
+$('cnsave').onclick=async()=>{try{await api('/api/connectors',{json:{name:$('cnname').value,description:$('cndesc').value,command:$('cncmd').value}});$('cnname').value=$('cndesc').value=$('cncmd').value='';$('cnmsg').textContent='';loadSkills();}catch(e){$('cnmsg').className='msg bad';$('cnmsg').textContent=e.message;}};
 // settings
 const SK=['assistant_name','brand','site','accent','brain','local_model','cloud_model','voice','eleven_voice_id'];
 const LABEL={gemini:'Google Gemini',anthropic:'Claude (API key)',elevenlabs:'ElevenLabs voice'};

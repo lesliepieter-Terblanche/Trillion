@@ -39,6 +39,13 @@ https address it shows on the phone instead. Phones only allow the microphone on
 UPDATING
 Tell Trillion "update yourself", or use UPDATE NOW on the Family page.
 
+SKILLS AND CONNECTORS (Skills page)
+- Skill: a written playbook. The owner pastes a GitHub link, previews it and installs it; each
+  login switches it on or off. Playbooks Trillion drafts herself wait there for approval.
+- Connector: a helper program (MCP server) that adds abilities, such as browser control. Only the
+  owner adds one and chooses which logins may use it. Connectors need Node.js: run Setup again
+  once if "Cannot find the program npx" appears.
+
 MOVING TO THE NEW SSD
 1. Family page > DOWNLOAD BACKUP. Save the zip off this drive.
 2. On the fresh Windows: unzip Trillion, run Setup, then unzip the backup into the "data" folder.
