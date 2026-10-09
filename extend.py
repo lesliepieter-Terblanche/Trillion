@@ -27,6 +27,8 @@ def init():
         c.commit()
     finally:
         c.close()
+    # 0.4.1: the Windows control connector needs the word "serve" on its command
+    core.x("UPDATE connectors SET command='uvx windows-mcp serve' WHERE command='uvx windows-mcp'")
     starter_pack()
 
 
@@ -181,7 +183,7 @@ CATALOG = [
      "command": "npx -y @modelcontextprotocol/server-sequential-thinking", "needs": "Node.js"},
     {"key": "windows", "name": "Windows control",
      "description": "Operates Windows itself: open apps, click, type, read what is on screen. (Windows-MCP)",
-     "command": "uvx windows-mcp", "needs": "uv"},
+     "command": "uvx windows-mcp serve", "needs": "uv"},
 ]
 
 
@@ -220,7 +222,8 @@ class MCP:
         self.tools_cache, self._stderr = None, []
         self.proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                      text=True, encoding="utf-8", errors="replace", bufsize=1,
-                                     cwd=str(core.DATA))
+                                     cwd=str(core.DATA),
+                                     env=dict(os.environ, ANONYMIZED_TELEMETRY="false"))  # no usage reporting
         threading.Thread(target=self._read, daemon=True).start()
         threading.Thread(target=self._drain, daemon=True).start()
         try:
