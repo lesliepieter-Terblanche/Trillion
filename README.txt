@@ -31,9 +31,13 @@ WHO CAN TOUCH WHAT
   owner adds more folders for them on the Family page
 
 ON YOUR PHONE
-Install Tailscale on the PC and the phone, signed in to the same account. Then open
-http://<the PC's Tailscale name>:8787 in the phone's browser and sign in.
-You can type from the phone; the microphone there needs the secure link (next version).
+Install Tailscale on the PC and the phone, signed in to the same account.
+Typing only:  open http://<the PC's Tailscale address>:8787 in the phone's browser.
+With the microphone: double-click "4 - Phone secure link.bat" once on the PC and open the
+https address it shows on the phone instead. Phones only allow the microphone on https.
+
+UPDATING
+Tell Trillion "update yourself", or use UPDATE NOW on the Family page.
 
 MOVING TO THE NEW SSD
 1. Family page > DOWNLOAD BACKUP. Save the zip off this drive.
