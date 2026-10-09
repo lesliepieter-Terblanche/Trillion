@@ -1,5 +1,5 @@
 """Trillion: a local agent OS for one PC and one family. Run with Start-Trillion.bat."""
-import io, json, time, threading, datetime, zipfile
+import io, json, re, time, threading, datetime, zipfile
 
 import httpx
 from fastapi import FastAPI, Request, Response, HTTPException, Depends, Body
@@ -141,12 +141,27 @@ How to work:
 - Use your tools to actually do things. Never say something was done unless a tool result confirms it.
 - Deleting files and running commands need approval: the tool will report waiting_for_approval. Then tell the user it is waiting for them on the dashboard, and do not retry it.
 - If a tool returns an error, say plainly what went wrong.
+- You can update your own software from GitHub with update_self (owner only).
 - When the user tells you a lasting fact or preference, save it with save_note.
 - Always reply in English.
 - Replies are spoken aloud: keep them short and natural, no markdown, no lists.
 
 Relevant things you remember:
 {memory}"""
+
+
+UPDATE_RE = re.compile(r"\b(update|upgrade)\s+(yourself|your ?self|herself|trillion|now)\b|"
+                       r"\b(pull|get|install)\s+(the\s+)?((latest|newest)\s+(version|update)|update)\b|"
+                       r"\bcheck for (an? )?updates?\b", re.I)
+
+
+def update_reply(res):
+    if "error" in res:
+        return "I could not update: " + res["error"]
+    if res.get("status") == "already_up_to_date":
+        return f"I am already on the newest version, {res['version']}."
+    changes = "; ".join(res.get("what_changed", [])[:4])
+    return f"Updated to version {res['version']}. What changed: {changes}. I am restarting now and will be back in a few seconds."
 
 
 def run_agent(user, text):
@@ -156,6 +171,13 @@ def run_agent(user, text):
     tid = core.add_task(uid, text)
     core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "user", text, time.time()))
     core.log(uid, f'Heard: "{text[:140]}"', "voice")
+    if UPDATE_RE.search(text):  # never leave this one to the model's judgement
+        res = tools.execute(user, "update_self", {}, task_id=tid)
+        reply = update_reply(res)
+        BUSY[uid] = False
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="failed" if "error" in res else "completed", detail=reply[:200])
+        return {"reply": reply, "task_id": tid, "provider": "built-in"}
     hist = core.q("SELECT role, content FROM messages WHERE user_id=? ORDER BY id DESC LIMIT 12", (uid,))[::-1]
     msgs = [{"role": "system", "content": system_prompt(user, text)}] + [dict(h) for h in hist]
     status, waiting, reply = "completed", False, ""
@@ -447,6 +469,12 @@ def family_put(uid: int, p: dict = Body(...), user=Depends(admin)):
         core.x("UPDATE users SET pw_hash=NULL, salt=NULL WHERE id=?", (uid,))
         core.x("DELETE FROM sessions WHERE user_id=?", (uid,))
     return {"ok": True}
+
+
+@app.post("/api/admin/update")
+def admin_update(user=Depends(admin)):
+    res = tools.execute(user, "update_self", {})
+    return dict(res, message=update_reply(res))
 
 
 @app.get("/api/admin/backup")

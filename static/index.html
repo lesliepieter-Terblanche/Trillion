@@ -194,6 +194,7 @@ footer.status{background:#000;border-top:1px solid var(--line);padding:10px 20px
 <div class="view" id="v-family">
   <h2>Family</h2>
   <div class="grid2" id="fam"></div>
+  <div class="panel"><b>Update</b><div class="muted">Pulls the newest version of Trillion from GitHub and restarts her. Your logins, keys and memory are not touched. You can also just tell her "update yourself".</div><div><button class="btn pri" id="upd">UPDATE NOW</button> <span class="msg" id="updmsg"></span></div></div>
   <div class="panel"><b>Backup</b><div class="muted">Downloads every login's settings, keys, memory and history as one file. Keep it somewhere safe: it can restore Trillion on a new drive.</div><div><a class="btn pri" style="display:inline-flex;align-items:center;text-decoration:none" href="/api/admin/backup">DOWNLOAD BACKUP</a></div></div>
 </div>
 </main>
@@ -342,6 +343,7 @@ async function loadFamily(){const f=await (await api('/api/admin/family')).json(
   document.querySelectorAll('[data-u]').forEach(b=>b.onclick=async()=>{const id=b.dataset.u;
     await api('/api/admin/family/'+id,{method:'PUT',json:b.dataset.o==='roots'?{roots:$('r-'+id).value.split('\n')}:{reset_password:true}});loadFamily();});
 }
+$('upd').onclick=async()=>{$('updmsg').textContent='Checking GitHub...';try{const r=await (await api('/api/admin/update',{method:'POST'})).json();$('updmsg').textContent=r.message;if(r.status==='updated')setTimeout(()=>location.reload(),12000);}catch(e){$('updmsg').textContent=e.message;}};
 tick().then(loadChat);setInterval(tick,3000);
 </script>
 </body>
