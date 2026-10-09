@@ -27,6 +27,25 @@ def init():
         c.commit()
     finally:
         c.close()
+    starter_pack()
+
+
+def starter_pack():
+    """One time only: give the owner the three starter connectors he asked for. A marker file keeps
+    this from re-adding anything he later removes."""
+    marker = core.DATA / "starter_connectors_v1.done"
+    if marker.exists():
+        return
+    owner = core.q("SELECT * FROM users WHERE is_admin=1 ORDER BY id LIMIT 1", one=True)
+    if not owner:
+        return
+    have = {r["name"] for r in core.q("SELECT name FROM connectors")}
+    for key in ("browser", "fetch", "thinking"):
+        cat = next(c for c in CATALOG if c["key"] == key)
+        if cat["name"] not in have:
+            add_connector(cat["name"], cat["description"], cat["command"], owner["id"])
+    marker.write_text("added", encoding="utf-8")
+    core.log(owner["id"], "Starter connectors added: Browser control, Fetch, Sequential thinking", "done")
 
 
 # =====================================================================================
@@ -154,6 +173,12 @@ CATALOG = [
     {"key": "browser", "name": "Browser control",
      "description": "Opens and drives a real browser: visit sites, click, fill in forms, read pages. (Playwright MCP, by Microsoft)",
      "command": "npx -y @playwright/mcp@latest", "needs": "Node.js"},
+    {"key": "fetch", "name": "Fetch",
+     "description": "Reads any web page as plain text. Lighter and faster than opening a browser. (Official MCP server)",
+     "command": "uvx mcp-server-fetch", "needs": "uv"},
+    {"key": "thinking", "name": "Sequential thinking",
+     "description": "A scratchpad for planning multi-step jobs one step at a time. (Official MCP server)",
+     "command": "npx -y @modelcontextprotocol/server-sequential-thinking", "needs": "Node.js"},
     {"key": "windows", "name": "Windows control",
      "description": "Operates Windows itself: open apps, click, type, read what is on screen. (Windows-MCP)",
      "command": "uvx windows-mcp", "needs": "uv"},
@@ -342,12 +367,19 @@ def find_connector(uid, name):
     return None
 
 
+def _type_name(schema):
+    t = schema.get("type") if isinstance(schema, dict) else None
+    if isinstance(t, list):
+        t = " or ".join(str(x) for x in t if x != "null")
+    return str(t or "any")
+
+
 def brief_tools(tools):
     out = []
     for t in tools:
         props = (t.get("inputSchema") or {}).get("properties") or {}
         req = set((t.get("inputSchema") or {}).get("required") or [])
         out.append({"tool": t.get("name"), "what": (t.get("description") or "")[:160],
-                    "arguments": {k: ((v.get("type") or "any") + ("" if k in req else ", optional"))
+                    "arguments": {k: (_type_name(v) + ("" if k in req else ", optional"))
                                   for k, v in list(props.items())[:10]}})
     return out
