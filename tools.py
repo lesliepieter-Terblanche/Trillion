@@ -45,12 +45,21 @@ SPECS = [
        "Call this before connector_call.", {"connector": S}),
     fn("connector_call", "Use one tool of a connector. Get the exact tool name and arguments from connector_tools first.",
        {"connector": S, "tool": S, "arguments": {"type": "object"}}, ["connector", "tool"]),
+    fn("phone_status", "Get the user's own mobile phone status: battery, charging, storage, Wi-Fi, model, screen on or off.", {}),
+    fn("phone_open_app", "Open an app on the user's own phone, for example WhatsApp, Chrome or Maps. The phone must be unlocked.",
+       {"app": S}),
+    fn("phone_find_contact", "Look up a contact's phone numbers on the user's phone by name.", {"name": S}),
+    fn("phone_send_whatsapp", "Send a WhatsApp message from the user's own phone. contact is a contact name or a phone "
+       "number. Always needs the user's approval on the dashboard before it is sent.", {"contact": S, "message": S}),
+    fn("phone_locate", "Find where the user's own phone is: its last known position with a map link.", {}),
+    fn("phone_ring", "Make the user's own phone play a loud sound so it can be found nearby.", {}),
+    fn("phone_screenshot", "Take a screenshot of the user's phone screen and save it to their folder.", {}),
     fn("update_self", "Update Trillion herself to the newest version from GitHub, then restart. Owner only. "
        "Use when the user says update yourself, get the latest version, or pull the update.", {}),
     fn("run_command", "Run a Windows command. Owner only, and always needs approval on the dashboard.",
        {"command": S}),
 ]
-NEEDS_APPROVAL = {"delete_path", "run_command"}
+NEEDS_APPROVAL = {"delete_path", "run_command", "phone_send_whatsapp"}
 
 
 def resolve(user, path):
@@ -89,6 +98,12 @@ def describe(name, a):
         "use_skill": f"Reading the skill {g('name')}", "draft_skill": f"Drafting a playbook: {g('name')}",
         "connector_tools": f"Checking what {g('connector')} can do",
         "connector_call": f"Using {g('connector')}: {g('tool')}",
+        "phone_status": "Checking the phone", "phone_open_app": f"Opening {g('app')} on the phone",
+        "phone_find_contact": f"Looking up {g('name')} in contacts",
+        "phone_send_whatsapp": f"Send WhatsApp to {a.get('_name') or g('contact')}"
+                               + (f" (+{a['contact']})" if a.get('_name') else "") + f": \"{str(a.get('message', ''))[:120]}\"",
+        "phone_locate": "Locating the phone", "phone_ring": "Ringing the phone",
+        "phone_screenshot": "Taking a phone screenshot",
         "system_status": "Checking the PC", "update_self": "Updating myself from GitHub", "run_command": f"Run command: {g('command')}",
     }.get(name, name)
 
@@ -106,6 +121,12 @@ def execute(user, name, args, task_id=None, approved=False):
         if name in NEEDS_APPROVAL and not approved:
             if name == "delete_path":
                 resolve(user, args.get("path"))  # permission check before asking
+            if name == "phone_send_whatsapp":  # settle exactly who it goes to before asking
+                import phone
+                who, number = phone.resolve_contact(user, str(args.get("contact", "")))
+                args = {"contact": number, "message": str(args.get("message", "")), "_name": who}
+                if not args["message"].strip():
+                    return {"error": "There is no message to send."}
             summary = describe(name, args)
             core.x("INSERT INTO approvals(user_id,task_id,tool,args,summary,created) VALUES(?,?,?,?,?,?)",
                    (uid, task_id, name, json.dumps(args), summary, time.time()))
@@ -120,6 +141,8 @@ def execute(user, name, args, task_id=None, approved=False):
     except TypeError as e:
         return {"error": f"Wrong details for {name}: {e}"}
     except Exception as e:
+        if type(e).__name__ == "PhoneError":
+            return {"error": str(e)}
         return {"error": f"{type(e).__name__}: {e}"}
 
 
@@ -424,3 +447,44 @@ def t_connector_call(user, connector, tool, arguments=None):
         except Exception:
             arguments = {}
     return extend.client(row).call(tool, arguments or {})
+
+
+# ---------- the user's own phone ----------
+def t_phone_status(user):
+    import phone
+    return phone.status(user)
+
+
+def t_phone_open_app(user, app):
+    import phone
+    return phone.open_app(user, app)
+
+
+def t_phone_find_contact(user, name):
+    import phone
+    found = phone.contacts(user, name)
+    return {"contacts": [{"name": k, "numbers": v} for k, v in list(found.items())[:10]]} if found \
+        else {"contacts": [], "note": f"Nobody called {name} in the phone's contacts."}
+
+
+def t_phone_send_whatsapp(user, contact, message, _name=None):
+    import phone
+    res = phone.send_whatsapp(user, contact, message)
+    if _name:
+        res["to"] = _name
+    return res
+
+
+def t_phone_locate(user):
+    import phone
+    return phone.locate(user)
+
+
+def t_phone_ring(user):
+    import phone
+    return phone.ring(user)
+
+
+def t_phone_screenshot(user):
+    import phone
+    return phone.screenshot(user)

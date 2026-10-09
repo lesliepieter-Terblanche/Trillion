@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, Redirect
 
 import core
 import extend
+import phone
 import tools
 
 core.init()
@@ -420,7 +421,7 @@ def messages(user=Depends(auth)):
 
 
 # ---------- settings and keys ----------
-EDITABLE = ["assistant_name", "brand", "accent", "site", "brain", "local_model", "cloud_model", "voice",
+EDITABLE = ["phone_country_code", "assistant_name", "brand", "accent", "site", "brain", "local_model", "cloud_model", "voice",
             "eleven_voice_id", "daily_review"]
 
 
@@ -519,6 +520,68 @@ def note_add(p: dict = Body(...), user=Depends(auth)):
 def note_del(nid: int, user=Depends(auth)):
     core.x("DELETE FROM notes WHERE id=? AND user_id=?", (nid, user["id"]))
     return {"ok": True}
+
+
+# ---------- each login's own phone ----------
+@app.get("/api/phone")
+def phone_info(user=Depends(auth)):
+    s = core.settings(user)
+    out = {"linked": s.get("phone_serial"), "model": s.get("phone_model", ""), "adb": True, "devices": []}
+    try:
+        for d in phone.devices():
+            o = phone.owner_of(d["serial"])
+            d["linked_to"] = o["name"] if o else None
+            out["devices"].append(d)
+    except phone.PhoneError as e:
+        out["adb"], out["error"] = False, str(e)
+    return out
+
+
+@app.post("/api/phone/link")
+def phone_link(p: dict = Body(...), user=Depends(auth)):
+    serial = str(p.get("serial", ""))
+    dev = next((d for d in phone.devices() if d["serial"] == serial), None)
+    if not dev:
+        raise HTTPException(404, "That phone is not connected right now")
+    if dev["state"] != "device":
+        raise HTTPException(400, "Unlock the phone and tap Allow on the USB debugging prompt, then try again")
+    o = phone.owner_of(serial)
+    if o and o["id"] != user["id"]:
+        raise HTTPException(403, f"That phone is already linked to {o['name']}")
+    s = core.settings(user)
+    s["phone_serial"], s["phone_model"] = serial, dev["model"]
+    core.save_settings(user["id"], s)
+    core.log(user["id"], f"Phone linked: {dev['model'] or serial}", "done")
+    return {"ok": True}
+
+
+@app.post("/api/phone/wireless")
+def phone_wireless(p: dict = Body(...), user=Depends(auth)):
+    try:
+        target = phone.go_wireless(user, str(p.get("address", "")))
+    except phone.PhoneError as e:
+        raise HTTPException(400, str(e))
+    s = core.settings(user)
+    s["phone_serial"] = target
+    core.save_settings(user["id"], s)
+    return {"ok": True, "address": target}
+
+
+@app.post("/api/phone/unlink")
+def phone_unlink(user=Depends(auth)):
+    s = core.settings(user)
+    s.pop("phone_serial", None)
+    s.pop("phone_model", None)
+    core.save_settings(user["id"], s)
+    return {"ok": True}
+
+
+@app.post("/api/phone/test")
+def phone_test(user=Depends(auth)):
+    try:
+        return {"ok": True, "status": phone.status(user)}
+    except phone.PhoneError as e:
+        return {"ok": False, "error": str(e)}
 
 
 # ---------- skills ----------

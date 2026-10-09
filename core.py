@@ -24,6 +24,7 @@ DEFAULT_SETTINGS = {
     "eleven_voice_id": "21m00Tcm4TlvDq8ikWAM",
     "roots": [],                   # folders this login may touch; ["*"] = whole PC
     "daily_review": True,
+    "phone_country_code": "27",    # used to turn 082... into +2782... for WhatsApp
 }
 SECRET_NAMES = ["gemini", "anthropic", "elevenlabs"]
 

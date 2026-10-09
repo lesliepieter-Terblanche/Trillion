@@ -39,6 +39,13 @@ https address it shows on the phone instead. Phones only allow the microphone on
 UPDATING
 Tell Trillion "update yourself", or use UPDATE NOW on the Family page.
 
+YOUR PHONE (Settings > My phone)
+Each login links its own Android phone. On the phone switch on USB debugging (Developer options),
+plug it into the PC, tap Allow, then LINK TO ME. Optional: SWITCH TO WIRELESS with the phone's
+Tailscale address. She can then report the phone's status, open apps, look up contacts, send a
+WhatsApp (always after your approval), locate it, ring it and take a screenshot.
+Needs the Android phone tools: run Setup again once if it says ADB is not installed.
+
 SKILLS AND CONNECTORS (Skills page)
 - Skill: a written playbook. The owner pastes a GitHub link, previews it and installs it; each
   login switches it on or off. Playbooks Trillion drafts herself wait there for approval.
