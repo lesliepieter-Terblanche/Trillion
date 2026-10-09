@@ -101,6 +101,7 @@ footer.status{background:#000;border-top:1px solid var(--line);padding:10px 20px
     <button data-v="control" class="on">CONTROL ROOM</button>
     <button data-v="files">FILES</button>
     <button data-v="memory">MEMORY</button>
+    <button data-v="videos">VIDEOS</button>
     <button data-v="skills">SKILLS</button>
     <button data-v="settings">SETTINGS</button>
     <button data-v="family" id="navfam" hidden>FAMILY</button>
@@ -167,6 +168,22 @@ footer.status{background:#000;border-top:1px solid var(--line);padding:10px 20px
     <label class="field"><span>Details</span><textarea id="nb" rows="3"></textarea></label>
     <label class="field"><span>Folder</span><select id="nd"><option>PERSONAL</option><option>WORK</option></select></label>
     <div><button class="btn pri" id="nadd">SAVE NOTE</button></div></div>
+</div>
+
+<div class="view" id="v-videos">
+  <h2>Videos</h2>
+  <div class="panel"><b>Make a video</b>
+    <label class="field"><span>What is it about?</span><textarea id="vprompt" rows="2" placeholder="A premium cinematic video about our newest listings in Johannesburg"></textarea></label>
+    <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end">
+      <label class="field"><span>Length</span><select id="vsec"><option value="15">15 seconds</option><option value="20" selected>20 seconds</option><option value="30">30 seconds</option><option value="45">45 seconds</option></select></label>
+      <label class="field"><span>Shape</span><select id="vfmt"><option value="vertical">Vertical (TikTok, Reels, Shorts)</option><option value="square">Square</option><option value="landscape">Landscape (YouTube)</option></select></label>
+      <label style="display:flex;gap:10px;align-items:center;min-height:44px"><input type="checkbox" id="vvo" checked style="width:22px;height:22px"> Voice-over</label>
+      <button class="btn pri" id="vgo">CREATE VIDEO</button>
+    </div>
+    <div class="msg" id="vmsg"></div>
+    <div class="muted" style="font-size:13px">Real footage needs a free Pexels key and the voice-over needs an ElevenLabs key, both under Settings. It takes a few minutes; progress shows in the Control Room.</div>
+  </div>
+  <div class="grid2" id="vlist"></div>
 </div>
 
 <div class="view" id="v-skills">
@@ -246,7 +263,7 @@ let hold=0,S=null,sending=false,speakNext=false,settingsLoaded=false,cwd='';
 document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on',x===b));
   document.querySelectorAll('.view').forEach(v=>v.classList.toggle('on',v.id==='v-'+b.dataset.v));
-  ({files:()=>loadFiles(cwd),memory:()=>loadNotes(''),skills:loadSkills,settings:loadSettings,family:loadFamily}[b.dataset.v]||(()=>{}))();});
+  ({files:()=>loadFiles(cwd),memory:()=>loadNotes(''),videos:loadVideos,skills:loadSkills,settings:loadSettings,family:loadFamily}[b.dataset.v]||(()=>{}))();});
 $('out').onclick=async()=>{await api('/api/logout',{method:'POST'});location.reload();};
 
 function gauge(label,val,max,unit,pct){return `<div class="g" style="margin-bottom:16px"><label><span>${label}</span><b>${val}<small> ${unit}</small></b></label><div class="bar"><i style="width:${Math.min(100,Math.max(0,pct))}%"></i></div></div>`;}
@@ -345,6 +362,21 @@ async function loadNotes(qs){const ns=await (await api('/api/notes?query='+encod
 $('nsearch').onsubmit=e=>{e.preventDefault();loadNotes($('nq').value.trim());};
 $('nadd').onclick=async()=>{try{await api('/api/notes',{json:{title:$('nt2').value,body:$('nb').value,domain:$('nd').value}});$('nt2').value=$('nb').value='';loadNotes('');}catch(e){$('nmsg').textContent=e.message;}};
 $('review').onclick=async()=>{$('nmsg').textContent='Reviewing today...';try{const r=await (await api('/api/review',{method:'POST'})).json();$('nmsg').textContent=r.learned+' new things learned.';loadNotes('');}catch(e){$('nmsg').textContent=e.message;}};
+// videos
+async function loadVideos(){
+  const vs=await (await api('/api/videos')).json();
+  $('vlist').innerHTML=vs.map(v=>`<div class="panel" style="gap:10px">${v.exists?`<video controls preload="none" ${v.thumb?`poster="/api/videos/${v.id}/thumb"`:''} src="/api/videos/${v.id}/file" style="width:100%;max-height:420px;background:#000"></video>`:'<div class="bad">The file was moved or deleted.</div>'}
+    <b style="font-size:17px">${esc(v.title)}</b><div class="muted" style="font-size:13px">${Math.round(v.seconds)} seconds · ${esc(v.detail.format||'')} · ${new Date(v.created*1000).toLocaleString()}</div>
+    <div class="muted" style="font-size:13px">${v.detail.footage&&v.detail.footage.length?'Footage from Pexels by '+esc(v.detail.footage.join(', ')):'No stock footage'} · Music: ${esc(v.detail.music||'none')}${v.detail.narration?' · Voice-over':''}</div>
+    ${(v.detail.notes||[]).map(n=>`<div class="muted" style="font-size:13px;color:var(--a)">${esc(n)}</div>`).join('')}
+    <div class="btns" style="justify-content:flex-start">${v.exists?`<a class="btn pri" style="display:inline-flex;align-items:center;text-decoration:none;min-height:40px;font-size:12px" href="/api/videos/${v.id}/file" download>DOWNLOAD</a>`:''}<button class="btn" data-vd="${v.id}" style="min-height:40px;font-size:12px">DELETE</button></div></div>`).join('')||'<div class="muted">No videos yet.</div>';
+  document.querySelectorAll('[data-vd]').forEach(b=>b.onclick=async()=>{await api('/api/videos/'+b.dataset.vd,{method:'DELETE'});loadVideos();});
+}
+$('vgo').onclick=async()=>{const about=$('vprompt').value.trim();if(!about){$('vmsg').textContent='Say what the video is about first.';return;}
+  if(sending){$('vmsg').textContent='She is busy with another job.';return;}
+  $('vmsg').textContent='Working on it. This takes a few minutes; you can watch progress in the Control Room.';
+  await send(`Create a ${$('vsec').value} second ${$('vfmt').value} video${$('vvo').checked?'':' with no voice-over'}: ${about}`,false);
+  $('vmsg').textContent='';$('vprompt').value='';loadVideos();};
 // skills and connectors
 async function loadSkills(){
   const adm=S&&S.user.is_admin;$('skadd').hidden=!adm;$('cnadd').hidden=!adm;
@@ -379,7 +411,7 @@ $('skform').onsubmit=async e=>{e.preventDefault();const url=$('skurl').value.tri
 $('cnsave').onclick=async()=>{try{await api('/api/connectors',{json:{name:$('cnname').value,description:$('cndesc').value,command:$('cncmd').value}});$('cnname').value=$('cndesc').value=$('cncmd').value='';$('cnmsg').textContent='';loadSkills();}catch(e){$('cnmsg').className='msg bad';$('cnmsg').textContent=e.message;}};
 // settings
 const SK=['assistant_name','brand','site','accent','brain','local_model','cloud_model','voice','eleven_voice_id'];
-const LABEL={gemini:'Google Gemini',anthropic:'Claude (API key)',elevenlabs:'ElevenLabs voice'};
+const LABEL={gemini:'Google Gemini',anthropic:'Claude (API key)',elevenlabs:'ElevenLabs voice',pexels:'Pexels stock footage (free key from pexels.com/api)'};
 async function loadPhone(){
   const p=await (await api('/api/phone')).json();let h='';
   if(!p.adb){h=`<div class="bad">${esc(p.error)}</div>`;}

@@ -10,9 +10,11 @@ import core
 import extend
 import phone
 import tools
+import video
 
 core.init()
 extend.init()
+video.init()
 app = FastAPI(title="Trillion")
 COOKIE = "trillion"
 BUSY, STOP, SITES, LAST_PROVIDER = {}, set(), {}, {}
@@ -132,6 +134,9 @@ def llm_chat(user, messages, tool_specs=None):
     return r.json()["message"]
 
 
+core.LLM = llm_chat
+
+
 def system_prompt(user, text):
     s = core.settings(user)
     mem = tools.search_notes(user["id"], text, k=4)
@@ -167,6 +172,26 @@ UPDATE_RE = re.compile(r"\b(update|upgrade)\s+(yourself|your ?self|herself|trill
                        r"\bcheck for (an? )?updates?\b", re.I)
 
 
+VIDEO_RE = re.compile(r"\b(create|make|generate|produce|build|render)\b[^.?!]{0,80}\bvideo\b", re.I)
+
+
+def video_request(text):
+    m = re.search(r"(\d{1,2})[\s-]*(seconds?|secs?|s)\b", text, re.I)
+    low = text.lower()
+    fmt = "landscape" if re.search(r"landscape|horizontal|widescreen|youtube video", low) else ("square" if "square" in low else "vertical")
+    return {"prompt": text, "seconds": int(m.group(1)) if m else 20, "format": fmt,
+            "voiceover": not re.search(r"no voice|without (a )?voice|no narration|silent", low)}
+
+
+def video_reply(res):
+    if "error" in res:
+        return "I could not make the video: " + res["error"]
+    extra = " ".join(res.get("notes", []))
+    return (f"Your video is ready: {res['title']}, {round(res['seconds'])} seconds, "
+            f"{'with' if res['voice_over'] else 'without'} voice-over and {res['footage_clips']} stock clips. "
+            f"It is on the Videos page and saved at {res['saved']}. {extra}").strip()
+
+
 def update_reply(res):
     if "error" in res:
         return "I could not update: " + res["error"]
@@ -190,6 +215,15 @@ def run_agent(user, text):
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="failed" if "error" in res else "completed", detail=reply[:200])
         return {"reply": reply, "task_id": tid, "provider": "built-in"}
+    if VIDEO_RE.search(text):  # a long job with fixed steps: run it directly
+        try:
+            res = tools.execute(user, "create_video", video_request(text), task_id=tid)
+        finally:
+            BUSY[uid] = False
+        reply = video_reply(res)
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="failed" if "error" in res else "completed", detail=reply[:200])
+        return {"reply": reply, "task_id": tid, "provider": LAST_PROVIDER.get(uid, "local")}
     hist = core.q("SELECT role, content FROM messages WHERE user_id=? ORDER BY id DESC LIMIT 12", (uid,))[::-1]
     msgs = [{"role": "system", "content": system_prompt(user, text)}] + [dict(h) for h in hist]
     status, waiting, reply = "completed", False, ""
@@ -472,6 +506,9 @@ def secret_test(name: str, user=Depends(auth)):
         elif name == "anthropic":
             r = httpx.get("https://api.anthropic.com/v1/models", timeout=15,
                           headers={"x-api-key": key, "anthropic-version": "2023-06-01"})
+        elif name == "pexels":
+            r = httpx.get("https://api.pexels.com/videos/search", params={"query": "city", "per_page": 1},
+                          headers={"Authorization": key}, timeout=15)
         else:
             r = httpx.get("https://api.elevenlabs.io/v1/user", headers={"xi-api-key": key}, timeout=15)
         return {"ok": r.status_code == 200, "status": r.status_code}
@@ -519,6 +556,54 @@ def note_add(p: dict = Body(...), user=Depends(auth)):
 @app.delete("/api/notes/{nid}")
 def note_del(nid: int, user=Depends(auth)):
     core.x("DELETE FROM notes WHERE id=? AND user_id=?", (nid, user["id"]))
+    return {"ok": True}
+
+
+# ---------- videos ----------
+def _video(vid, user):
+    v = core.q("SELECT * FROM videos WHERE id=? AND user_id=?", (vid, user["id"]), one=True)
+    if not v:
+        raise HTTPException(404, "No such video")
+    return v
+
+
+@app.get("/api/videos")
+def videos_list(user=Depends(auth)):
+    import os
+    out = []
+    for v in core.q("SELECT * FROM videos WHERE user_id=? ORDER BY id DESC LIMIT 60", (user["id"],)):
+        d = dict(v)
+        d["detail"] = json.loads(v["detail"] or "{}")
+        d["exists"] = os.path.exists(v["path"])
+        out.append(d)
+    return out
+
+
+@app.get("/api/videos/{vid}/file")
+def videos_file(vid: int, user=Depends(auth)):
+    v = _video(vid, user)
+    return FileResponse(v["path"], media_type="video/mp4", filename=v["path"].replace("\\", "/").split("/")[-1])
+
+
+@app.get("/api/videos/{vid}/thumb")
+def videos_thumb(vid: int, user=Depends(auth)):
+    v = _video(vid, user)
+    if not v["thumb"]:
+        raise HTTPException(404, "No picture")
+    return FileResponse(v["thumb"], media_type="image/jpeg")
+
+
+@app.delete("/api/videos/{vid}")
+def videos_delete(vid: int, user=Depends(auth)):
+    import os
+    v = _video(vid, user)
+    for f in (v["path"], v["thumb"]):
+        try:
+            if f:
+                os.unlink(f)
+        except OSError:
+            pass
+    core.x("DELETE FROM videos WHERE id=?", (vid,))
     return {"ok": True}
 
 

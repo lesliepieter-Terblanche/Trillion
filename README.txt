@@ -39,6 +39,13 @@ https address it shows on the phone instead. Phones only allow the microphone on
 UPDATING
 Tell Trillion "update yourself", or use UPDATE NOW on the Family page.
 
+VIDEOS (Videos page, or just ask her)
+"Create a 20 second cinematic video about ..." She writes the script, fetches real footage from
+Pexels, records an ElevenLabs voice-over, adds music, titles and captions, and saves the MP4 to
+your "Trillion Videos" folder. Keys go under Settings: Pexels (free, pexels.com/api) for footage,
+ElevenLabs for the voice. Without them the video still renders, with light backdrops and no voice.
+Your own music: drop mp3 files into data\music and she uses those instead of the built-in track.
+
 YOUR PHONE (Settings > My phone)
 Each login links its own Android phone. On the phone switch on USB debugging (Developer options),
 plug it into the PC, tap Allow, then LINK TO ME. Optional: SWITCH TO WIRELESS with the phone's

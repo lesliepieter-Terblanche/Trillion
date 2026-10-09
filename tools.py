@@ -54,6 +54,10 @@ SPECS = [
     fn("phone_locate", "Find where the user's own phone is: its last known position with a map link.", {}),
     fn("phone_ring", "Make the user's own phone play a loud sound so it can be found nearby.", {}),
     fn("phone_screenshot", "Take a screenshot of the user's phone screen and save it to their folder.", {}),
+    fn("create_video", "Create a finished cinematic social media video (MP4) from a plain description. No media is "
+       "needed: she writes the script, finds stock footage, adds voice-over, music, titles and captions. "
+       "format is vertical, square or landscape. Takes a few minutes.",
+       {"prompt": S, "seconds": {"type": "integer"}, "format": S, "voiceover": {"type": "boolean"}}, ["prompt"]),
     fn("update_self", "Update Trillion herself to the newest version from GitHub, then restart. Owner only. "
        "Use when the user says update yourself, get the latest version, or pull the update.", {}),
     fn("run_command", "Run a Windows command. Owner only, and always needs approval on the dashboard.",
@@ -104,6 +108,7 @@ def describe(name, a):
                                + (f" (+{a['contact']})" if a.get('_name') else "") + f": \"{str(a.get('message', ''))[:120]}\"",
         "phone_locate": "Locating the phone", "phone_ring": "Ringing the phone",
         "phone_screenshot": "Taking a phone screenshot",
+        "create_video": "Creating a video",
         "system_status": "Checking the PC", "update_self": "Updating myself from GitHub", "run_command": f"Run command: {g('command')}",
     }.get(name, name)
 
@@ -133,6 +138,8 @@ def execute(user, name, args, task_id=None, approved=False):
             core.log(uid, f"Waiting on you: {summary}", "waiting")
             return {"status": "waiting_for_approval",
                     "note": "Not done yet. The user must approve this on the dashboard."}
+        if name == "create_video":
+            args = dict(args, _task=task_id)
         out = globals()["t_" + name](user, **args)
         core.log(uid, describe(name, args), "done")
         return out
@@ -488,3 +495,12 @@ def t_phone_ring(user):
 def t_phone_screenshot(user):
     import phone
     return phone.screenshot(user)
+
+
+# ---------- video ----------
+def t_create_video(user, prompt, seconds=20, format="vertical", voiceover=True, _task=None):
+    import video
+    fmt = str(format or "vertical").lower()
+    fmt = "landscape" if fmt in ("landscape", "horizontal", "wide", "youtube") else ("square" if fmt == "square" else "vertical")
+    say = (lambda text: core.set_task(_task, detail=text)) if _task else None
+    return video.create(core.LLM, user, prompt, seconds, fmt, bool(voiceover), progress=say)
