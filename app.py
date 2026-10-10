@@ -201,12 +201,17 @@ Routines this user has set up (each runs by itself when they say its phrase; the
 
 
 UPDATE_RE = re.compile(r"\b(update|upgrade)\s+(yourself|your ?self|herself|trillion|now)\b|"
+                       r"\bup[dg][a-z]{2,5}\s+(yourself|your ?self|ur ?self|herself)\b|"   # typing slips: updste, updaet
+                       r"\bupadte\s+(yourself|your ?self)\b|"
                        r"\b(pull|get|install)\s+(the\s+)?((latest|newest)\s+(version|update)|update)\b|"
                        r"\bcheck for (an? )?updates?\b", re.I)
 
 
 _PH = r"(?:my |the )?(?:cell ?phone|mobile(?: phone)?|phone|cell|galaxy|samsung)"
 PHONE_RULES = [
+    ("mynumber", re.compile(r"\bmy\s+(?:own\s+)?(?:%s|cell ?phone|cell|mobile|phone)\s+number\s+is\s+([+\d][\d\s()-]{6,})" % r"what'?s ?(?:app|up)", re.I)),
+    ("whatsapp_me", re.compile(r"\b(?:send|whats ?app|text|message)\s+(?:me|myself)\s+(?:an?\s+)?(?:quick\s+|test\s+)*(?:%s|message|text)?(?:\s+(?:message|text))?"
+                               r"(?:\s+on\s+%s)?\s*(?:(?:,?\s*saying|that says|to say|:)\s+(.+))?[.!?]?\s*$" % (r"what'?s ?(?:app|up)", r"what'?s ?(?:app|up)"), re.I | re.S)),
     ("whatsapp", re.compile(r"\bwhat'?s ?(?:app|up)\b.{0,20}?\bsend\s+(.+?)\s+(?:a\s+)?(?:message|text)\s*(?:saying|that says|to say|:|\bthat\b)\s+(.+)$", re.I | re.S)),
     ("whatsapp", re.compile(r"\b(?:send\s+)?(?:a\s+)?what'?s ?(?:app|up)\s+(?:message\s+)?(?:to\s+)?(.+?)\s*(?:,?\s*saying|that says|to say|:|\bthat\b)\s+(.+)$", re.I | re.S)),
     ("whatsapp", re.compile(r"\bsend\s+(.+?)\s+a\s+what'?s ?(?:app|up)(?:\s+message)?\s*(?:saying|that says|to say|:|\bthat\b)\s+(.+)$", re.I | re.S)),
@@ -239,6 +244,23 @@ def phone_shortcut(user, text, tid):
         m = rx.search(text)
         if not m:
             continue
+        if kind == "mynumber":
+            st = core.settings(user)
+            st["phone_own_number"] = re.sub(r"[^\d+]", "", m.group(1))
+            core.save_settings(user["id"], st)
+            return f"Saved. Your own number is {st['phone_own_number']}. Now you can say: send me a test WhatsApp.", False, {"saved": True}
+        if kind == "whatsapp_me":
+            if not re.search(r"what'?s ?(?:app|up)|\btest\b", text, re.I):
+                continue
+            own = str(core.settings(user).get("phone_own_number") or "").strip()
+            if not own:
+                return ("I do not know your own number yet. Tell me once, like this: my WhatsApp number is 082 123 4567. "
+                        "Then ask me again."), False, {"error": "own number not set"}
+            msg = (m.group(1) or "").strip().strip('"\u201c\u201d') or f"Test message from {core.settings(user).get('assistant_name') or 'Trillion'}."
+            r = tools.execute(user, "phone_send_whatsapp", {"contact": own, "message": msg}, task_id=tid)
+            if r.get("status") == "waiting_for_approval":
+                return f'Ready. A WhatsApp to your own number ({own}): "{msg}". Approve it on the dashboard and I will send it.', True, r
+            return ("I could not prepare that WhatsApp: " + r.get("error", "unknown problem")), False, r
         if kind == "whatsapp":
             who = m.group(1).strip(" ,.:")
             who = re.sub(r"^(?:and\s+)?(?:then\s+)?(?:send|tell|message|text)\s+", "", who, flags=re.I)
@@ -702,7 +724,7 @@ def messages(user=Depends(auth)):
 
 
 # ---------- settings and keys ----------
-EDITABLE = ["phone_full_control", "personality", "phone_country_code", "assistant_name", "brand", "accent", "site", "brain", "local_model", "cloud_model", "voice",
+EDITABLE = ["phone_own_number", "phone_full_control", "personality", "phone_country_code", "assistant_name", "brand", "accent", "site", "brain", "local_model", "cloud_model", "voice",
             "eleven_voice_id", "daily_review"]
 
 

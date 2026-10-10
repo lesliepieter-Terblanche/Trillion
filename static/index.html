@@ -308,6 +308,7 @@ footer.status{background:#000;border-top:1px solid var(--line);padding:10px 20px
   <div class="panel" id="phonebox"><div class="muted">Looking for your phone...</div></div>
   <div class="panel"><b>What she may do on your phone</b>
     <label style="display:flex;gap:12px;align-items:flex-start;min-height:44px;margin-top:6px"><input type="checkbox" id="s-phone_full_control" style="width:24px;height:24px;flex:none;margin-top:2px"><span><b>Full phone control</b><br><span class="muted" style="font-size:13px">Lets her read your phone's screen, tap, type, swipe and press keys in any app. She acts as you on the phone, so only switch this on if you are comfortable with that.</span></span></label>
+    <label class="field"><span>Your own cell number, so "send me a test WhatsApp" works</span><input id="s-phone_own_number" placeholder="082 123 4567" style="max-width:240px"></label>
     <label class="field"><span>Country code for local numbers (27 = South Africa)</span><input id="s-phone_country_code" style="max-width:120px"></label>
     <div><button class="btn pri" id="phsave">SAVE PHONE SETTINGS</button> <span class="msg" id="phsmsg"></span></div>
   </div>
@@ -644,7 +645,7 @@ async function loadPhone(){
   if($('phwifi'))$('phwifi').onclick=async()=>{m.className='msg';m.textContent='Switching. This can take up to half a minute...';try{const r=await (await api('/api/phone/wireless',{json:{address:$('phaddr').value}})).json();await tick();await loadPhone();$('phmsg').className='msg ok';$('phmsg').textContent='Wireless is on at '+r.address+(r.via==='wifi'?'. This is the home Wi-Fi address, so it only works while the phone is at home. For anywhere-access, switch Tailscale on on the phone and do this again.':'. You can unplug the cable.');}catch(e){say(e.message);}};
 }
 async function loadSettings(){
-  if(!S)return;const s=S.user.settings;$('s-phone_full_control').checked=!!s.phone_full_control;$('s-phone_country_code').value=s.phone_country_code||'27';if($('setver'))$('setver').textContent='Trillion version '+S.version;loadPhone();SK.forEach(k=>$('s-'+k).value=s[k]??'');$('s-daily_review').checked=!!s.daily_review;
+  if(!S)return;const s=S.user.settings;$('s-phone_full_control').checked=!!s.phone_full_control;$('s-phone_country_code').value=s.phone_country_code||'27';$('s-phone_own_number').value=s.phone_own_number||'';if($('setver'))$('setver').textContent='Trillion version '+S.version;loadPhone();SK.forEach(k=>$('s-'+k).value=s[k]??'');$('s-daily_review').checked=!!s.daily_review;
   const ks=await (await api('/api/secrets')).json();
   $('keys').innerHTML=ks.map(k=>`<div class="panel"><b>${LABEL[k.name]}</b><div class="${k.set?(k.enabled?'ok':'muted'):'muted'}">${k.set?(k.enabled?'Saved and on '+esc(k.hint):'Saved, switched off '+esc(k.hint)):'Not added'}</div>
     <label class="field"><span>Key</span><input type="password" id="k-${k.name}" placeholder="${k.set?'Leave empty to keep the saved key':'Paste the key'}" autocomplete="off"></label>
@@ -656,7 +657,7 @@ async function loadSettings(){
     else{m.textContent='Testing...';const r=await (await api('/api/secrets/'+n+'/test',{method:'POST'})).json();m.textContent=r.ok?'Works.':'Did not work (code '+r.status+').';m.className='msg '+(r.ok?'ok':'bad');}
   }catch(e){m.textContent=e.message;m.className='msg bad';}});
 }
-$('phsave').onclick=async()=>{const m=$('phsmsg');try{await api('/api/settings',{method:'PUT',json:{phone_full_control:$('s-phone_full_control').checked,phone_country_code:$('s-phone_country_code').value.replace(/\D/g,'')||'27'}});await tick();m.className='msg ok';m.textContent=$('s-phone_full_control').checked?'Saved. Full phone control is ON.':'Saved. Full phone control is off.';}catch(e){m.className='msg bad';m.textContent=e.message;}};
+$('phsave').onclick=async()=>{const m=$('phsmsg');try{await api('/api/settings',{method:'PUT',json:{phone_own_number:$('s-phone_own_number').value.trim(),phone_full_control:$('s-phone_full_control').checked,phone_country_code:$('s-phone_country_code').value.replace(/\D/g,'')||'27'}});await tick();m.className='msg ok';m.textContent=$('s-phone_full_control').checked?'Saved. Full phone control is ON.':'Saved. Full phone control is off.';}catch(e){m.className='msg bad';m.textContent=e.message;}};
 $('ssave').onclick=async()=>{const j={};SK.forEach(k=>j[k]=$('s-'+k).value);j.daily_review=$('s-daily_review').checked;if($('s-phone_full_control'))j.phone_full_control=$('s-phone_full_control').checked;if($('s-phone_country_code'))j.phone_country_code=$('s-phone_country_code').value.replace(/\D/g,'')||'27';
   try{await api('/api/settings',{method:'PUT',json:j});$('smsg').textContent='Saved.';tick();}catch(e){$('smsg').textContent=e.message;}};
 // family
