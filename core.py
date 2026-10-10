@@ -23,6 +23,7 @@ DEFAULT_SETTINGS = {
     "voice": "browser",            # browser | elevenlabs
     "eleven_voice_id": "21m00Tcm4TlvDq8ikWAM",
     "roots": [],                   # folders this login may touch; ["*"] = whole PC
+    "personality": "professional", # professional | warm | witty
     "daily_review": True,
     "phone_country_code": "27",    # used to turn 082... into +2782... for WhatsApp
 }

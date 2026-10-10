@@ -215,6 +215,7 @@ footer.status{background:#000;border-top:1px solid var(--line);padding:10px 20px
   <div class="grid2">
     <div class="panel"><b>Branding</b>
       <label class="field"><span>Assistant name</span><input id="s-assistant_name"></label>
+      <label class="field"><span>Personality</span><select id="s-personality"><option value="professional">Professional: calm, precise, to the point</option><option value="warm">Warm: friendly and encouraging</option><option value="witty">Witty: jokes, sarcasm and swearing</option></select></label>
       <label class="field"><span>Business name</span><input id="s-brand"></label>
       <label class="field"><span>Website</span><input id="s-site"></label>
       <label class="field"><span>Accent colour</span><input id="s-accent" type="color" style="padding:2px;height:44px"></label>
@@ -410,7 +411,7 @@ $('skform').onsubmit=async e=>{e.preventDefault();const url=$('skurl').value.tri
   }catch(e){$('skmsg').className='msg bad';$('skmsg').textContent=e.message;}};
 $('cnsave').onclick=async()=>{try{await api('/api/connectors',{json:{name:$('cnname').value,description:$('cndesc').value,command:$('cncmd').value}});$('cnname').value=$('cndesc').value=$('cncmd').value='';$('cnmsg').textContent='';loadSkills();}catch(e){$('cnmsg').className='msg bad';$('cnmsg').textContent=e.message;}};
 // settings
-const SK=['assistant_name','brand','site','accent','brain','local_model','cloud_model','voice','eleven_voice_id'];
+const SK=['personality','assistant_name','brand','site','accent','brain','local_model','cloud_model','voice','eleven_voice_id'];
 const LABEL={gemini:'Google Gemini',anthropic:'Claude (API key)',elevenlabs:'ElevenLabs voice',pexels:'Pexels stock footage (free key from pexels.com/api)'};
 async function loadPhone(){
   const p=await (await api('/api/phone')).json();let h='';

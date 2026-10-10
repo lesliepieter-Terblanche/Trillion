@@ -136,6 +136,29 @@ def llm_chat(user, messages, tool_specs=None):
 
 core.LLM = llm_chat
 
+PERSONAS = {
+    "professional": ("Professional", "Calm, precise and efficient. Get to the point, no small talk, no jokes. "
+                     "Sound like a capable chief of staff."),
+    "warm": ("Warm", "Friendly, upbeat and encouraging. Use the user's first name now and then, celebrate small wins, "
+             "and keep things light without being silly. Never swear."),
+    "witty": ("Witty", "Sharp-tongued, funny and irreverent, like a mate who happens to be brilliant. Crack jokes, tease "
+              "the user a little, use dry sarcasm, and swear freely and casually (shit, damn, bloody, fuck and the like) "
+              "the way friends do. Never aim insults at who someone is: no slurs, nothing about race, religion, sex or "
+              "disability. The humour never gets in the way of doing the job properly, and you still report results and "
+              "errors accurately."),
+}
+PERSONA_RULE = ("This personality is only for how you talk to the user in chat. Anything you write for someone else, such as "
+                "a WhatsApp message, an email, a document, a note or a video script, stays clean and professional unless "
+                "the user explicitly asks for another tone.")
+PERSONA_RE = re.compile(r"\b(?:switch|change|go|turn)\b.{0,25}\b(professional|warm|friendly|witty|funny|sarcastic|serious)\b"
+                        r"|\b(?:be|use)\b.{0,12}\b(professional|warm|friendly|witty|funny|sarcastic|serious)\b.{0,12}\b(?:personality|mode|voice|style)\b", re.I)
+PERSONA_WORDS = {"professional": "professional", "serious": "professional", "warm": "warm", "friendly": "warm",
+                 "witty": "witty", "funny": "witty", "sarcastic": "witty"}
+PERSONA_HELLO = {"professional": "Understood. Professional mode from here on.",
+                 "warm": "Lovely, warm mode it is. Happy to be here with you!",
+                 "witty": "Right, gloves off. Witty mode it is, so try to keep up, and don't blame me when it gets bloody honest."}
+
+
 
 def system_prompt(user, text):
     s = core.settings(user)
@@ -156,6 +179,9 @@ How to work:
 - When the user tells you a lasting fact or preference, save it with save_note.
 - Always reply in English.
 - Replies are spoken aloud: keep them short and natural, no markdown, no lists.
+
+Your personality: {PERSONAS.get(s.get('personality'), PERSONAS['professional'])[1]}
+{PERSONA_RULE}
 
 Relevant things you remember:
 {memory}
@@ -214,6 +240,17 @@ def run_agent(user, text):
         BUSY[uid] = False
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="failed" if "error" in res else "completed", detail=reply[:200])
+        return {"reply": reply, "task_id": tid, "provider": "built-in"}
+    pm = PERSONA_RE.search(text) if len(text) < 90 else None
+    if pm:  # "switch to witty mode": change it straight away
+        choice = PERSONA_WORDS[(pm.group(1) or pm.group(2)).lower()]
+        st = core.settings(user)
+        st["personality"] = choice
+        core.save_settings(uid, st)
+        reply = PERSONA_HELLO[choice]
+        BUSY[uid] = False
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="completed", detail=reply[:200])
         return {"reply": reply, "task_id": tid, "provider": "built-in"}
     if VIDEO_RE.search(text):  # a long job with fixed steps: run it directly
         try:
@@ -455,7 +492,7 @@ def messages(user=Depends(auth)):
 
 
 # ---------- settings and keys ----------
-EDITABLE = ["phone_country_code", "assistant_name", "brand", "accent", "site", "brain", "local_model", "cloud_model", "voice",
+EDITABLE = ["personality", "phone_country_code", "assistant_name", "brand", "accent", "site", "brain", "local_model", "cloud_model", "voice",
             "eleven_voice_id", "daily_review"]
 
 
@@ -467,6 +504,8 @@ def put_settings(p: dict = Body(...), user=Depends(auth)):
             s[k] = p[k]
     if s["brain"] not in ("local", "gemini", "anthropic"):
         s["brain"] = "local"
+    if s.get("personality") not in PERSONAS:
+        s["personality"] = "professional"
     core.save_settings(user["id"], s)
     if s.get("site"):
         threading.Thread(target=lambda: SITES.update({s["site"]: tools.site_check(s["site"])}), daemon=True).start()
