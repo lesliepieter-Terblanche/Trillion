@@ -82,10 +82,13 @@ def install_packs():
             for f in folder.iterdir():                     # the templates and helper files travel with the skill
                 if f.is_file() and f.name != "SKILL.md":
                     shutil.copy2(f, dest / f.name)
-            extras = sorted(f.name for f in folder.iterdir() if f.is_file() and f.name != "SKILL.md")
+                elif f.is_dir():
+                    shutil.copytree(f, dest / f.name, dirs_exist_ok=True)
+            extras = sorted(str(f.relative_to(folder)).replace("\\", "/") for f in folder.rglob("*")
+                            if f.is_file() and f.name not in ("SKILL.md", "LICENSE.txt", "LICENSE"))
             if extras:
                 body += (f"\n\n---\nOn this PC, the files that belong to this skill ({', '.join(extras)}) are in the folder: {dest}\n"
-                         "Read templates from there with read_file. Its Python tools can only be run with run_command, which needs the owner's approval.")
+                         "Read templates from there with read_file. Its scripts and tools can only be run with run_command, which needs the owner's approval.")
             save_skill(name, desc, body, link, owner_id=owner["id"])
             names.append(name)
         marker.write_text("installed", encoding="utf-8")
