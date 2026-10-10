@@ -53,6 +53,15 @@ SPECS = [
        "number. Always needs the user's approval on the dashboard before it is sent.", {"contact": S, "message": S}),
     fn("phone_locate", "Find where the user's own phone is: its last known position with a map link.", {}),
     fn("phone_ring", "Make the user's own phone play a loud sound so it can be found nearby.", {}),
+    fn("phone_read_screen", "Read what is on the user's phone screen right now: the visible texts, buttons and fields. "
+       "Do this before tapping so you know what is there.", {}),
+    fn("phone_tap", "Tap something on the user's phone screen. Give the visible text of the button (target), or x and y.",
+       {"target": S, "x": {"type": "integer"}, "y": {"type": "integer"}}, []),
+    fn("phone_type", "Type text into the field that is selected on the user's phone. Tap the field first.", {"text": S}),
+    fn("phone_press", "Press a phone key: back, home, recents, enter, delete, volume up, volume down, play, pause, next, lock, wake.",
+       {"key": S}),
+    fn("phone_swipe", "Swipe the phone screen up, down, left or right (swipe up to scroll down a page).", {"direction": S}),
+    fn("phone_shell", "Run an Android shell command on the user's phone. Owner only, and always needs approval.", {"command": S}),
     fn("phone_screenshot", "Take a screenshot of the user's phone screen and save it to their folder.", {}),
     fn("create_video", "Create a finished cinematic social media video (MP4) from a plain description. No media is "
        "needed: she writes the script, finds stock footage, adds voice-over, music, titles and captions. "
@@ -63,7 +72,8 @@ SPECS = [
     fn("run_command", "Run a Windows command. Owner only, and always needs approval on the dashboard.",
        {"command": S}),
 ]
-NEEDS_APPROVAL = {"delete_path", "run_command", "phone_send_whatsapp"}
+NEEDS_APPROVAL = {"delete_path", "run_command", "phone_send_whatsapp", "phone_shell"}
+FULL_PHONE = {"phone_read_screen", "phone_tap", "phone_type", "phone_press", "phone_swipe", "phone_shell"}
 
 
 def resolve(user, path):
@@ -106,6 +116,9 @@ def describe(name, a):
         "phone_find_contact": f"Looking up {g('name')} in contacts",
         "phone_send_whatsapp": f"Send WhatsApp to {a.get('_name') or g('contact')}"
                                + (f" (+{a['contact']})" if a.get('_name') else "") + f": \"{str(a.get('message', ''))[:120]}\"",
+        "phone_read_screen": "Reading the phone screen", "phone_tap": f"Tapping {g('target') or 'the screen'}",
+        "phone_type": "Typing on the phone", "phone_press": f"Pressing {g('key')}", "phone_swipe": f"Swiping {g('direction')}",
+        "phone_shell": f"Run on the phone: {g('command')}",
         "phone_locate": "Locating the phone", "phone_ring": "Ringing the phone",
         "phone_screenshot": "Taking a phone screenshot",
         "create_video": "Creating a video",
@@ -121,6 +134,10 @@ def execute(user, name, args, task_id=None, approved=False):
             return {"error": f"Unknown tool {name}"}
         if name == "run_command" and not user["is_admin"]:
             return {"error": "Only the owner login can run commands."}
+        if name == "phone_shell" and not user["is_admin"]:
+            return {"error": "Only the owner login can run commands on a phone."}
+        if name in FULL_PHONE and not core.settings(user).get("phone_full_control"):
+            return {"error": "Full phone control is switched off. Switch it on under Settings, My phone."}
         if name == "update_self" and not user["is_admin"]:
             return {"error": "Only the owner login can update Trillion."}
         if name in NEEDS_APPROVAL and not approved:
@@ -504,3 +521,33 @@ def t_create_video(user, prompt, seconds=20, format="vertical", voiceover=True, 
     fmt = "landscape" if fmt in ("landscape", "horizontal", "wide", "youtube") else ("square" if fmt == "square" else "vertical")
     say = (lambda text: core.set_task(_task, detail=text)) if _task else None
     return video.create(core.LLM, user, prompt, seconds, fmt, bool(voiceover), progress=say)
+
+
+def t_phone_read_screen(user):
+    import phone
+    return phone.screen(user)
+
+
+def t_phone_tap(user, target="", x=None, y=None):
+    import phone
+    return phone.tap(user, target, x, y)
+
+
+def t_phone_type(user, text):
+    import phone
+    return phone.type_text(user, text)
+
+
+def t_phone_press(user, key):
+    import phone
+    return phone.press(user, key)
+
+
+def t_phone_swipe(user, direction):
+    import phone
+    return phone.swipe(user, direction)
+
+
+def t_phone_shell(user, command):
+    import phone
+    return phone.shell(user, command)

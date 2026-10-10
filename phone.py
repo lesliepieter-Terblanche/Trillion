@@ -244,14 +244,122 @@ def locate(user):
 
 
 def ring(user):
-    tones = sh(user, "ls /system/media/audio/ringtones 2>/dev/null | head -3; ls /product/media/audio/ringtones 2>/dev/null | head -3").split()
-    sh(user, "cmd media_session volume --stream 3 --set 15; input keyevent KEYCODE_WAKEUP")
-    if not tones:
-        return {"status": "volume_raised", "note": "I turned the volume up but found no ringtone to play."}
-    folder = "/system/media/audio/ringtones" if "No such" not in sh(user, f"ls /system/media/audio/ringtones/{tones[0]}") else "/product/media/audio/ringtones"
-    sh(user, f"am start -a android.intent.action.VIEW -d file://{folder}/{tones[0]} -t audio/ogg")
-    return {"status": "ringing_attempted", "note": "I turned the volume up and started a ringtone. On some phones a "
-            "music app has to be picked on screen first. If the phone is truly lost, use Google's Find My Device."}
+    """Ring through the phone's own clock: alarm volume to full, then a one-second timer.
+    The timer alarm sounds until someone dismisses it, and does not depend on a music app."""
+    sh(user, "cmd media_session volume --stream 4 --set 15; cmd media_session volume --stream 3 --set 15; input keyevent KEYCODE_WAKEUP")
+    out = sh(user, "am start -a android.intent.action.SET_TIMER --ei android.intent.extra.alarm.LENGTH 1 "
+                   "--ez android.intent.extra.alarm.SKIP_UI true --es android.intent.extra.alarm.MESSAGE 'Trillion: find my phone'")
+    if "Error" in out or "unable to resolve" in out.lower():
+        sh(user, "cmd notification post -S bigtext -t 'Trillion' find_phone 'Find my phone: here I am'")
+        return {"status": "notification_only", "note": "The phone's clock would not take a timer, so I sent a notification "
+                "sound instead. It is quieter than an alarm."}
+    return {"status": "ringing", "note": "Your phone's timer alarm is ringing at full volume. Dismiss it on the phone to stop it."}
+
+
+# ---------- full control: read the screen, tap, type, press, swipe ----------
+KEYS = {"back": "KEYCODE_BACK", "home": "KEYCODE_HOME", "recents": "KEYCODE_APP_SWITCH", "recent apps": "KEYCODE_APP_SWITCH",
+        "enter": "KEYCODE_ENTER", "delete": "KEYCODE_DEL", "backspace": "KEYCODE_DEL", "tab": "KEYCODE_TAB",
+        "search": "KEYCODE_SEARCH", "menu": "KEYCODE_MENU", "volume up": "KEYCODE_VOLUME_UP", "volume down": "KEYCODE_VOLUME_DOWN",
+        "mute": "KEYCODE_VOLUME_MUTE", "power": "KEYCODE_POWER", "lock": "KEYCODE_SLEEP", "wake": "KEYCODE_WAKEUP",
+        "play": "KEYCODE_MEDIA_PLAY_PAUSE", "pause": "KEYCODE_MEDIA_PLAY_PAUSE", "next": "KEYCODE_MEDIA_NEXT",
+        "previous": "KEYCODE_MEDIA_PREVIOUS", "camera": "KEYCODE_CAMERA", "escape": "KEYCODE_ESCAPE"}
+
+
+def _nodes(user):
+    xml = sh(user, "uiautomator dump /sdcard/trillion_ui.xml >/dev/null 2>&1; cat /sdcard/trillion_ui.xml", timeout=30)
+    out = []
+    for m in re.finditer(r"<node\b([^>]*)/?>", xml):
+        a = dict(re.findall(r'([\w-]+)="([^"]*)"', m.group(1)))
+        label = (a.get("text") or a.get("content-desc") or "").strip()
+        b = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", a.get("bounds", ""))
+        if not b:
+            continue
+        x1, y1, x2, y2 = map(int, b.groups())
+        if x2 <= x1 or y2 <= y1:
+            continue
+        label = label.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&#10;", " ").replace("&quot;", '"')
+        out.append({"label": label, "x": (x1 + x2) // 2, "y": (y1 + y2) // 2, "tap": a.get("clickable") == "true",
+                    "field": "EditText" in a.get("class", ""), "id": a.get("resource-id", "").split("/")[-1]})
+    return out
+
+
+def screen(user):
+    """What is on the phone's screen right now, as a list of the things that can be read or tapped."""
+    _awake_and_unlocked(user)
+    focus = sh(user, "dumpsys window | grep -E 'mCurrentFocus' | tail -1")
+    app = re.search(r"\s([\w.]+)/", focus)
+    items, seen = [], set()
+    for n in _nodes(user):
+        if not n["label"] and not n["field"]:
+            continue
+        key = (n["label"], n["x"] // 20, n["y"] // 20)
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append({"text": n["label"][:80] or f"(empty field {n['id']})", "x": n["x"], "y": n["y"],
+                      **({"button": True} if n["tap"] else {}), **({"field": True} if n["field"] else {})})
+    return {"app": app.group(1) if app else "", "items": items[:70],
+            "note": "Use phone_tap with the text of an item (or its x and y) to press it."}
+
+
+def tap(user, target="", x=None, y=None):
+    _awake_and_unlocked(user)
+    if x is not None and y is not None and str(x).lstrip("-").isdigit() and str(y).lstrip("-").isdigit():
+        sh(user, f"input tap {int(x)} {int(y)}")
+        return {"tapped": [int(x), int(y)]}
+    want = str(target or "").strip().lower()
+    if not want:
+        raise PhoneError("Say what to tap: the text of a button, or an x and y position.")
+    nodes = [n for n in _nodes(user) if n["label"]]
+    exact = [n for n in nodes if n["label"].lower() == want]
+    part = [n for n in nodes if want in n["label"].lower()]
+    pool = exact or part
+    if not pool:
+        raise PhoneError(f"Nothing on the screen says '{target}'. Read the screen first to see what is there.")
+    pool.sort(key=lambda n: (not n["tap"], len(n["label"])))
+    n = pool[0]
+    sh(user, f"input tap {n['x']} {n['y']}")
+    return {"tapped": n["label"][:60], "at": [n["x"], n["y"]]}
+
+
+def type_text(user, text):
+    _awake_and_unlocked(user)
+    t = str(text)
+    if not t:
+        raise PhoneError("There is nothing to type.")
+    if any(ord(c) > 126 for c in t):
+        raise PhoneError("I can only type plain English letters, numbers and common symbols on the phone.")
+    quoted = t.replace("'", "'\\''").replace(" ", "%s")
+    sh(user, f"input text '{quoted}'")
+    return {"typed": t[:80]}
+
+
+def press(user, key):
+    k = str(key).strip().lower().replace("_", " ")
+    code = KEYS.get(k) or KEYS.get(k.replace(" button", "").replace(" key", ""))
+    if not code:
+        raise PhoneError(f"I do not know the key '{key}'. Try: " + ", ".join(sorted(KEYS)[:14]) + ".")
+    sh(user, f"input keyevent {code}")
+    return {"pressed": k}
+
+
+def swipe(user, direction):
+    _awake_and_unlocked(user)
+    m = re.search(r"(\d+)x(\d+)", sh(user, "wm size"))
+    w, h = (int(m.group(1)), int(m.group(2))) if m else (1080, 2340)
+    d = str(direction).strip().lower()
+    cx, cy = w // 2, h // 2
+    moves = {"up": (cx, int(h * .72), cx, int(h * .28)), "down": (cx, int(h * .28), cx, int(h * .72)),
+             "left": (int(w * .85), cy, int(w * .15), cy), "right": (int(w * .15), cy, int(w * .85), cy)}
+    if d not in moves:
+        raise PhoneError("Swipe up, down, left or right.")
+    x1, y1, x2, y2 = moves[d]
+    sh(user, f"input swipe {x1} {y1} {x2} {y2} 260")
+    return {"swiped": d}
+
+
+def shell(user, command):
+    return {"output": sh(user, str(command), timeout=45)[-4000:]}
 
 
 def screenshot(user):

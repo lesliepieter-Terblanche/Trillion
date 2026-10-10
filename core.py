@@ -25,6 +25,7 @@ DEFAULT_SETTINGS = {
     "roots": [],                   # folders this login may touch; ["*"] = whole PC
     "personality": "professional", # professional | warm | witty
     "daily_review": True,
+    "phone_full_control": False,   # read the screen, tap, type, swipe: off until the login switches it on
     "phone_country_code": "27",    # used to turn 082... into +2782... for WhatsApp
 }
 SECRET_NAMES = ["gemini", "anthropic", "elevenlabs", "pixabay", "pexels"]

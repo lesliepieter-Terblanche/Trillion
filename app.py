@@ -178,6 +178,7 @@ How to work:
 - Deleting files and running commands need approval: the tool will report waiting_for_approval. Then tell the user it is waiting for them on the dashboard, and do not retry it.
 - If a tool returns an error, say plainly what went wrong.
 - You can update your own software from GitHub with update_self (owner only).
+- On the user's phone, never confirm a payment or purchase, delete anything, or send a message by tapping unless the user asked for exactly that in this request.
 - When the user tells you a lasting fact or preference, save it with save_note.
 - Always reply in English.
 - Replies are spoken aloud: keep them short and natural, no markdown, no lists.
@@ -213,6 +214,12 @@ PHONE_RULES = [
     # "open my WhatsApp" with no device named: these apps live on the phone
     ("open", re.compile(r"\b(?:open|launch|start)\s+(?:up\s+)?(?:my\s+|the\s+)?(whats ?app(?: business)?|instagram|tiktok|telegram|"
                         r"facebook|messages|gallery|play store|tailscale)(?:\s+app)?\s*(?:for me|please|now)?[.!?]?\s*$", re.I)),
+    ("screen", re.compile(r"\bwhat(?:'s| is)\s+(?:showing\s+)?on\s+" + _PH + r"(?:\s+screen)?|\bread\s+" + _PH + r"(?:'s)?\s+screen", re.I)),
+    ("press", re.compile(r"\b(?:press|go|hit)\s+(?:the\s+)?(back|home|recents|enter|lock|wake|play|pause|next|previous|"
+                         r"volume up|volume down|mute)(?:\s+(?:button|key))?\s+on\s+" + _PH, re.I)),
+    ("swipe", re.compile(r"\b(?:swipe|scroll)\s+(up|down|left|right)\s+on\s+" + _PH, re.I)),
+    ("tap", re.compile(r"\b(?:tap|click|press)\s+(?:on\s+)?(?:the\s+)?[\"\u201c']?(.+?)[\"\u201d']?\s+(?:button\s+)?on\s+" + _PH, re.I)),
+    ("type", re.compile(r"\btype\s+[\"\u201c']?(.+?)[\"\u201d']?\s+on\s+" + _PH, re.I)),
     ("screenshot", re.compile(r"\bscreenshot\b.{0,30}" + _PH + "|" + _PH + r".{0,30}\bscreenshot\b", re.I)),
     ("ring", re.compile(r"\b(?:ring|buzz|make .{0,10}noise)\b.{0,20}" + _PH, re.I)),
     ("locate", re.compile(r"\b(?:where(?:'s| is)|find|locate|track)\b.{0,15}" + _PH, re.I)),
@@ -252,6 +259,30 @@ def phone_shortcut(user, text, tid):
             shown = {"whatsapp": "WhatsApp", "whatsapp business": "WhatsApp Business", "tiktok": "TikTok"}.get(
                 app_name.lower(), app_name.capitalize())
             return (f"{shown} is open on your phone." if "error" not in r else r["error"]), False, r
+        if kind == "screen":
+            r = tools.execute(user, "phone_read_screen", {}, task_id=tid)
+            if "error" in r:
+                return r["error"], False, r
+            seen = [i["text"] for i in r["items"] if not i["text"].startswith("(")][:14]
+            names = {v: k for k, v in phone.APPS.items()}
+            shown = names.get(r["app"], r["app"] or "an app")
+            return (f"Your phone is showing {shown}. On screen: " + "; ".join(seen) + "."), False, r
+        if kind == "press":
+            scroll = {"back": "back", "home": "home"}
+            r = tools.execute(user, "phone_press", {"key": m.group(1)}, task_id=tid)
+            return (f"Pressed {m.group(1).lower()} on your phone." if "error" not in r else r["error"]), False, r
+        if kind == "swipe":
+            d = m.group(1).lower()
+            if text.lower().lstrip().startswith("scroll"):      # scrolling down means swiping up
+                d = {"down": "up", "up": "down"}.get(d, d)
+            r = tools.execute(user, "phone_swipe", {"direction": d}, task_id=tid)
+            return ("Done." if "error" not in r else r["error"]), False, r
+        if kind == "tap":
+            r = tools.execute(user, "phone_tap", {"target": m.group(1).strip()}, task_id=tid)
+            return (f"Tapped {r['tapped']}." if "error" not in r else r["error"]), False, r
+        if kind == "type":
+            r = tools.execute(user, "phone_type", {"text": m.group(1)}, task_id=tid)
+            return ("Typed it." if "error" not in r else r["error"]), False, r
         if kind == "screenshot":
             r = tools.execute(user, "phone_screenshot", {}, task_id=tid)
             return (f"Screenshot saved to {r['saved']}." if "error" not in r else r["error"]), False, r
@@ -287,6 +318,8 @@ def tools_for(user, text):
     skip = {"update_self", "create_video"}                      # both handled directly
     if not (PHONE_WORDS.search(text) and core.settings(user).get("phone_serial")):
         skip |= {n for n in (s_["function"]["name"] for s_ in tools.SPECS) if n.startswith("phone_")}
+    if not core.settings(user).get("phone_full_control"):
+        skip |= tools.FULL_PHONE
     if not extend.enabled_skills(uid):
         skip.add("use_skill")
     if not extend.enabled_connectors(uid):
@@ -663,7 +696,7 @@ def messages(user=Depends(auth)):
 
 
 # ---------- settings and keys ----------
-EDITABLE = ["personality", "phone_country_code", "assistant_name", "brand", "accent", "site", "brain", "local_model", "cloud_model", "voice",
+EDITABLE = ["phone_full_control", "personality", "phone_country_code", "assistant_name", "brand", "accent", "site", "brain", "local_model", "cloud_model", "voice",
             "eleven_voice_id", "daily_review"]
 
 

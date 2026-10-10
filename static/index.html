@@ -628,6 +628,7 @@ async function loadPhone(){
     h+=`<div style="font-size:14px;margin-top:6px">Phones this PC can see:</div>`+(p.devices.map(d=>`<div class="row"><div>${esc(d.model||'Android phone')}<small>${esc(d.serial)} · ${d.state==='device'?'ready':(d.state==='unauthorized'?'waiting for Allow on the phone':'offline')}${d.linked_to?' · linked to '+esc(d.linked_to):''}</small></div>${d.linked_to?'':`<button class="btn pri" data-ph="${esc(d.serial)}" style="min-height:40px">LINK TO ME</button>`}</div>`).join('')||'<div class="muted">None right now.</div>');
     h+=`<div><button class="btn" id="phref" style="min-height:40px;font-size:12px">LOOK AGAIN</button></div>`;
   }
+  h+=`<label style="display:flex;gap:12px;align-items:flex-start;min-height:44px;margin-top:6px"><input type="checkbox" id="s-phone_full_control" ${S.user.settings.phone_full_control?'checked':''} style="width:22px;height:22px;flex:none;margin-top:2px"><span><b>Full phone control</b><br><span class="muted" style="font-size:13px">Lets her read your phone's screen, tap, type, swipe and press keys in any app. She acts as you on the phone, so only switch this on if you are comfortable with that. Click SAVE SETTINGS after changing it.</span></span></label>`;
   h+=`<label class="field"><span>Country code for local numbers (27 = South Africa)</span><input id="s-phone_country_code" value="${esc(S.user.settings.phone_country_code||'27')}" style="max-width:120px"></label><div class="msg" id="phmsg" style="overflow-wrap:anywhere"></div>`;
   $('phonebox').innerHTML=h;const m=$('phmsg');const say=(t,ok)=>{m.className='msg '+(ok?'ok':'bad');m.textContent=t;};
   document.querySelectorAll('[data-ph]').forEach(b=>b.onclick=async()=>{try{await api('/api/phone/link',{json:{serial:b.dataset.ph}});await tick();loadPhone();}catch(e){say(e.message);}});
@@ -650,7 +651,7 @@ async function loadSettings(){
     else{m.textContent='Testing...';const r=await (await api('/api/secrets/'+n+'/test',{method:'POST'})).json();m.textContent=r.ok?'Works.':'Did not work (code '+r.status+').';m.className='msg '+(r.ok?'ok':'bad');}
   }catch(e){m.textContent=e.message;m.className='msg bad';}});
 }
-$('ssave').onclick=async()=>{const j={};SK.forEach(k=>j[k]=$('s-'+k).value);j.daily_review=$('s-daily_review').checked;if($('s-phone_country_code'))j.phone_country_code=$('s-phone_country_code').value.replace(/\D/g,'')||'27';
+$('ssave').onclick=async()=>{const j={};SK.forEach(k=>j[k]=$('s-'+k).value);j.daily_review=$('s-daily_review').checked;if($('s-phone_full_control'))j.phone_full_control=$('s-phone_full_control').checked;if($('s-phone_country_code'))j.phone_country_code=$('s-phone_country_code').value.replace(/\D/g,'')||'27';
   try{await api('/api/settings',{method:'PUT',json:j});$('smsg').textContent='Saved.';tick();}catch(e){$('smsg').textContent=e.message;}};
 // family
 async function loadFamily(){const f=await (await api('/api/admin/family')).json();
