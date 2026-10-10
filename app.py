@@ -225,6 +225,10 @@ PHONE_RULES = [
     ("whatsapp", re.compile(r"\b(?:send\s+)?(?:a\s+)?what'?s ?(?:app|up)\s+(?:message\s+)?(?:to\s+)?(.+?)\s*(?:,?\s*saying|that says|to say|:|\bthat\b)\s+(.+)$", re.I | re.S)),
     ("whatsapp", re.compile(r"\bsend\s+(.+?)\s+a\s+what'?s ?(?:app|up)(?:\s+message)?\s*(?:saying|that says|to say|:|\bthat\b)\s+(.+)$", re.I | re.S)),
     ("whatsapp", re.compile(r"\b(?:tell|message|text)\s+(.+?)\s+on\s+what'?s ?(?:app|up)\s*(?:saying|that|:)?\s+(.+)$", re.I | re.S)),
+    # a WhatsApp with no wording given: "send a test whatsapp to Sarie", "send Sarie a test whatsapp", "whatsapp Sarie"
+    ("whatsapp_plain", re.compile(r"\b(?:send\s+)?(?:an?\s+)?(?:quick\s+|test\s+)*what'?s ?(?:app|up)(?:\s+message)?\s+to\s+(?!me\b|myself\b)([^,.!?:]{2,60}?)[.!?]?\s*$", re.I)),
+    ("whatsapp_plain", re.compile(r"\bsend\s+(?!me\b|myself\b)([^,.!?:]{2,60}?)\s+an?\s+(?:quick\s+|test\s+)*what'?s ?(?:app|up)(?:\s+message)?[.!?]?\s*$", re.I)),
+    ("whatsapp_plain", re.compile(r"\bsend\s+an?\s+(?:quick\s+)?test\s+(?:message\s+)?to\s+(?!me\b|myself\b)([^,.!?:]{2,60}?)\s+on\s+what'?s ?(?:app|up)[.!?]?\s*$", re.I)),
     ("open", re.compile(r"\b(?:open|launch|start)\s+(?:up\s+)?(?:my\s+|the\s+)?(.+?)\s+(?:app\s+)?on\s+" + _PH, re.I)),
     # "open my WhatsApp" with no device named: these apps live on the phone
     ("open", re.compile(r"\b(?:open|launch|start)\s+(?:up\s+)?(?:my\s+|the\s+)?(what'?s ?(?:app|up)(?: business)?|instagram|tiktok|telegram|"
@@ -278,6 +282,18 @@ def phone_shortcut(user, text, tid):
             if r.get("status") == "waiting_for_approval":
                 return f'Ready. A WhatsApp to your own number ({own}): "{msg}". Approve it on the dashboard and I will send it.', True, r
             return ("I could not prepare that WhatsApp: " + r.get("error", "unknown problem")), False, r
+        if kind == "whatsapp_plain":
+            who = re.sub(r"^(?:my |to )", "", m.group(1).strip(), flags=re.I).strip()
+            if not re.search(r"\btest\b", text, re.I):
+                return f"What should the WhatsApp to {who} say? Tell me like this: send a WhatsApp to {who} saying ...", False, {"asked": True}
+            msg = f"Test message from {core.settings(user).get('assistant_name') or 'Trillion'}."
+            r = tools.execute(user, "phone_send_whatsapp", {"contact": who, "message": msg}, task_id=tid, direct=True)
+            if r.get("status") in ("send_pressed", "typed_not_sent"):
+                return sent_sentence(r, msg), False, r
+            if r.get("status") == "waiting_for_approval":
+                a = core.q("SELECT summary FROM approvals WHERE user_id=? ORDER BY id DESC LIMIT 1", (user["id"],), one=True)
+                return "Ready. " + (a["summary"] if a else "The message") + ". Press Approve in the red box and I will send it.", True, r
+            return ("I could not send that WhatsApp: " + r.get("error", "unknown problem")), False, r
         if kind == "whatsapp":
             who = m.group(1).strip(" ,.:")
             who = re.sub(r"^(?:and\s+)?(?:then\s+)?(?:send|tell|message|text)\s+", "", who, flags=re.I)
@@ -541,6 +557,12 @@ def run_agent(user, text):
         core.log(uid, reply[:300], "waiting")
     finally:
         BUSY[uid] = False
+    if not waiting and re.search(r"\bapprov", reply, re.I) and not re.search(r"\bapprov", text, re.I):
+        # the model talked about an approval that does not exist: say what really happened instead
+        reply = ("I did not do that: nothing was prepared or sent. For a WhatsApp, say it like this: "
+                 "send a WhatsApp to Sarie saying I am running late." if PHONE_WORDS.search(text) else
+                 "I did not do that: nothing is waiting for approval. Tell me again in other words and I will try properly.")
+        status = "failed"
     core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
     core.set_task(tid, status="waiting" if waiting and status == "completed" else status, detail=reply[:200])
     core.log(uid, f"Answered by {LAST_PROVIDER.get(uid, 'local')}", "info")

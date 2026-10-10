@@ -224,6 +224,19 @@ def resolve_contact(user, contact):
     if exact:
         found = exact
     if not found:
+        # spoken and typed names are often spelled a little differently from the contact (Llewellen / Llewellyn)
+        import difflib
+        everyone = contacts(user, "")
+        want = contact.lower().strip()
+        scored = sorted(((difflib.SequenceMatcher(None, want, k.lower()).ratio(), k) for k in everyone), reverse=True)
+        close = [k for r, k in scored if r >= 0.8]
+        if not close and " " not in want:      # one name given: compare with each word of the contact names
+            close = [k for k in everyone if any(difflib.SequenceMatcher(None, want, w).ratio() >= 0.8 for w in k.lower().split())]
+        if close and (len(close) == 1 or scored[0][0] - scored[1][0] >= 0.1 and scored[0][1] == close[0]):
+            found = {close[0]: everyone[close[0]]}
+        elif len(close) > 1:
+            raise PhoneError("I am not sure which contact you mean: " + "; ".join(close[:8]) + ". Say exactly which one.")
+    if not found:
         raise PhoneError(f"No contact called '{contact}' on the phone.")
     if len(found) > 1:
         raise PhoneError("More than one contact matches: " + "; ".join(list(found)[:8]) + ". Say exactly which one.")
