@@ -495,7 +495,11 @@ def run_agent(user, text):
         BUSY[uid] = False
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="waiting" if waiting_ else ("failed" if "error" in res else "completed"), detail=reply[:200])
-        return {"reply": reply, "task_id": tid, "provider": "built-in"}
+        out = {"reply": reply, "task_id": tid, "provider": "built-in"}
+        if isinstance(res, dict) and res.get("map") and res.get("latitude") is not None:   # find my phone: the page shows the map
+            out["map"] = {"lat": res["latitude"], "lon": res["longitude"], "url": res["map"], "accuracy_m": res.get("accuracy_m"),
+                          "title": (core.settings(user).get("phone_model") or "Your phone") + " was last here"}
+        return out
     quick = None
     if len(text) < 70 and SITE_RE.search(text):
         site = core.settings(user).get("site")
