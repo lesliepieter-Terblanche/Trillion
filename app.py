@@ -216,6 +216,9 @@ UPDATE_RE = re.compile(r"\b(update|upgrade)\s+(yourself|your ?self|herself|trill
                        r"\bcheck for (an? )?updates?\b", re.I)
 
 
+THEMES = {"night": "#ffb454", "day": "#b45309", "ocean": "#38bdf8", "forest": "#86efac", "royal": "#c084fc"}
+THEME_RE = re.compile(r"\b(?:switch|change|go|turn|set|use|put)\b.{0,30}\b(night|dark|day|light|ocean|forest|royal)\b.{0,12}\b(?:mode|theme|colou?rs?)\b|"
+                      r"^\s*(night|dark|day|light|ocean|forest|royal)\s+(?:mode|theme)[.!]?\s*$", re.I)
 VERSION_RE = re.compile(r"\b(?:what|which)\s+version\b|\bversion\s+(?:are|is|do)\b|\byour\s+version\b", re.I)
 _PH = r"(?:my |the )?(?:cell ?phone|mobile(?: phone)?|phone|cell|galaxy|samsung)"
 PHONE_RULES = [
@@ -457,6 +460,17 @@ def run_agent(user, text):
     tid = core.add_task(uid, text)
     core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "user", text, time.time()))
     core.log(uid, f'Heard: "{text[:140]}"', "voice")
+    tm = THEME_RE.search(text) if len(text) < 80 else None
+    if tm:
+        name = {"dark": "night", "light": "day"}.get((tm.group(1) or tm.group(2)).lower(), (tm.group(1) or tm.group(2)).lower())
+        st = core.settings(user)
+        st["theme"], st["accent"] = name, THEMES[name]
+        core.save_settings(uid, st)
+        reply = f"{name.capitalize()} mode is on."
+        BUSY[uid] = False
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="completed", detail=reply)
+        return {"reply": reply, "task_id": tid, "provider": "built-in", "show": ""}
     if VERSION_RE.search(text) and not UPDATE_RE.search(text):
         st = core.settings(user)
         reply = (f"I am running version {VERSION}. WhatsApps to saved contacts: "
@@ -852,7 +866,7 @@ def messages(user=Depends(auth)):
 
 
 # ---------- settings and keys ----------
-EDITABLE = ["quick_actions", "whatsapp_auto_contacts", "phone_own_number", "phone_full_control", "personality", "phone_country_code", "assistant_name", "brand", "accent", "site", "brain", "local_model", "cloud_model", "voice",
+EDITABLE = ["theme", "quick_actions", "whatsapp_auto_contacts", "phone_own_number", "phone_full_control", "personality", "phone_country_code", "assistant_name", "brand", "accent", "site", "brain", "local_model", "cloud_model", "voice",
             "eleven_voice_id", "daily_review"]
 
 
@@ -864,6 +878,8 @@ def put_settings(p: dict = Body(...), user=Depends(auth)):
             s[k] = p[k]
     if s["brain"] not in ("local", "gemini", "anthropic"):
         s["brain"] = "local"
+    if s.get("theme") not in THEMES:
+        s["theme"] = "night"
     if s.get("personality") not in PERSONAS:
         s["personality"] = "professional"
     core.save_settings(user["id"], s)
@@ -1071,6 +1087,37 @@ def phone_contacts(fresh: int = 0, user=Depends(auth)):
     if v["ok"]:
         CONTACT_CACHE[user["id"]] = {"t": time.time(), "v": v}
     return v
+
+
+@app.post("/api/phone/touch")
+def phone_touch(p: dict = Body(...), user=Depends(auth)):
+    """Using the phone through its picture on the dashboard: a tap, a drag, a key or some typing, exactly where the user did it."""
+    if not core.settings(user).get("phone_full_control"):
+        raise HTTPException(403, "Tick Full phone control on the Phone page to use the phone from here.")
+    n = lambda k: max(0, min(10000, int(float(p.get(k, 0)))))
+    kind = p.get("kind")
+    try:
+        if kind == "tap":
+            phone.sh(user, f"input tap {n('x')} {n('y')}")
+        elif kind == "hold":
+            phone.sh(user, f"input swipe {n('x')} {n('y')} {n('x')} {n('y')} 700")
+        elif kind == "swipe":
+            ms = max(80, min(1500, int(float(p.get("ms", 250)))))
+            phone.sh(user, f"input swipe {n('x')} {n('y')} {n('x2')} {n('y2')} {ms}")
+        elif kind == "key":
+            phone.press(user, str(p.get("key", "")))
+        elif kind == "text":
+            t = str(p.get("text", ""))[:500]
+            if not t:
+                raise HTTPException(400, "Nothing to type")
+            if any(ord(c) > 126 or ord(c) < 32 for c in t):
+                raise HTTPException(400, "I can only type plain letters, numbers and common symbols.")
+            phone.sh(user, "input text '" + t.replace("'", "'\\''").replace(" ", "%s") + "'")
+        else:
+            raise HTTPException(400, "Unknown action")
+    except phone.PhoneError as e:
+        raise HTTPException(409, str(e))
+    return {"ok": True}
 
 
 @app.get("/api/phone/unlock")

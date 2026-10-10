@@ -28,6 +28,7 @@ DEFAULT_SETTINGS = {
     "phone_full_control": False,   # read the screen, tap, type, swipe: off until the login switches it on
     "quick_actions": ["whatsapp", "ring", "find", "briefing", "video", "openwa"],   # the buttons on this login's home screen
     "phone_auto_unlock": False,        # unlock the phone by herself with the saved code when a command needs it
+    "theme": "night",                  # colour mode: night, day, ocean, forest or royal
     "whatsapp_auto_contacts": False,   # send WhatsApps to saved contacts straight away, without the approval step
     "phone_country_code": "27",    # used to turn 082... into +2782... for WhatsApp
 }
