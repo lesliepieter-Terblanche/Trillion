@@ -191,6 +191,7 @@ footer.status{background:#000;border-top:1px solid var(--line);padding:10px 20px
       <div class="sub" id="sub">Type below, or tick VOICE and just talk.</div>
       <div class="btns"><button class="btn" id="stop" hidden>STOP</button><button class="btn" id="clear" style="min-height:36px;font-size:12px">CLEAR CONVERSATION</button></div>
       <div class="chat" id="chat" aria-live="polite"></div>
+      <div id="chatwait" style="display:flex;flex-direction:column;gap:10px"></div>
     </div>
     <div class="rail right">
       <h2 style="color:var(--red)">Waiting on you · <span id="wn">0</span></h2><div id="waiting" style="display:flex;flex-direction:column;gap:12px"></div>
@@ -398,6 +399,7 @@ function render(){
       :`<div class="bad" style="font-size:14px">Tailscale is not connected${ts.state?' ('+esc(ts.state)+')':''}. Remote access will not work until it is.</div>`)
       +(ts.devices?`<div class="muted" style="font-size:13px;margin:8px 0 2px">Devices on your network</div>`+(ts.devices.map(d=>`<div class="row"><div>${esc(d.name)}<small>${esc(d.os)} · ${esc(d.ip)}</small></div><span class="tag ${d.online?'ok':'muted'}">${d.online?'ONLINE':'OFFLINE'}</span></div>`).join('')||'<div class="muted" style="font-size:13px">No other devices.</div>'):'');}
   $('wn').textContent=S.approvals.length;
+  $('chatwait').innerHTML=S.approvals.map(a=>`<div class="wait"><div style="font-size:12px;letter-spacing:.14em;color:var(--red)">NEEDS YOUR APPROVAL</div><b>${esc(a.summary)}</b><div class="two"><button class="btn red" data-a="${a.id}" data-d="approve" style="min-height:52px">Approve</button><button class="btn" data-a="${a.id}" data-d="decline" style="min-height:52px">Decline</button></div></div>`).join('');
   $('waiting').innerHTML=S.approvals.map(a=>`<div class="wait"><b>${esc(a.summary)}</b><div class="two"><button class="btn red" data-a="${a.id}" data-d="approve">Approve</button><button class="btn" data-a="${a.id}" data-d="decline">Decline</button></div></div>`).join('')||'<div class="muted" style="font-size:14px">Nothing needs you right now.</div>';
   document.querySelectorAll('[data-a]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await api('/api/approvals/'+b.dataset.a,{json:{decision:b.dataset.d}});}catch(e){alertMsg(e.message)}tick();});
   $('prog').innerHTML=prog.map(t=>`<div class="next">${esc(t.title)}</div>`).join('')||'<div class="muted" style="font-size:14px">Nothing running.</div>';
@@ -418,7 +420,7 @@ async function send(text,speak){
   if(!text||sending)return;sending=true;$('say').value='';
   $('chat').insertAdjacentHTML('beforeend',`<div class="user">${esc(text)}</div>`);$('chat').scrollTop=1e9;
   $('kicker').textContent='NOW WORKING';$('big').textContent='Thinking';$('sub').textContent=text;
-  try{const r=await (await api('/api/chat',{json:{message:text}})).json();await loadChat();if(r.brief)showBrief(r.brief,true);if(r.show){const b=document.querySelector('#nav button[data-v="'+r.show+'"]');if(b)b.click();}if(speak||voiceOn){talking=true;if(S)render();await say(r.reply);await new Promise(r=>setTimeout(r,350));talking=false;}}
+  try{const r=await (await api('/api/chat',{json:{message:text}})).json();await loadChat();await tick();if(S&&S.approvals.length)$('chatwait').scrollIntoView({block:'nearest'});if(r.brief)showBrief(r.brief,true);if(r.show){const b=document.querySelector('#nav button[data-v="'+r.show+'"]');if(b)b.click();}if(speak||voiceOn){talking=true;if(S)render();await say(r.reply);await new Promise(r=>setTimeout(r,350));talking=false;}}
   catch(e){$('chat').insertAdjacentHTML('beforeend',`<div class="assistant">${esc(e.message)}</div>`);}
   sending=false;tick();
 }
