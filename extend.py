@@ -34,6 +34,10 @@ def init():
         install_packs()
     except Exception:
         pass
+    try:
+        all_skills_on_once()
+    except Exception:
+        pass
 
 
 def starter_pack():
@@ -213,7 +217,18 @@ def set_skill_enabled(uid, slug, enabled):
            "ON CONFLICT(user_id,slug) DO UPDATE SET enabled=excluded.enabled", (uid, slug, 1 if enabled else 0))
 
 
+def all_skills_on_once():
+    """0.7.16: Pieter asked for every skill to be on for every login. Done once; after that a skill someone switches off stays off."""
+    marker = core.DATA / "skills_all_on_v1.done"
+    if marker.exists():
+        return
+    core.x("UPDATE user_skills SET enabled=1 WHERE slug IN (SELECT slug FROM skills WHERE status='active')")
+    marker.write_text("done", encoding="utf-8")
+
+
 def list_skills(uid):
+    # every skill is on for every login unless that login switched it off: fill in the ones this login has no choice for yet
+    core.x("INSERT OR IGNORE INTO user_skills(user_id,slug,enabled) SELECT ?, slug, 1 FROM skills WHERE status='active'", (uid,))
     rows = core.q("SELECT s.*, COALESCE(u.enabled,0) AS on_ FROM skills s LEFT JOIN user_skills u "
                   "ON u.slug=s.slug AND u.user_id=? ORDER BY s.status DESC, s.name", (uid,))
     return [{"slug": r["slug"], "name": r["name"], "description": r["description"], "source": r["source"],
