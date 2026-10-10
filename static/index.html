@@ -367,6 +367,16 @@ a.btn{color:var(--ink)}a.btn.pri{color:#1a1206}
       <label class="field"><span>Country code for local numbers (27 = South Africa)</span><input id="s-phone_country_code" style="max-width:120px"></label>
       <div><button class="btn pri" id="phsave">SAVE PHONE SETTINGS</button> <span class="msg" id="phsmsg"></span></div>
     </div>
+    <div class="panel"><b>Unlock code</b>
+      <div class="muted" style="font-size:13px">Saved encrypted on this PC so she can unlock your phone. She tries a code once only; if it fails she stops until you save it again, so the phone cannot be locked out.</div>
+      <div id="ul-state" class="msg" style="font-size:15px"></div>
+      <label class="field"><span>Kind of lock</span><select id="ul-kind"><option value="pin">PIN (numbers)</option><option value="password">Password</option><option value="pattern">Pattern</option></select></label>
+      <label class="field"><span id="ul-lab">Your PIN</span><input id="ul-code" type="password" autocomplete="off" inputmode="numeric" placeholder="Leave empty to keep the saved one"></label>
+      <div class="muted" id="ul-pat" hidden style="font-size:13px">Number the nine dots like a phone keypad: 1 2 3 across the top, 4 5 6 in the middle, 7 8 9 at the bottom. Type the dots in the order you draw them, for example 14789 for an L shape.</div>
+      <label class="tickrow"><input type="checkbox" id="ul-auto"><span><b>Unlock by herself when a command needs it</b><br><span class="muted">Without this she only unlocks when you say "unlock my phone".</span></span></label>
+      <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="ul-save">SAVE UNLOCK CODE</button><button class="btn" id="ul-test">UNLOCK NOW</button><button class="btn" id="ul-del">REMOVE</button></div>
+      <div class="msg" id="ul-msg"></div>
+    </div>
     <div class="panel"><b>Link</b><div id="phonebox" style="display:flex;flex-direction:column;gap:14px"><div class="muted">Looking for your phone...</div></div></div>
   </div>
   <datalist id="contacts"></datalist>
@@ -992,7 +1002,7 @@ async function ppSee(){const m=$('pp-seemsg');m.className='msg';m.textContent='A
 $('pp-see').onclick=ppSee;
 $('pp-live').onchange=()=>{clearInterval(ppTimer);if($('pp-live').checked){ppSee();ppTimer=setInterval(()=>{if(VIEW==='phone'&&$('pp-live').checked)ppSee();else{clearInterval(ppTimer);$('pp-live').checked=false;}},4000);}};
 const PPC=[['Find phone','where is my phone'],['Ring phone','ring my phone'],['Battery status','how is my phone'],['Take screenshot','take a screenshot of my phone'],
-  ['Sleep mode','put my phone to sleep'],['Wake screen','wake my phone'],['Do not disturb on','turn on do not disturb on my phone'],['Do not disturb off','turn off do not disturb on my phone'],
+  ['Sleep mode','put my phone to sleep'],['Wake screen','wake my phone'],['Unlock','unlock my phone'],['Do not disturb on','turn on do not disturb on my phone'],['Do not disturb off','turn off do not disturb on my phone'],
   ['Silent','put my phone on silent'],['Sound on','unmute my phone'],['Play / pause music','pause the music on my phone'],['Next track','next song on my phone'],
   ['Open WhatsApp','open my whatsapp'],['Send me a test WhatsApp','send me a test whatsapp'],
   ['Read the screen','what is on my phone screen',1],['Home','go home on my phone',1],['Back','press back on my phone',1],['Volume up','press volume up on my phone',1],['Volume down','press volume down on my phone',1]];
@@ -1000,8 +1010,17 @@ async function loadPhonePage(){
   if(!S)return;fillPhoneSettings();const full=!!S.user.settings.phone_full_control;
   $('pp-cmds').innerHTML=PPC.filter(c=>!c[2]||full).map((c,i)=>`<button type="button" data-pc="${esc(c[1])}">${esc(c[0])}</button>`).join('')+(full?'':'<span class="muted" style="font-size:13px;align-self:center">Tick Full phone control below for Home, Back, volume and reading the screen.</span>');
   $('pp-cmds').querySelectorAll('[data-pc]').forEach(b=>b.onclick=()=>runHere(b.dataset.pc,$('pp-cmdmsg')));
-  render();loadPhone();loadContacts($('pp-cmsg'));
+  render();loadPhone();ulLoad();loadContacts($('pp-cmsg'));
 }
+function ulDraw(u){const m=$('ul-state');m.className='msg '+(u.failed?'bad':(u.set?'ok':'muted'));
+  m.textContent=u.failed?'The saved code did not work last time. Unlock the phone yourself and save the code again.':(u.set?'A '+(u.kind==='pin'?'PIN':u.kind)+' is saved. '+(u.auto?'She unlocks by herself when needed.':'She unlocks only when you ask.'):'No unlock code saved.');
+  if(u.set)$('ul-kind').value=u.kind;$('ul-auto').checked=!!u.auto;ulKind();}
+function ulKind(){const k=$('ul-kind').value;$('ul-lab').textContent=k==='pin'?'Your PIN':(k==='password'?'Your password':'Your pattern as numbers');$('ul-pat').hidden=k!=='pattern';$('ul-code').inputMode=k==='password'?'text':'numeric';}
+$('ul-kind').onchange=ulKind;
+async function ulLoad(){try{ulDraw(await (await api('/api/phone/unlock')).json());}catch(e){}}
+$('ul-save').onclick=async()=>{const m=$('ul-msg');try{ulDraw(await (await api('/api/phone/unlock',{method:'PUT',json:{kind:$('ul-kind').value,code:$('ul-code').value,auto:$('ul-auto').checked}})).json());$('ul-code').value='';m.className='msg ok';m.textContent='Saved.';}catch(e){m.className='msg bad';m.textContent=e.message;}};
+$('ul-del').onclick=async()=>{ulDraw(await (await api('/api/phone/unlock',{method:'DELETE'})).json());$('ul-msg').className='msg ok';$('ul-msg').textContent='Removed.';};
+$('ul-test').onclick=()=>runHere('unlock my phone',$('ul-msg')).then(ulLoad);
 $('pp-open').onclick=()=>{const a=$('pp-app').value.trim();if(a)runHere('open '+a+' on my phone',$('pp-cmdmsg'));};
 $('pp-send').onclick=()=>{const w=$('pp-who').value.trim(),t=$('pp-msg').value.trim(),m=$('pp-sendmsg');if(!w||!t){m.className='msg bad';m.textContent='Fill in who it is for and the message.';return;}
   runHere(`send a whatsapp to ${w} saying ${t}`,m).then(()=>{if(m.className.includes('ok'))$('pp-msg').value='';});};
@@ -1030,7 +1049,7 @@ async function loadProjects(){
 // ---- commands help ----
 const CMDS=[
   ['WhatsApp',[['send a whatsapp to Llewellyn saying I will be there at 5','Goes straight out to a saved contact'],['send a test whatsapp to Llewellyn Terblanche',''],['send me a test whatsapp','Needs your own number on the Phone page'],['open my whatsapp','']]],
-  ['Phone',[['ring my phone','Rings at full volume, even on silent'],['where is my phone','Last known position with a map link'],['how is my phone','Battery, storage, Wi-Fi'],['take a screenshot of my phone',''],['open maps on my phone','Any installed app'],['what is on my phone screen','Needs Full phone control'],['tap Chats on my phone','Needs Full phone control'],['press back on my phone','Needs Full phone control']]],
+  ['Phone',[['ring my phone','Rings at full volume, even on silent'],['where is my phone','Last known position with a map link'],['how is my phone','Battery, storage, Wi-Fi'],['unlock my phone','Needs an unlock code saved on the Phone page'],['put my phone to sleep','Screen off and locked'],['take a screenshot of my phone',''],['open maps on my phone','Any installed app'],['what is on my phone screen','Needs Full phone control'],['tap Chats on my phone','Needs Full phone control'],['press back on my phone','Needs Full phone control']]],
   ['Briefings',[['good morning','Runs your morning routine'],['what is the weather',''],['give me the news',''],['how are the markets','Rand, gold, shares, crypto']]],
   ['Videos',[['create a 20 second cinematic video about our newest listings','Takes a few minutes'],['open the video','Shows the newest one']]],
   ['Files and documents',[['create a folder called Invoices in my Documents',''],['create a Word document called Welcome with a short welcome note',''],['create an Excel sheet of my monthly budget',''],['find all pdf files in my Downloads',''],['open my Documents folder','']]],

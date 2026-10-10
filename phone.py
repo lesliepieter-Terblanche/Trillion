@@ -125,14 +125,68 @@ def sh(user, command, timeout=25):
     return out
 
 
-def _awake_and_unlocked(user):
+_LOCK_RE = re.compile(r"(mDreamingLockscreen|isKeyguardShowing|mShowingLockscreen)=true")
+
+
+def is_locked(user):
     out = sh(user, "dumpsys power | grep -E 'mWakefulness=' ; dumpsys window | grep -E 'mDreamingLockscreen|isKeyguardShowing|mShowingLockscreen'")
     if "mWakefulness=Awake" not in out:
         sh(user, "input keyevent KEYCODE_WAKEUP")
         time.sleep(0.8)
         out = sh(user, "dumpsys window | grep -E 'mDreamingLockscreen|isKeyguardShowing|mShowingLockscreen'")
-    if re.search(r"(mDreamingLockscreen|isKeyguardShowing|mShowingLockscreen)=true", out):
-        raise PhoneError("The phone is locked. Unlock it and ask me again: I cannot get past the lock screen.")
+    return bool(_LOCK_RE.search(out))
+
+
+def unlock(user, explicit=False):
+    """Unlock with the code this login saved. One try only: a wrong code is never repeated, so the phone cannot be
+    locked out by her. After a failed try the automatic unlock stays off until the code is saved again."""
+    if not is_locked(user):
+        return {"unlocked": True, "was_locked": False}
+    st = core.settings(user)
+    saved = core.get_secret(user["id"], "phone_unlock")
+    if not saved:
+        raise PhoneError("The phone is locked" + (" and no unlock code is saved. Save one on the Phone page, or unlock it yourself."
+                                                  if explicit else ". Unlock it and ask me again, or save an unlock code on the Phone page."))
+    if st.get("phone_unlock_failed"):
+        raise PhoneError("The phone is locked. The saved unlock code did not work last time, so I will not try it again. "
+                         "Unlock it yourself, then save the code again on the Phone page.")
+    if not explicit and not st.get("phone_auto_unlock"):
+        raise PhoneError("The phone is locked. Say 'unlock my phone', or tick 'Unlock by herself' on the Phone page.")
+    kind, _, code = saved.partition(":")
+    m = re.search(r"(\d+)x(\d+)", sh(user, "wm size"))
+    w, h = (int(m.group(1)), int(m.group(2))) if m else (1080, 2340)
+    sh(user, f"input swipe {w // 2} {int(h * 0.80)} {w // 2} {int(h * 0.30)} 220")     # lift the lock screen to the code pad
+    time.sleep(1.0)
+    if kind == "pattern":
+        grid = next((n for n in _nodes(user) if "pattern" in n["id"].lower() and n.get("box")), None)
+        if not grid:
+            raise PhoneError("I could not find the pattern grid on the lock screen. Unlock it yourself this time.")
+        x1, y1, x2, y2 = grid["box"]
+        cw, ch = (x2 - x1) / 3, (y2 - y1) / 3
+        pts = [(int(x1 + cw * ((int(d) - 1) % 3 + 0.5)), int(y1 + ch * ((int(d) - 1) // 3 + 0.5))) for d in code]
+        cmds = [f"input motionevent DOWN {pts[0][0]} {pts[0][1]}"]
+        for (ax, ay), (bx, by) in zip(pts, pts[1:]):
+            for i in range(1, 5):          # move in small steps so every dot on the way is touched
+                cmds.append(f"input motionevent MOVE {int(ax + (bx - ax) * i / 4)} {int(ay + (by - ay) * i / 4)}")
+        cmds.append(f"input motionevent UP {pts[-1][0]} {pts[-1][1]}")
+        sh(user, "; ".join(cmds), timeout=40)
+    else:
+        quoted = code.replace("'", "'\\''").replace(" ", "%s")
+        sh(user, f"input text '{quoted}'")
+        time.sleep(0.4)
+        sh(user, "input keyevent KEYCODE_ENTER")
+    time.sleep(1.4)
+    out = sh(user, "dumpsys window | grep -E 'mDreamingLockscreen|isKeyguardShowing|mShowingLockscreen'")
+    if _LOCK_RE.search(out):
+        st["phone_unlock_failed"] = True
+        core.save_settings(user["id"], st)
+        raise PhoneError("The saved unlock code did not open the phone. I tried once and will not try again, so the phone cannot "
+                         "lock itself out. Unlock it yourself, then save the code again on the Phone page.")
+    return {"unlocked": True, "was_locked": True}
+
+
+def _awake_and_unlocked(user):
+    unlock(user)
 
 
 def status(user):
@@ -478,7 +532,7 @@ def _nodes(user):
         if x2 <= x1 or y2 <= y1:
             continue
         label = label.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&#10;", " ").replace("&quot;", '"')
-        out.append({"label": label, "x": (x1 + x2) // 2, "y": (y1 + y2) // 2, "tap": a.get("clickable") == "true",
+        out.append({"label": label, "x": (x1 + x2) // 2, "y": (y1 + y2) // 2, "box": (x1, y1, x2, y2), "tap": a.get("clickable") == "true",
                     "field": "EditText" in a.get("class", ""), "id": a.get("resource-id", "").split("/")[-1]})
     return out
 

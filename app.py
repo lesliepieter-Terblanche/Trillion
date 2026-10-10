@@ -235,6 +235,7 @@ PHONE_RULES = [
     ("open", re.compile(r"\b(?:open|launch|start)\s+(?:up\s+)?(?:my\s+|the\s+)?(what'?s ?(?:app|up)(?: business)?|instagram|tiktok|telegram|"
                         r"facebook|messenger|messages|gallery|camera|contacts|youtube|spotify|gmail|maps|chrome|play store|tailscale)"
                         r"(?:\s+app)?\s*(?:for me|please|now|,?\s*\w+)?[.!?]?\s*$", re.I)),
+    ("unlock", re.compile(r"\bunlock\s+" + _PH + r"\b", re.I)),
     ("simple:sleep", re.compile(r"\b(?:put|send|set)\b.{0,10}" + _PH + r".{0,10}\b(?:to sleep|sleep mode|asleep)\b|\b(?:lock|sleep)\s+" + _PH + r"\b|"
                                 + _PH + r"\s+(?:to\s+)?sleep(?: mode)?\b|\bturn\s+(?:off\s+)?" + _PH + r"(?:'s)?\s+screen\s+off\b|\bturn off\s+" + _PH + r"(?:'s)?\s+screen\b", re.I)),
     ("simple:wake", re.compile(r"\bwake(?:\s+up)?\s+" + _PH + r"\b|\bturn on\s+" + _PH + r"(?:'s)?\s+screen\b", re.I)),
@@ -330,6 +331,12 @@ def phone_shortcut(user, text, tid):
             shown = {"whatsapp": "WhatsApp", "whatsapp business": "WhatsApp Business", "tiktok": "TikTok"}.get(
                 app_name.lower(), app_name.capitalize())
             return (f"{shown} is open on your phone." if "error" not in r else r["error"]), False, r
+        if kind == "unlock":
+            try:
+                r = phone.unlock(user, explicit=True)
+                return ("Your phone is unlocked." if r["was_locked"] else "Your phone was already unlocked."), False, r
+            except phone.PhoneError as e:
+                return str(e), False, {"error": str(e)}
         if kind.startswith("simple:"):
             try:
                 return phone.simple(user, kind.split(":")[1]), False, {"ok": True}
@@ -1064,6 +1071,48 @@ def phone_contacts(fresh: int = 0, user=Depends(auth)):
     if v["ok"]:
         CONTACT_CACHE[user["id"]] = {"t": time.time(), "v": v}
     return v
+
+
+@app.get("/api/phone/unlock")
+def phone_unlock_get(user=Depends(auth)):
+    st = core.settings(core.q("SELECT * FROM users WHERE id=?", (user["id"],), one=True))   # fresh, also right after a save
+    saved = core.get_secret(user["id"], "phone_unlock")
+    return {"set": bool(saved), "kind": saved.partition(":")[0] if saved else "", "auto": bool(st.get("phone_auto_unlock")),
+            "failed": bool(st.get("phone_unlock_failed"))}
+
+
+@app.put("/api/phone/unlock")
+def phone_unlock_put(p: dict = Body(...), user=Depends(auth)):
+    kind, code = str(p.get("kind", "pin")), str(p.get("code", ""))
+    st = core.settings(user)
+    if code:
+        if kind not in ("pin", "password", "pattern"):
+            raise HTTPException(400, "Choose PIN, password or pattern")
+        if kind == "pin" and not re.fullmatch(r"\d{4,16}", code):
+            raise HTTPException(400, "A PIN is 4 to 16 digits")
+        if kind == "pattern" and (not re.fullmatch(r"[1-9]{4,9}", code) or len(set(code)) != len(code)):
+            raise HTTPException(400, "A pattern is 4 to 9 different dots, as the numbers 1 to 9")
+        if kind == "password" and (len(code) < 4 or any(ord(c) > 126 or ord(c) < 32 for c in code)):
+            raise HTTPException(400, "I can only type a password made of plain letters, numbers and common symbols")
+        core.set_secret(user["id"], "phone_unlock", kind + ":" + code)
+        st.pop("phone_unlock_failed", None)
+        core.log(user["id"], "Phone unlock code saved", "done")
+    elif not core.get_secret(user["id"], "phone_unlock"):
+        raise HTTPException(400, "Type the code first")
+    st["phone_auto_unlock"] = bool(p.get("auto"))
+    core.save_settings(user["id"], st)
+    return phone_unlock_get(user)
+
+
+@app.delete("/api/phone/unlock")
+def phone_unlock_delete(user=Depends(auth)):
+    core.x("DELETE FROM secrets WHERE user_id=? AND name='phone_unlock'", (user["id"],))
+    st = core.settings(user)
+    st["phone_auto_unlock"] = False
+    st.pop("phone_unlock_failed", None)
+    core.save_settings(user["id"], st)
+    core.log(user["id"], "Phone unlock code removed", "done")
+    return phone_unlock_get(user)
 
 
 @app.get("/api/phone/screen.png")
