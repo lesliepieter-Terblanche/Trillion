@@ -1,0 +1,4 @@
+subagent-driven-development skill from Superpowers by Jesse Vincent, MIT licence.
+Source: https://github.com/obra/superpowers/tree/main/skills/subagent-driven-development
+Copied unchanged into Trillion. See LICENSE.
+Enabled: no

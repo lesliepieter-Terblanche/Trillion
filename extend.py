@@ -89,7 +89,8 @@ def install_packs():
             if extras:
                 body += (f"\n\n---\nOn this PC, the files that belong to this skill ({', '.join(extras)}) are in the folder: {dest}\n"
                          "Read templates from there with read_file. Its scripts and tools can only be run with run_command, which needs the owner's approval.")
-            save_skill(name, desc, body, link, owner_id=owner["id"])
+            # a pack can ask to be installed switched off (for playbooks she cannot really carry out)
+            save_skill(name, desc, body, link, owner_id=None if any(ln.strip().lower() == "enabled: no" for ln in src) else owner["id"])
             names.append(name)
         marker.write_text("installed", encoding="utf-8")
         if names:
