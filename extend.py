@@ -30,6 +30,10 @@ def init():
     # 0.4.1: the Windows control connector needs the word "serve" on its command
     core.x("UPDATE connectors SET command='uvx windows-mcp serve' WHERE command='uvx windows-mcp'")
     starter_pack()
+    try:
+        install_packs()
+    except Exception:
+        pass
 
 
 def starter_pack():
@@ -53,6 +57,41 @@ def starter_pack():
 # =====================================================================================
 # Skills
 # =====================================================================================
+PACKS_DIR = core.BASE / "skill_packs"
+
+
+def install_packs():
+    """Skill packs that ship with Trillion (each a folder of skill folders). Installed once per pack and switched on for
+    the owner; a marker file keeps a skill he later removes from coming back. Other logins switch them on themselves."""
+    import shutil
+    if not PACKS_DIR.exists():
+        return
+    owner = core.q("SELECT * FROM users WHERE is_admin=1 ORDER BY id LIMIT 1", one=True)
+    for pack in sorted(p for p in PACKS_DIR.iterdir() if p.is_dir()):
+        marker = core.DATA / f"skill_pack_{pack.name}_v1.done"
+        if marker.exists() or not owner:
+            continue
+        src = (pack / "SOURCE.txt").read_text(encoding="utf-8").strip().splitlines() if (pack / "SOURCE.txt").exists() else []
+        link = next((ln.split("Source:", 1)[1].strip() for ln in src if ln.startswith("Source:")), f"bundled pack: {pack.name}")
+        names = []
+        for folder in sorted(f for f in pack.iterdir() if (f / "SKILL.md").exists()):
+            name, desc, body = parse_skill((folder / "SKILL.md").read_text(encoding="utf-8"))
+            slug = slugify(name)
+            dest = SKILLS_DIR / slug
+            dest.mkdir(parents=True, exist_ok=True)
+            for f in folder.iterdir():                     # the templates and helper files travel with the skill
+                if f.is_file() and f.name != "SKILL.md":
+                    shutil.copy2(f, dest / f.name)
+            extras = sorted(f.name for f in folder.iterdir() if f.is_file() and f.name != "SKILL.md")
+            if extras:
+                body += (f"\n\n---\nOn this PC, the files that belong to this skill ({', '.join(extras)}) are in the folder: {dest}\n"
+                         "Read templates from there with read_file. Its Python tools can only be run with run_command, which needs the owner's approval.")
+            save_skill(name, desc, body, link, owner_id=owner["id"])
+            names.append(name)
+        marker.write_text("installed", encoding="utf-8")
+        if names:
+            core.log(owner["id"], f"Skill pack added ({pack.name}): " + ", ".join(names), "done")
+
 def slugify(name):
     s = re.sub(r"[^a-z0-9]+", "-", str(name).lower()).strip("-")
     return s[:60] or "skill"
@@ -64,10 +103,17 @@ def parse_skill(text):
     m = re.match(r"^﻿?---\s*\n(.*?)\n---\s*\n?(.*)$", text, re.S)
     if m:
         body = m.group(2)
+        key = None
         for line in m.group(1).splitlines():
+            if key and line[:1] in (" ", "\t") and line.strip():      # a description written over several lines
+                meta[key] = (meta[key] + " " + line.strip()).strip()
+                continue
             k, sep, v = line.partition(":")
+            key = None
             if sep and k.strip() in ("name", "description"):
-                meta[k.strip()] = v.strip().strip("\"'")
+                v = v.strip().strip("\"'")
+                key = k.strip()
+                meta[key] = "" if v in (">", ">-", "|", "|-", ">+", "|+") else v
     if not meta.get("name"):
         h = re.search(r"^#\s+(.+)$", body, re.M)
         meta["name"] = h.group(1).strip() if h else "Untitled skill"
