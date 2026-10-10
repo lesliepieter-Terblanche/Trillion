@@ -1,0 +1,3 @@
+seo-audit skill from marketingskills by Corey Haines, MIT licence.
+Source: https://github.com/coreyhaines31/marketingskills/tree/main/skills/seo-audit
+Copied unchanged into Trillion (its evals folder left out). See LICENSE.

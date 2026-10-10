@@ -711,7 +711,7 @@ def run_agent(user, text):
                     result = tools.execute(user, name, args, task_id=tid)
                 waiting = waiting or result.get("status") == "waiting_for_approval"
                 msgs.append({"role": "tool", "tool_call_id": c.get("id", name),
-                             "content": json.dumps(result, default=str)[:6000]})
+                             "content": json.dumps(result, default=str)[:15000 if name == "use_skill" else 6000]})
         else:
             reply = "That took more steps than I allow in one go. Tell me to continue and I'll pick it up."
     except Exception as e:
