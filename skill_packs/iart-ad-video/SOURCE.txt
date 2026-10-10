@@ -1,0 +1,5 @@
+Ad video skills by iart.ai. MIT licence, see LICENSE.
+Source: https://github.com/iart-ai/ad-video-skills
+Copied unchanged into Trillion. They teach how to build ads in Remotion (video written as code), which Trillion cannot
+render herself yet, so they are installed switched off.
+Enabled: no

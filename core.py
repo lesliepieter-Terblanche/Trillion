@@ -31,6 +31,7 @@ DEFAULT_SETTINGS = {
     "fast_answers": True,              # plain questions go to the small quick model; anything she has to do uses the full one
     "fast_model": "qwen2.5:3b",
     "wa_inbox": True,                  # show incoming WhatsApp messages (read from the phone's notifications) on the dashboard
+    "freevideo_url": "",               # where FreeVideo listens on this PC; empty means the usual http://127.0.0.1:8188
     "video_ai_images": True,           # scenes with no stock footage get an AI-made picture instead of a plain backdrop
     "wake_word": False,                # voice mode only acts on speech that includes her name
     "theme": "night",                  # colour mode: night, day, ocean, forest or royal

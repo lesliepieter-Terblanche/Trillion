@@ -478,14 +478,16 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
   <div class="panel"><b>Make a video</b>
     <label class="field"><span>What is it about?</span><textarea id="vprompt" rows="2" placeholder="A premium cinematic video about our newest listings in Johannesburg"></textarea></label>
     <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end">
+      <label class="field"><span>Kind</span><select id="vkind"><option value="edit">Edited video (footage, voice, titles)</option><option value="ai">AI-generated clip (FreeVideo, on this PC)</option></select></label>
       <label class="field"><span>Length</span><select id="vsec"><option value="15">15 seconds</option><option value="20" selected>20 seconds</option><option value="30">30 seconds</option><option value="45">45 seconds</option></select></label>
       <label class="field"><span>Shape</span><select id="vfmt"><option value="vertical">Vertical (TikTok, Reels, Shorts)</option><option value="square">Square</option><option value="landscape">Landscape (YouTube)</option></select></label>
       <label style="display:flex;gap:10px;align-items:center;min-height:44px"><input type="checkbox" id="vvo" checked style="width:22px;height:22px"> Voice-over</label>
       <button class="btn pri" id="vgo">CREATE VIDEO</button>
     </div>
     <label class="tickrow" style="align-items:center"><input type="checkbox" id="vai"><span>Use AI-made pictures for scenes with no stock footage <span class="muted">(free service; only the scene description is sent to it)</span></span></label>
+    <div class="muted" id="vfv" style="font-size:13px;display:none"></div>
     <div class="msg" id="vmsg"></div>
-    <div class="muted" style="font-size:13px">Best results: a free Pixabay key for real moving footage and an ElevenLabs key for the voice-over, both under Settings, Keys. Long scenes cut between two shots. It takes a few minutes; progress shows on the home screen.</div>
+    <div class="muted" id="vtip" style="font-size:13px">Best results: a free Pixabay key for real moving footage and an ElevenLabs key for the voice-over, both under Settings, Keys. Long scenes cut between two shots. It takes a few minutes; progress shows on the home screen.</div>
   </div>
   <div class="grid2" id="vlist"></div>
 </div>
@@ -943,10 +945,22 @@ async function loadVideos(){
     <div class="btns" style="justify-content:flex-start">${v.exists?`<a class="btn pri" style="display:inline-flex;align-items:center;text-decoration:none;min-height:40px;font-size:12px" href="/api/videos/${v.id}/file" download>DOWNLOAD</a>`:''}<button class="btn" data-vd="${v.id}" style="min-height:40px;font-size:12px">DELETE</button></div></div>`).join('')||'<div class="muted">No videos yet.</div>';
   document.querySelectorAll('[data-vd]').forEach(b=>b.onclick=async()=>{await api('/api/videos/'+b.dataset.vd,{method:'DELETE'});loadVideos();});
 }
+async function fvCheck(){const ai=$('vkind').value==='ai';$('vfv').style.display=ai?'':'none';$('vvo').parentElement.style.display=ai?'none':'';$('vai').parentElement.style.display=ai?'none':'';
+  $('vgo').textContent=ai?'GENERATE AI CLIP':'CREATE VIDEO';$('vtip').style.display=ai?'none':'';
+  $('vsec').innerHTML=(ai?[[5,1],[8,0],[10,0],[15,0]]:[[15,0],[20,1],[30,0],[45,0]]).map(o=>`<option value="${o[0]}"${o[1]?' selected':''}>${o[0]} seconds</option>`).join('');
+  if(!ai)return;
+  $('vfv').textContent='Checking FreeVideo...';
+  try{const s=await (await api('/api/freevideo')).json();
+    $('vfv').innerHTML=s.ready?'<span class="ok">FreeVideo is running and ready.</span> A clip is one continuous shot with sound, 2 to 15 seconds. A 10-second clip takes about 8 minutes on this graphics card; I clear my own brain from the card while it works.'
+      :(s.running?'<span class="bad">ComfyUI is running but FreeVideo is not installed in it.</span> Double-click "6 - Install FreeVideo.bat" in the Trillion folder.'
+      :'<span class="bad">FreeVideo is not running.</span> Open FreeVideo on the PC first. If it is not installed yet, double-click "6 - Install FreeVideo.bat" in the Trillion folder.');
+  }catch(e){$('vfv').textContent='Could not check FreeVideo.';}}
+$('vkind').onchange=fvCheck;
 $('vgo').onclick=async()=>{const about=$('vprompt').value.trim();if(!about){$('vmsg').textContent='Say what the video is about first.';return;}
   if(sending){$('vmsg').textContent='She is busy with another job.';return;}
   $('vmsg').textContent='Working on it. This takes a few minutes; you can watch progress in the Control Room.';
-  await send(`Create a ${$('vsec').value} second ${$('vfmt').value} video${$('vvo').checked?'':' with no voice-over'}: ${about}`,false);
+  if($('vkind').value==='ai')await send(`Generate an AI clip, ${Math.min(15,+$('vsec').value)} seconds, ${$('vfmt').value}: ${about}`,false);
+  else await send(`Create a ${$('vsec').value} second ${$('vfmt').value} video${$('vvo').checked?'':' with no voice-over'}: ${about}`,false);
   $('vmsg').textContent='';$('vprompt').value='';loadVideos();};
 // skills and connectors
 async function loadSkills(){

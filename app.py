@@ -454,7 +454,7 @@ NEEDS_TOOLS = re.compile(
 def tools_for(user, text):
     """Hand the brain only the tools this request could need: fewer choices, fewer wrong ones."""
     uid = user["id"]
-    skip = {"update_self", "create_video"}                      # both handled directly
+    skip = {"update_self", "create_video", "create_ai_clip"}                      # both handled directly
     if not (PHONE_WORDS.search(text) and core.settings(user).get("phone_serial")):
         skip |= {n for n in (s_["function"]["name"] for s_ in tools.SPECS) if n.startswith("phone_")}
     if not core.settings(user).get("phone_full_control"):
@@ -476,6 +476,25 @@ PC_RE = re.compile(r"\b(?:status|health|how is|how's)\b.{0,14}\b(?:my |the |this
 IMAGE_RE = re.compile(r"\b(create|make|generate|draw|design|paint)\b[^.?!]{0,30}\b(image|picture|photo|logo|icon|illustration|poster|banner|artwork|drawing)\b"
                       r"(?:\s+(?:of|for|about|showing|with|that shows))?\s*(.*)$", re.I | re.S)
 OPEN_VIDEO_RE = re.compile(r"\b(open|play|show|watch|view)\b[^.?!]{0,30}\b(video|clip)s?\b", re.I)
+
+
+# an AI-generated clip (FreeVideo on this PC) rather than her own edited video
+AICLIP_RE = re.compile(r"\b(ai[- ]?(generated |made )?(video|clip|footage)s?|freevideo|free video (clip|engine)|(generated?|generative) (video|clip)s?|"
+                       r"(video|clip) (with|using|by) ai|generate (me )?a clip)\b", re.I)
+
+
+def aiclip_request(text):
+    m = re.search(r"(\d{1,2})[\s-]*(seconds?|secs?|s)\b", text, re.I)
+    low = text.lower()
+    fmt = "landscape" if re.search(r"landscape|horizontal|widescreen|youtube", low) else ("square" if "square" in low else "vertical")
+    return {"prompt": text, "seconds": int(m.group(1)) if m else 5, "format": fmt}
+
+
+def aiclip_reply(res):
+    if "error" in res:
+        return "I could not make the AI clip: " + res["error"]
+    return (f"Your AI clip is ready: {res['title']}, {res['seconds']:g} seconds. It took {res['minutes']:g} minutes. "
+            f"It is on the Videos page and saved at {res['saved']}. " + " ".join(res.get("notes", []))).strip()
 
 
 def video_request(text):
@@ -666,7 +685,17 @@ def run_agent(user, text):
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="completed", detail=reply[:200])
         return {"reply": reply, "task_id": tid, "provider": "built-in", "show": "videos" if v else ""}
-    if VIDEO_RE.search(text):  # a long job with fixed steps: run it directly
+    asking = re.match(r"\s*(how|what|why|which|is|are|does|do|should|where|when|who)\b", text, re.I)   # a question, not an order
+    if AICLIP_RE.search(text) and re.search(r"\b(create|make|generate|produce|render)\b", text, re.I) and not asking:
+        try:
+            res = tools.execute(user, "create_ai_clip", aiclip_request(text), task_id=tid)
+        finally:
+            BUSY[uid] = False
+        reply = aiclip_reply(res)
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="failed" if "error" in res else "completed", detail=reply[:200])
+        return {"reply": reply, "task_id": tid, "provider": "FreeVideo", "show": "" if "error" in res else "videos"}
+    if VIDEO_RE.search(text) and not asking:  # a long job with fixed steps: run it directly
         try:
             res = tools.execute(user, "create_video", video_request(text), task_id=tid)
         finally:
@@ -1039,7 +1068,7 @@ def messages(user=Depends(auth)):
 
 
 # ---------- settings and keys ----------
-EDITABLE = ["wake_word", "video_ai_images", "wa_inbox", "fast_answers", "theme", "quick_actions", "whatsapp_auto_contacts", "phone_own_number", "phone_full_control", "personality", "phone_country_code", "assistant_name", "brand", "accent", "site", "brain", "local_model", "cloud_model", "voice",
+EDITABLE = ["freevideo_url", "wake_word", "video_ai_images", "wa_inbox", "fast_answers", "theme", "quick_actions", "whatsapp_auto_contacts", "phone_own_number", "phone_full_control", "personality", "phone_country_code", "assistant_name", "brand", "accent", "site", "brain", "local_model", "cloud_model", "voice",
             "eleven_voice_id", "daily_review"]
 
 
@@ -1184,6 +1213,12 @@ def _video(vid, user):
     if not v:
         raise HTTPException(404, "No such video")
     return v
+
+
+@app.get("/api/freevideo")
+def freevideo_status(user=Depends(auth)):
+    import freevideo
+    return freevideo.status(user)
 
 
 @app.get("/api/videos")
