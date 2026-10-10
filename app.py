@@ -235,6 +235,17 @@ PHONE_RULES = [
     ("open", re.compile(r"\b(?:open|launch|start)\s+(?:up\s+)?(?:my\s+|the\s+)?(what'?s ?(?:app|up)(?: business)?|instagram|tiktok|telegram|"
                         r"facebook|messenger|messages|gallery|camera|contacts|youtube|spotify|gmail|maps|chrome|play store|tailscale)"
                         r"(?:\s+app)?\s*(?:for me|please|now|,?\s*\w+)?[.!?]?\s*$", re.I)),
+    ("simple:sleep", re.compile(r"\b(?:put|send|set)\b.{0,10}" + _PH + r".{0,10}\b(?:to sleep|sleep mode|asleep)\b|\b(?:lock|sleep)\s+" + _PH + r"\b|"
+                                + _PH + r"\s+(?:to\s+)?sleep(?: mode)?\b|\bturn\s+(?:off\s+)?" + _PH + r"(?:'s)?\s+screen\s+off\b|\bturn off\s+" + _PH + r"(?:'s)?\s+screen\b", re.I)),
+    ("simple:wake", re.compile(r"\bwake(?:\s+up)?\s+" + _PH + r"\b|\bturn on\s+" + _PH + r"(?:'s)?\s+screen\b", re.I)),
+    ("simple:dnd_off", re.compile(r"\b(?:do not disturb|dnd)\b.{0,25}\boff\b|\b(?:turn|switch)\s+off\b.{0,25}\b(?:do not disturb|dnd)\b", re.I)),
+    ("simple:dnd_on", re.compile(r"\b(?:turn|switch|put|set)\b.{0,25}\b(?:do not disturb|dnd)\b|\b(?:do not disturb|dnd)\s+(?:mode\s+)?on\b|"
+                                 r"^\s*(?:do not disturb|dnd)(?: mode)?[.!]?\s*$", re.I)),
+    ("simple:unmute", re.compile(r"\bunmute\s+" + _PH + r"\b|\b(?:turn|switch)\b.{0,8}" + _PH + r"(?:'s)?\s+(?:sound|ringer)\s+(?:back\s+)?on\b|\btake\s+" + _PH + r"\s+off silent\b", re.I)),
+    ("simple:mute", re.compile(r"\b(?:mute|silence)\s+" + _PH + r"\b|\b(?:put|set)\s+" + _PH + r"\s+(?:on|to)\s+silent\b", re.I)),
+    ("simple:next", re.compile(r"\b(?:next|skip)\s+(?:song|track)\b.{0,12}" + _PH, re.I)),
+    ("simple:previous", re.compile(r"\bprevious\s+(?:song|track)\b.{0,12}" + _PH, re.I)),
+    ("simple:playpause", re.compile(r"\b(?:play|pause|resume|stop)\s+(?:the\s+)?(?:music|song|audio)\s+on\s+" + _PH, re.I)),
     ("screen", re.compile(r"\bwhat(?:'s| is)\s+(?:showing\s+)?on\s+" + _PH + r"(?:\s+screen)?|\bread\s+" + _PH + r"(?:'s)?\s+screen", re.I)),
     ("press", re.compile(r"\b(?:press|go|hit)\s+(?:the\s+)?(back|home|recents|enter|lock|wake|play|pause|next|previous|"
                          r"volume up|volume down|mute)(?:\s+(?:button|key))?\s+on\s+" + _PH, re.I)),
@@ -319,6 +330,11 @@ def phone_shortcut(user, text, tid):
             shown = {"whatsapp": "WhatsApp", "whatsapp business": "WhatsApp Business", "tiktok": "TikTok"}.get(
                 app_name.lower(), app_name.capitalize())
             return (f"{shown} is open on your phone." if "error" not in r else r["error"]), False, r
+        if kind.startswith("simple:"):
+            try:
+                return phone.simple(user, kind.split(":")[1]), False, {"ok": True}
+            except phone.PhoneError as e:
+                return str(e), False, {"error": str(e)}
         if kind == "screen":
             r = tools.execute(user, "phone_read_screen", {}, task_id=tid)
             if "error" in r:

@@ -574,6 +574,33 @@ def screenshot(user):
     return {"saved": str(path)}
 
 
+def simple(user, what):
+    """Small everyday switches that need no special permission: sleep, wake, sound, do not disturb, music keys."""
+    if what == "sleep":
+        sh(user, "input keyevent KEYCODE_SLEEP")
+        return "Your phone's screen is off and it is locked."
+    if what == "wake":
+        sh(user, "input keyevent KEYCODE_WAKEUP")
+        return "Your phone's screen is on."
+    if what in ("dnd_on", "dnd_off"):
+        out = sh(user, "cmd notification set_dnd " + ("on" if what == "dnd_on" else "off"))
+        if re.search(r"unknown command|exception|error", out, re.I):
+            raise PhoneError("This phone would not let me change Do not disturb.")
+        return "Do not disturb is " + ("on." if what == "dnd_on" else "off.")
+    if what == "mute":
+        sh(user, "cmd audio set-ringer-mode SILENT; cmd media_session volume --stream 2 --set 0; cmd media_session volume --stream 5 --set 0")
+        return "Your phone is on silent."
+    if what == "unmute":
+        sh(user, "cmd audio set-ringer-mode NORMAL; cmd media_session volume --stream 2 --set 11; cmd media_session volume --stream 5 --set 11")
+        return "Your phone's ringer is back on."
+    keys = {"playpause": ("KEYCODE_MEDIA_PLAY_PAUSE", "Play or pause pressed on your phone."),
+            "next": ("KEYCODE_MEDIA_NEXT", "Skipped to the next track."), "previous": ("KEYCODE_MEDIA_PREVIOUS", "Went back a track.")}
+    if what in keys:
+        sh(user, "input keyevent " + keys[what][0])
+        return keys[what][1]
+    raise PhoneError("I do not know that phone switch.")
+
+
 def screen_png(user):
     """The phone's screen right now as PNG bytes, for the dashboard's live picture. Nothing is saved."""
     serial = working_serial(user)

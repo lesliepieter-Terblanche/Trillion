@@ -204,9 +204,10 @@ main{max-width:1180px;gap:22px}
 .cmdg{display:flex;flex-direction:column;gap:2px}
 .cmdr{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:8px 0;border-bottom:1px solid #1d1a20}
 .cmdr code{font-family:inherit;font-size:15px;overflow-wrap:anywhere}.cmdr small{display:block;color:var(--dim);font-size:12px}
-.pop{position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.72);display:flex;align-items:flex-start;justify-content:center;padding:4vh 16px;overflow:auto}
-.popbox{background:var(--panel);border:1px solid color-mix(in srgb,var(--a) 45%,var(--line));border-radius:10px;width:100%;max-width:1040px;padding:22px;display:flex;flex-direction:column;gap:16px;
-  background-image:linear-gradient(180deg,color-mix(in srgb,var(--a) 10%,var(--panel)),var(--panel) 220px);box-shadow:0 20px 80px rgba(0,0,0,.6)}
+.pop{position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.42);display:flex;padding:4vh 16px;overflow:auto}
+.popbox{margin:auto;background:rgba(21,19,26,.78);-webkit-backdrop-filter:blur(16px) saturate(1.2);backdrop-filter:blur(16px) saturate(1.2);border:1px solid color-mix(in srgb,var(--a) 45%,var(--line));border-radius:12px;width:100%;max-width:1040px;padding:22px;display:flex;flex-direction:column;gap:16px;
+  background-image:linear-gradient(180deg,color-mix(in srgb,var(--a) 12%,transparent),transparent 220px);box-shadow:0 20px 80px rgba(0,0,0,.55)}
+.popbox .tile{background:rgba(11,10,15,.55)}
 .pop.narrow .popbox{max-width:620px}
 .pophead{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
 .pophead h3{font-family:var(--disp);font-weight:700;font-size:clamp(24px,3.2vw,40px);margin:4px 0;text-transform:uppercase;line-height:1.05;overflow-wrap:anywhere}
@@ -636,6 +637,16 @@ function alertMsg(m){$('sub').textContent=m;}
 function statRefresh(){if(STAT&&!$('pop').hidden&&['pc','phone','ts','site','brain','hear'].includes(STAT)){$('popbody').innerHTML=`<div style="max-width:640px">${statBody(STAT)}</div>`;statBind();}}
 const linkify=t=>esc(t).replace(/https?:\/\/[^\s<]+[^\s<.,;:!?)\]]/g,u=>`<a href="${u}" target="_blank" rel="noopener">${u}</a>`);
 let popClose=null,popBack=null;
+const wide=()=>window.matchMedia('(min-width:821px)').matches;
+function replyPop(asked,r){
+  if(!wide()||r.brief||r.map||r.show)return;          // phones keep the answer in the conversation; briefings and maps have their own window
+  const ap=(S&&S.approvals||[]);
+  popup({narrow:r.reply.length<700,kicker:'YOU ASKED',title:asked.length>60?asked.slice(0,57)+'...':asked,
+    html:`<div style="font-size:18px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere">${linkify(r.reply)}</div>`
+      +ap.map(a=>`<div class="wait" style="margin-top:14px"><div style="font-size:12px;letter-spacing:.14em;color:var(--red)">NEEDS YOUR APPROVAL</div><b>${esc(a.summary)}</b><div class="two"><button class="btn red" data-pa="${a.id}" data-d="approve" style="min-height:52px">Approve</button><button class="btn" data-pa="${a.id}" data-d="decline" style="min-height:52px">Decline</button></div></div>`).join('')});
+  document.querySelectorAll('[data-pa]').forEach(b=>b.onclick=async()=>{b.disabled=true;let msg='';try{const x=await (await api('/api/approvals/'+b.dataset.pa,{json:{decision:b.dataset.d}})).json();msg=(x&&(x.message||x.reply))||'';}catch(e){msg=e.message;}
+    await tick();await loadChat();const last=$('chat').lastElementChild;b.closest('.wait').outerHTML=`<div class="msg ok" style="margin-top:14px;font-size:16px">${b.dataset.d==='approve'?'Approved. ':'Declined. '}${esc(msg)}</div>`;});
+}
 function popup(o){
   $('popkick').textContent=o.kicker||'';$('poptitle').textContent=o.title||'';$('popsub').textContent=o.sub||'';
   $('popbody').innerHTML=o.html||'';$('popfoot').innerHTML=(o.foot||'')+'<button class="btn pri" id="popok">DONE</button>';
@@ -661,7 +672,7 @@ async function send(text,speak){
   if(!text||sending)return;sending=true;$('say').value='';
   $('chat').insertAdjacentHTML('beforeend',`<div class="user">${esc(text)}</div>`);$('chat').scrollTop=1e9;
   $('kicker').textContent='NOW WORKING';$('big').textContent='Thinking';$('sub').textContent=text;
-  try{const r=await (await api('/api/chat',{json:{message:text}})).json();await loadChat();await tick();if(S&&S.approvals.length)$('chatwait').scrollIntoView({block:'nearest'});if(r.brief)showBrief(r.brief,true);if(r.map)showMap(r.map);if(r.show)go(r.show);if(speak||voiceOn){talking=true;if(S)render();await say(r.reply);await new Promise(r=>setTimeout(r,350));talking=false;}}
+  try{const r=await (await api('/api/chat',{json:{message:text}})).json();await loadChat();await tick();if(S&&S.approvals.length)$('chatwait').scrollIntoView({block:'nearest'});if(r.brief)showBrief(r.brief,true);if(r.map)showMap(r.map);replyPop(text,r);if(r.show)go(r.show);if(speak||voiceOn){talking=true;if(S)render();await say(r.reply);await new Promise(r=>setTimeout(r,350));talking=false;}}
   catch(e){$('chat').insertAdjacentHTML('beforeend',`<div class="assistant">${esc(e.message)}</div>`);}
   sending=false;tick();
 }
@@ -913,7 +924,7 @@ $('phsave').onclick=async()=>{const m=$('phsmsg');try{await api('/api/settings',
 async function runHere(text,m){
   if(sending){m.className='msg';m.textContent='She is busy with something else. Try again in a moment.';return;}
   sending=true;m.className='msg';m.textContent='Working...';
-  try{const r=await (await api('/api/chat',{json:{message:text}})).json();m.innerHTML=linkify(r.reply);if(r.map)showMap(r.map);if(r.brief)showBrief(r.brief,true);m.className='msg '+(/^(i could not|i did not|there is no|the phone is|full phone control is switched off)/i.test(r.reply)?'bad':'ok');if(r.show)go(r.show);if(voiceOn){talking=true;await say(r.reply);talking=false;}}
+  try{const r=await (await api('/api/chat',{json:{message:text}})).json();m.innerHTML=linkify(r.reply);if(r.map)showMap(r.map);if(r.brief)showBrief(r.brief,true);await tick();replyPop(text,r);m.className='msg '+(/^(i could not|i did not|there is no|the phone is|full phone control is switched off)/i.test(r.reply)?'bad':'ok');if(r.show)go(r.show);if(voiceOn){talking=true;await say(r.reply);talking=false;}}
   catch(e){m.className='msg bad';m.textContent=e.message;}
   sending=false;loadChat();tick();
 }
@@ -925,6 +936,9 @@ const QA={
   find:{label:'Find my phone',cmd:()=>'where is my phone'},
   pstatus:{label:'Phone battery',cmd:()=>'how is my phone'},
   shot:{label:'Phone screenshot',cmd:()=>'take a screenshot of my phone'},
+  psleep:{label:'Phone sleep mode',cmd:()=>'put my phone to sleep'},
+  dnd:{label:'Do not disturb',cmd:()=>'turn on do not disturb on my phone'},
+  silent:{label:'Phone on silent',cmd:()=>'put my phone on silent'},
   briefing:{label:'Morning briefing',cmd:()=>'good morning'},
   weather:{label:'Weather',cmd:()=>'what is the weather'},
   news:{label:'News',cmd:()=>'give me the news'},
@@ -969,11 +983,14 @@ async function ppSee(){const m=$('pp-seemsg');m.className='msg';m.textContent='A
   catch(e){m.className='msg bad';m.textContent=e.message;$('pp-live').checked=false;}}
 $('pp-see').onclick=ppSee;
 $('pp-live').onchange=()=>{clearInterval(ppTimer);if($('pp-live').checked){ppSee();ppTimer=setInterval(()=>{if(VIEW==='phone'&&$('pp-live').checked)ppSee();else{clearInterval(ppTimer);$('pp-live').checked=false;}},4000);}};
-const PPC=[['Ring it','ring my phone'],['Find it','where is my phone'],['Battery and storage','how is my phone'],['Open WhatsApp','open my whatsapp'],['Save a screenshot','take a screenshot of my phone'],['Send me a test WhatsApp','send me a test whatsapp'],
-  ['Read the screen','what is on my phone screen',1],['Home','go home on my phone',1],['Back','press back on my phone',1],['Lock','press lock on my phone',1],['Volume up','press volume up on my phone',1],['Volume down','press volume down on my phone',1]];
+const PPC=[['Find phone','where is my phone'],['Ring phone','ring my phone'],['Battery status','how is my phone'],['Take screenshot','take a screenshot of my phone'],
+  ['Sleep mode','put my phone to sleep'],['Wake screen','wake my phone'],['Do not disturb on','turn on do not disturb on my phone'],['Do not disturb off','turn off do not disturb on my phone'],
+  ['Silent','put my phone on silent'],['Sound on','unmute my phone'],['Play / pause music','pause the music on my phone'],['Next track','next song on my phone'],
+  ['Open WhatsApp','open my whatsapp'],['Send me a test WhatsApp','send me a test whatsapp'],
+  ['Read the screen','what is on my phone screen',1],['Home','go home on my phone',1],['Back','press back on my phone',1],['Volume up','press volume up on my phone',1],['Volume down','press volume down on my phone',1]];
 async function loadPhonePage(){
   if(!S)return;fillPhoneSettings();const full=!!S.user.settings.phone_full_control;
-  $('pp-cmds').innerHTML=PPC.filter(c=>!c[2]||full).map((c,i)=>`<button type="button" data-pc="${esc(c[1])}">${esc(c[0])}</button>`).join('')+(full?'':'<span class="muted" style="font-size:13px;align-self:center">Tick Full phone control below for Home, Back, Lock, volume and reading the screen.</span>');
+  $('pp-cmds').innerHTML=PPC.filter(c=>!c[2]||full).map((c,i)=>`<button type="button" data-pc="${esc(c[1])}">${esc(c[0])}</button>`).join('')+(full?'':'<span class="muted" style="font-size:13px;align-self:center">Tick Full phone control below for Home, Back, volume and reading the screen.</span>');
   $('pp-cmds').querySelectorAll('[data-pc]').forEach(b=>b.onclick=()=>runHere(b.dataset.pc,$('pp-cmdmsg')));
   render();loadPhone();loadContacts($('pp-cmsg'));
 }
