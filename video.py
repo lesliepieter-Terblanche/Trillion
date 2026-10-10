@@ -234,6 +234,41 @@ def pexels_clip(key, query, w, h, need_seconds, used):
     return None, None
 
 
+def pixabay_clip(key, query, w, h, need_seconds, used):
+    """Same job as pexels_clip, from Pixabay (free key, no orientation filter: clips are cropped to fit)."""
+    try:
+        r = httpx.get("https://pixabay.com/api/videos/", timeout=25,
+                      params={"key": key, "q": query[:100], "per_page": 10, "video_type": "film", "safesearch": "true"})
+        r.raise_for_status()
+        hits = r.json().get("hits", [])
+    except Exception:
+        return None, None
+    hits = [v for v in hits if v.get("id") not in used and v.get("duration", 0) >= need_seconds] or \
+           [v for v in hits if v.get("id") not in used]
+    for v in hits:
+        sizes = [f for f in (v.get("videos") or {}).values() if f.get("url") and f.get("height")]
+        if not sizes:
+            continue
+        # tall output crops the middle of a wide clip, so it needs more source height
+        want = h if w >= h else min(1080, h)
+        sizes.sort(key=lambda f: (f["height"] > 1440, abs(f["height"] - want)))
+        f = sizes[0]
+        path = CACHE / f"pixabay-{v['id']}-{f['height']}.mp4"
+        if not path.exists():
+            try:
+                with httpx.stream("GET", f["url"], timeout=180, follow_redirects=True) as resp:
+                    resp.raise_for_status()
+                    with open(path, "wb") as out:
+                        for chunk in resp.iter_bytes(1 << 16):
+                            out.write(chunk)
+            except Exception:
+                path.unlink(missing_ok=True)
+                continue
+        used.add(v["id"])
+        return str(path), v.get("user") or "Pixabay"
+    return None, None
+
+
 def clip_frames(path, dur, w, h):
     """Decode a stock clip to graded frames at the output size."""
     vf = (f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},fps={FPS},"
@@ -551,6 +586,8 @@ def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progre
     n_scenes = max(2, min(8, round((seconds - END_LEN) / 4.2)))
     el_key = core.get_secret(uid, "elevenlabs") if voiceover else None
     px_key = core.get_secret(uid, "pexels")
+    pb_key = core.get_secret(uid, "pixabay")
+    find_clip, stock_key, stock_name = (pexels_clip, px_key, "Pexels") if px_key else (pixabay_clip, pb_key, "Pixabay")
     notes = []
 
     say("Writing the script")
@@ -581,10 +618,10 @@ def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progre
 
     credits, used = [], set()
     per = (seconds - END_LEN) / len(p["scenes"])
-    if px_key:
+    if stock_key:
         for i, sc in enumerate(p["scenes"]):
             say(f"Finding footage {i + 1} of {len(p['scenes'])}")
-            clip, who = pexels_clip(px_key, sc["search"], w, h, per, used)
+            clip, who = find_clip(stock_key, sc["search"], w, h, per, used)
             if clip:
                 sc["clip"] = clip
                 credits.append(who)
@@ -592,7 +629,7 @@ def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progre
         if missing:
             notes.append(f"No stock footage was found for {missing} of {len(p['scenes'])} scenes, so those use a light backdrop.")
     else:
-        notes.append("No stock footage: add a free Pexels key in Settings to get real footage. This one uses light backdrops.")
+        notes.append("No stock footage: add a free Pixabay key in Settings to get real footage. This one uses light backdrops.")
 
     music, music_name = pick_music()
     say("Rendering")
@@ -608,7 +645,7 @@ def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progre
         except OSError:
             pass
     detail = {"scenes": [sc["headline"] for sc in p["scenes"]], "narration": p["narration"] if vo_path else "",
-              "footage": sorted(set(credits)), "music": music_name, "format": fmt, "notes": notes}
+              "footage": sorted(set(credits)), "footage_source": stock_name if credits else "", "music": music_name, "format": fmt, "notes": notes}
     vid = core.x("INSERT INTO videos(user_id,title,path,thumb,seconds,detail,created) VALUES(?,?,?,?,?,?,?)",
                  (uid, p["title"], str(out), thumb if os.path.exists(thumb) else "", seconds, json.dumps(detail), time.time()))
     return {"video_id": vid, "title": p["title"], "saved": str(out), "seconds": round(seconds, 1),

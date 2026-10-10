@@ -545,6 +545,8 @@ def secret_test(name: str, user=Depends(auth)):
         elif name == "anthropic":
             r = httpx.get("https://api.anthropic.com/v1/models", timeout=15,
                           headers={"x-api-key": key, "anthropic-version": "2023-06-01"})
+        elif name == "pixabay":
+            r = httpx.get("https://pixabay.com/api/videos/", params={"key": key, "q": "city", "per_page": 3}, timeout=15)
         elif name == "pexels":
             r = httpx.get("https://api.pexels.com/videos/search", params={"query": "city", "per_page": 1},
                           headers={"Authorization": key}, timeout=15)

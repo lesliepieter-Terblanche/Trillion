@@ -41,8 +41,8 @@ Tell Trillion "update yourself", or use UPDATE NOW on the Family page.
 
 VIDEOS (Videos page, or just ask her)
 "Create a 20 second cinematic video about ..." She writes the script, fetches real footage from
-Pexels, records an ElevenLabs voice-over, adds music, titles and captions, and saves the MP4 to
-your "Trillion Videos" folder. Keys go under Settings: Pexels (free, pexels.com/api) for footage,
+Pixabay, records an ElevenLabs voice-over, adds music, titles and captions, and saves the MP4 to
+your "Trillion Videos" folder. Keys go under Settings: Pixabay (free, pixabay.com/api/docs) for footage,
 ElevenLabs for the voice. Without them the video still renders, with light backdrops and no voice.
 Your own music: drop mp3 files into data\music and she uses those instead of the built-in track.
 

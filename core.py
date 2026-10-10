@@ -27,7 +27,7 @@ DEFAULT_SETTINGS = {
     "daily_review": True,
     "phone_country_code": "27",    # used to turn 082... into +2782... for WhatsApp
 }
-SECRET_NAMES = ["gemini", "anthropic", "elevenlabs", "pexels"]
+SECRET_NAMES = ["gemini", "anthropic", "elevenlabs", "pixabay", "pexels"]
 LLM = None  # set by app.py: the brain, for jobs that need it outside the chat loop
 
 
