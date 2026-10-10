@@ -205,10 +205,14 @@ UPDATE_RE = re.compile(r"\b(update|upgrade)\s+(yourself|your ?self|herself|trill
 
 _PH = r"(?:my |the )?(?:cell ?phone|mobile(?: phone)?|phone|cell|galaxy|samsung)"
 PHONE_RULES = [
+    ("whatsapp", re.compile(r"\bwhats ?app\b.{0,20}?\bsend\s+(.+?)\s+(?:a\s+)?(?:message|text)\s*(?:saying|that says|to say|:|\bthat\b)\s+(.+)$", re.I | re.S)),
     ("whatsapp", re.compile(r"\b(?:send\s+)?(?:a\s+)?whats ?app\s+(?:message\s+)?(?:to\s+)?(.+?)\s*(?:,?\s*saying|that says|to say|:|\bthat\b)\s+(.+)$", re.I | re.S)),
     ("whatsapp", re.compile(r"\bsend\s+(.+?)\s+a\s+whats ?app(?:\s+message)?\s*(?:saying|that says|to say|:|\bthat\b)\s+(.+)$", re.I | re.S)),
     ("whatsapp", re.compile(r"\b(?:tell|message|text)\s+(.+?)\s+on\s+whats ?app\s*(?:saying|that|:)?\s+(.+)$", re.I | re.S)),
     ("open", re.compile(r"\b(?:open|launch|start)\s+(?:up\s+)?(?:my\s+|the\s+)?(.+?)\s+(?:app\s+)?on\s+" + _PH, re.I)),
+    # "open my WhatsApp" with no device named: these apps live on the phone
+    ("open", re.compile(r"\b(?:open|launch|start)\s+(?:up\s+)?(?:my\s+|the\s+)?(whats ?app(?: business)?|instagram|tiktok|telegram|"
+                        r"facebook|messages|gallery|play store|tailscale)(?:\s+app)?\s*(?:for me|please|now)?[.!?]?\s*$", re.I)),
     ("screenshot", re.compile(r"\bscreenshot\b.{0,30}" + _PH + "|" + _PH + r".{0,30}\bscreenshot\b", re.I)),
     ("ring", re.compile(r"\b(?:ring|buzz|make .{0,10}noise)\b.{0,20}" + _PH, re.I)),
     ("locate", re.compile(r"\b(?:where(?:'s| is)|find|locate|track)\b.{0,15}" + _PH, re.I)),
@@ -227,7 +231,10 @@ def phone_shortcut(user, text, tid):
         if not m:
             continue
         if kind == "whatsapp":
-            who = re.sub(r"^(?:my |to )", "", m.group(1).strip(" ,.:"), flags=re.I)
+            who = m.group(1).strip(" ,.:")
+            who = re.sub(r"^(?:and\s+)?(?:then\s+)?(?:send|tell|message|text)\s+", "", who, flags=re.I)
+            who = re.sub(r"\s+(?:a|the)\s+(?:whats ?app\s+)?(?:message|text|note)$", "", who, flags=re.I)
+            who = re.sub(r"^(?:my |to )", "", who, flags=re.I).strip()
             msg = m.group(2).strip().strip('"\u201c\u201d')
             if not who or not msg or len(who) > 60:
                 continue
@@ -237,9 +244,14 @@ def phone_shortcut(user, text, tid):
                 return "Ready. " + (a["summary"] if a else "The message") + ". Approve it on the dashboard and I will send it.", True, r
             return ("I could not prepare that WhatsApp: " + r.get("error", "unknown problem")), False, r
         if kind == "open":
-            app_name = re.sub(r"\s+app$", "", m.group(1).strip(), flags=re.I)
+            if re.search(r"\b(pc|computer|desktop|laptop|browser|web)\b", text, re.I):
+                continue
+            app_name = re.sub(r"^whats\s+app", "whatsapp", m.group(1).strip(), flags=re.I)
+            app_name = re.sub(r"\s+app$", "", app_name, flags=re.I)
             r = tools.execute(user, "phone_open_app", {"app": app_name}, task_id=tid)
-            return (f"{app_name.capitalize()} is open on your phone." if "error" not in r else r["error"]), False, r
+            shown = {"whatsapp": "WhatsApp", "whatsapp business": "WhatsApp Business", "tiktok": "TikTok"}.get(
+                app_name.lower(), app_name.capitalize())
+            return (f"{shown} is open on your phone." if "error" not in r else r["error"]), False, r
         if kind == "screenshot":
             r = tools.execute(user, "phone_screenshot", {}, task_id=tid)
             return (f"Screenshot saved to {r['saved']}." if "error" not in r else r["error"]), False, r
