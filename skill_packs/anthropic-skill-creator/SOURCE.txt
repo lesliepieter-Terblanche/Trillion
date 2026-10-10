@@ -1,0 +1,3 @@
+skill-creator by Anthropic. Apache License 2.0, see skill-creator/LICENSE.txt.
+Source: https://github.com/anthropics/skills/tree/main/skills/skill-creator
+Copied unchanged into Trillion.

@@ -88,6 +88,14 @@ def install_packs():
         src = (pack / "SOURCE.txt").read_text(encoding="utf-8").strip().splitlines() if (pack / "SOURCE.txt").exists() else []
         link = next((ln.split("Source:", 1)[1].strip() for ln in src if ln.startswith("Source:")), f"bundled pack: {pack.name}")
         names = []
+        off = set()
+        for ln in src:
+            if ln.lower().startswith("off:"):
+                off |= {x.strip() for x in ln.split(":", 1)[1].split(",") if x.strip()}
+        shared = None
+        for extra in sorted(f for f in pack.iterdir() if f.is_dir() and not (f / "SKILL.md").exists()):
+            shared = SKILLS_DIR / f"{pack.name}-{extra.name}"        # files the pack's skills have in common
+            shutil.copytree(extra, shared, dirs_exist_ok=True)
         for folder in sorted(f for f in pack.iterdir() if (f / "SKILL.md").exists() and f.name not in done):
             done.add(folder.name)
             name, desc, body = parse_skill((folder / "SKILL.md").read_text(encoding="utf-8"))
@@ -104,8 +112,11 @@ def install_packs():
             if extras:
                 body += (f"\n\n---\nOn this PC, the files that belong to this skill ({', '.join(extras)}) are in the folder: {dest}\n"
                          "Read templates from there with read_file. Its scripts and tools can only be run with run_command, which needs the owner's approval.")
-            # a pack can ask to be installed switched off (for playbooks she cannot really carry out)
-            save_skill(name, desc, body, link, owner_id=None if any(ln.strip().lower() == "enabled: no" for ln in src) else owner["id"])
+            if shared:
+                body += f"\nFiles this skill shares with the others in its pack (it may call them 'shared/...') are in: {shared}"
+            # a pack can ask for some or all of its skills to be installed switched off (playbooks she cannot really carry out)
+            stay_off = folder.name in off or any(ln.strip().lower() == "enabled: no" for ln in src)
+            save_skill(name, desc, body, link, owner_id=None if stay_off else owner["id"])
             names.append(name)
         marker.write_text(json.dumps(sorted(done)), encoding="utf-8")
         if names:

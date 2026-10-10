@@ -1,0 +1,4 @@
+Proficiently job-search skills by Proficiently (proficiently.com). The plugin manifest in the source repository declares the licence as MIT.
+Source: https://github.com/proficientlyjobs/proficiently-claude-skills
+Copied unchanged into Trillion.
+Off: job-search, apply, network-scan, jobsearch-telegram

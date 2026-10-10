@@ -1,0 +1,5 @@
+Writing coach from Resume Builder (Resume Builder Contributors). MIT licence, see LICENSE.
+Source: https://github.com/jananthan30/Resume-Builder
+The writing-coach skill, its checking script and its examples are copied unchanged. The other eight skills in that
+repository are not included: they are front ends to its own Python program and scoring server, which Trillion does not run,
+and three of them share names with the Proficiently skills already installed.
