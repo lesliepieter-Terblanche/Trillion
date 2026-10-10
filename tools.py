@@ -137,7 +137,7 @@ def execute(user, name, args, task_id=None, approved=False, direct=False):
         if name == "phone_shell" and not user["is_admin"]:
             return {"error": "Only the owner login can run commands on a phone."}
         if name in FULL_PHONE and not core.settings(user).get("phone_full_control"):
-            return {"error": "Full phone control is switched off. Switch it on under Settings, My phone."}
+            return {"error": "Full phone control is switched off. Switch it on on the Phone page."}
         if name == "update_self" and not user["is_admin"]:
             return {"error": "Only the owner login can update Trillion."}
         if name in NEEDS_APPROVAL and not approved:

@@ -46,7 +46,7 @@ your "Trillion Videos" folder. Keys go under Settings: Pixabay (free, pixabay.co
 ElevenLabs for the voice. Without them the video still renders, with light backdrops and no voice.
 Your own music: drop mp3 files into data\music and she uses those instead of the built-in track.
 
-YOUR PHONE (Settings > My phone)
+YOUR PHONE (the Phone page)
 Each login links its own Android phone. On the phone switch on USB debugging (Developer options),
 plug it into the PC, tap Allow, then LINK TO ME. Optional: SWITCH TO WIRELESS with the phone's
 Tailscale address. She can then report the phone's status, open apps, look up contacts, send a
@@ -55,7 +55,7 @@ Needs the Android phone tools: run Setup again once if it says ADB is not instal
 
 ROUTINES (Routines page, or just say the words)
 Say "morning" and she gives you the weather, news, financials, the latest jobs she finished, what is
-outstanding, your website and the PC's health, aloud and as a panel in the Control Room. Every login
+outstanding, your website and the PC's health, aloud and as a panel on the home screen. Every login
 has its own routines: Morning, Evening wrap-up ("good night") and Status check ("status") to start
 with. On the Routines page each person changes the words, the town, the news sources, the list of
 currencies, metals and crypto, the order, adds a reminder of their own, or adds new routines.

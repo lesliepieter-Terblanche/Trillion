@@ -162,7 +162,8 @@ PERSONA_RULE = ("This personality is only for how you talk to the user in chat. 
                 "a WhatsApp message, an email, a document, a note or a video script, stays clean and professional unless "
                 "the user explicitly asks for another tone.")
 PERSONA_RE = re.compile(r"\b(?:switch|change|go|turn)\b.{0,25}\b(professional|warm|friendly|witty|funny|sarcastic|serious)\b"
-                        r"|\b(?:be|use)\b.{0,12}\b(professional|warm|friendly|witty|funny|sarcastic|serious)\b.{0,12}\b(?:personality|mode|voice|style)\b", re.I)
+                        r"|\b(?:be|use)\b.{0,12}\b(professional|warm|friendly|witty|funny|sarcastic|serious)\b.{0,12}\b(?:personality|mode|voice|style)\b"
+                        r"|^\s*be\s+(professional|warm|friendly|witty|funny|sarcastic|serious)[.!]?\s*$", re.I)
 PERSONA_WORDS = {"professional": "professional", "serious": "professional", "warm": "warm", "friendly": "warm",
                  "witty": "witty", "funny": "witty", "sarcastic": "witty"}
 PERSONA_HELLO = {"professional": "Understood. Professional mode from here on.",
@@ -391,6 +392,8 @@ def tools_for(user, text):
 VIDEO_RE = re.compile(r"\b(create|make|generate|produce|build|render)\b[^.?!]{0,80}\bvideo\b", re.I)
 
 
+SITE_RE = re.compile(r"\b(?:check|is|how is|how's)\b.{0,12}\b(?:my|the|our)\s+(?:web ?site|site)\b", re.I)
+PC_RE = re.compile(r"\b(?:status|health|how is|how's)\b.{0,14}\b(?:my |the |this )?(?:pc|computer)\b|\bpc status\b", re.I)
 OPEN_VIDEO_RE = re.compile(r"\b(open|play|show|watch|view)\b[^.?!]{0,30}\b(video|clip)s?\b", re.I)
 
 
@@ -434,7 +437,7 @@ def run_agent(user, text):
     if VERSION_RE.search(text) and not UPDATE_RE.search(text):
         st = core.settings(user)
         reply = (f"I am running version {VERSION}. WhatsApps to saved contacts: "
-                 + ("sent straight away, no approval." if st.get("whatsapp_auto_contacts") else "wait for your approval (switch is off under Settings, My phone).")
+                 + ("sent straight away, no approval." if st.get("whatsapp_auto_contacts") else "wait for your approval (switch is off on the Phone page).")
                  + " Full phone control: " + ("on." if st.get("phone_full_control") else "off."))
         BUSY[uid] = False
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
@@ -473,7 +476,7 @@ def run_agent(user, text):
         return {"reply": one["reply"], "task_id": tid, "provider": "built-in", "brief": one["brief"]}
     pm = PERSONA_RE.search(text) if len(text) < 90 else None
     if pm:  # "switch to witty mode": change it straight away
-        choice = PERSONA_WORDS[(pm.group(1) or pm.group(2)).lower()]
+        choice = PERSONA_WORDS[(pm.group(1) or pm.group(2) or pm.group(3)).lower()]
         st = core.settings(user)
         st["personality"] = choice
         core.save_settings(uid, st)
@@ -493,6 +496,26 @@ def run_agent(user, text):
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="waiting" if waiting_ else ("failed" if "error" in res else "completed"), detail=reply[:200])
         return {"reply": reply, "task_id": tid, "provider": "built-in"}
+    quick = None
+    if len(text) < 70 and SITE_RE.search(text):
+        site = core.settings(user).get("site")
+        if not site:
+            quick = "No website is set for this login. Add one under Settings, Look and name."
+        else:
+            SITES[site] = r = tools.site_check(site)
+            quick = (f"{site} is online and answered in {r.get('ms', '?')} milliseconds." if r["ok"] else
+                     f"{site} is not answering" + (f" (code {r['status']})." if r.get("status") else ". I could not reach it at all."))
+    elif len(text) < 70 and PC_RE.search(text):
+        v = core.vitals()
+        g = v.get("gpu")
+        quick = (f"The processor is at {v['cpu']:.0f} percent and memory is {v['ram_used']:.0f} of {v['ram_total']:.0f} GB used."
+                 + (f" The graphics card is using {g['mem_used']:.1f} of {g['mem_total']:.0f} GB and is at {g['temp']:.0f} degrees." if g else "")
+                 + (f" The disk has {v['disk']['total'] - v['disk']['used']:.0f} GB free." if v.get("disk") else ""))
+    if quick:
+        BUSY[uid] = False
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", quick, time.time()))
+        core.set_task(tid, status="completed", detail=quick[:200])
+        return {"reply": quick, "task_id": tid, "provider": "built-in"}
     if OPEN_VIDEO_RE.search(text) and not VIDEO_RE.search(text):
         import os
         v = core.q("SELECT * FROM videos WHERE user_id=? ORDER BY id DESC LIMIT 1", (uid,), one=True)
@@ -802,7 +825,7 @@ def messages(user=Depends(auth)):
 
 
 # ---------- settings and keys ----------
-EDITABLE = ["whatsapp_auto_contacts", "phone_own_number", "phone_full_control", "personality", "phone_country_code", "assistant_name", "brand", "accent", "site", "brain", "local_model", "cloud_model", "voice",
+EDITABLE = ["quick_actions", "whatsapp_auto_contacts", "phone_own_number", "phone_full_control", "personality", "phone_country_code", "assistant_name", "brand", "accent", "site", "brain", "local_model", "cloud_model", "voice",
             "eleven_voice_id", "daily_review"]
 
 
@@ -1000,6 +1023,83 @@ def phone_info(user=Depends(auth)):
     except Exception as e:  # a slow or hung phone link must not empty the settings box
         out["adb"], out["error"] = False, (str(e) if isinstance(e, phone.PhoneError) else "The phone link did not answer. Click LOOK AGAIN.")
     return out
+
+
+CONTACT_CACHE = {}
+
+
+@app.get("/api/phone/contacts")
+def phone_contacts(fresh: int = 0, user=Depends(auth)):
+    """Names only, for the pick-a-contact box. Kept for ten minutes so the phone is not asked on every keystroke."""
+    c = CONTACT_CACHE.get(user["id"])
+    if c and not fresh and time.time() - c["t"] < 600:
+        return c["v"]
+    try:
+        names = sorted(phone.all_contacts(user), key=str.lower)
+        v = {"ok": True, "names": names[:3000]}
+        if not names:
+            v = {"ok": False, "names": [], "error": "The phone gave me no contacts. You can still type the name: she looks it up in WhatsApp."}
+    except Exception as e:
+        v = {"ok": False, "names": [], "error": str(e) if isinstance(e, phone.PhoneError) else "The phone did not answer."}
+    if v["ok"]:
+        CONTACT_CACHE[user["id"]] = {"t": time.time(), "v": v}
+    return v
+
+
+@app.get("/api/phone/screen.png")
+def phone_screen_png(user=Depends(auth)):
+    try:
+        return Response(phone.screen_png(user), media_type="image/png", headers={"Cache-Control": "no-store"})
+    except phone.PhoneError as e:
+        raise HTTPException(409, str(e))
+
+
+@app.get("/api/projects")
+def projects(user=Depends(auth)):
+    """One card per business. The owner sees every login's card (figures only); everyone else sees their own."""
+    ds = core.day_start()
+    out = []
+    people = core.q("SELECT * FROM users ORDER BY id") if user["is_admin"] else [user]
+    for u in people:
+        st = core.settings(u)
+        uid = u["id"]
+        cnt = lambda sql, *a: core.q(sql, (uid, *a), one=True)["c"]
+        vid = core.q("SELECT id, title, created, seconds FROM videos WHERE user_id=? ORDER BY id DESC LIMIT 1", (uid,), one=True)
+        last = core.q("SELECT ts, text FROM activity WHERE user_id=? ORDER BY id DESC LIMIT 1", (uid,), one=True)
+        mine = uid == user["id"]
+        card = {
+            "id": uid, "owner": u["name"], "mine": mine, "brand": st.get("brand") or u["name"], "site": st.get("site") or "",
+            "accent": st.get("accent") or "#ffb454", "site_status": SITES.get(st.get("site")) if st.get("site") else None,
+            "notes": cnt("SELECT COUNT(*) c FROM notes WHERE user_id=?"),
+            "videos": cnt("SELECT COUNT(*) c FROM videos WHERE user_id=?"),
+            "last_video": dict(vid) if vid else None,
+            "done_today": cnt("SELECT COUNT(*) c FROM tasks WHERE user_id=? AND status='completed' AND created>=?", ds),
+            "failed_today": cnt("SELECT COUNT(*) c FROM tasks WHERE user_id=? AND status='failed' AND created>=?", ds),
+            "waiting": cnt("SELECT COUNT(*) c FROM approvals WHERE user_id=? AND status='pending'"),
+            "routines": cnt("SELECT COUNT(*) c FROM routines WHERE user_id=?") if _has_table("routines") else 0,
+            "last_active": last["ts"] if last else None,
+            "phone": bool(st.get("phone_serial")),
+        }
+        if mine:   # the detail of a project is only for the person it belongs to
+            card["recent"] = [dict(t) for t in core.q(
+                "SELECT title, status, created FROM tasks WHERE user_id=? ORDER BY id DESC LIMIT 8", (uid,))]
+            card["recent_videos"] = [dict(v) for v in core.q(
+                "SELECT id, title, created, seconds, thumb FROM videos WHERE user_id=? ORDER BY id DESC LIMIT 4", (uid,))]
+        out.append(card)
+    return out
+
+
+def _has_table(name):
+    return bool(core.q("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,), one=True))
+
+
+@app.post("/api/projects/check")
+def projects_check(user=Depends(auth)):
+    site = core.settings(user).get("site")
+    if not site:
+        raise HTTPException(400, "No website is set for this login. Add one under Settings.")
+    SITES[site] = res = tools.site_check(site)
+    return res
 
 
 @app.post("/api/phone/link")

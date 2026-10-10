@@ -62,7 +62,7 @@ def devices():
 def linked_serial(user):
     s = core.settings(user).get("phone_serial")
     if not s:
-        raise PhoneError("No phone is linked to this login yet. Link one under Settings, My phone.")
+        raise PhoneError("No phone is linked to this login yet. Link one on the Phone page.")
     return s
 
 
@@ -87,7 +87,7 @@ def working_serial(user):
     s = core.settings(user)
     serial = s.get("phone_serial")
     if not serial:
-        raise PhoneError("No phone is linked to this login yet. Link one under Settings, My phone.")
+        raise PhoneError("No phone is linked to this login yet. Link one on the Phone page.")
     seen = devices()
     if _ready(serial, seen):
         return serial
@@ -572,6 +572,18 @@ def screenshot(user):
     if not path.exists():
         raise PhoneError("Could not copy the screenshot off the phone: " + out.strip()[-160:])
     return {"saved": str(path)}
+
+
+def screen_png(user):
+    """The phone's screen right now as PNG bytes, for the dashboard's live picture. Nothing is saved."""
+    serial = working_serial(user)
+    try:
+        r = subprocess.run([find_adb(), "-s", serial, "exec-out", "screencap", "-p"], capture_output=True, timeout=25)
+    except subprocess.TimeoutExpired:
+        raise PhoneError("The phone did not answer in time.")
+    if not r.stdout.startswith(b"\x89PNG"):
+        raise PhoneError("The phone would not give me a picture of its screen.")
+    return r.stdout
 
 
 def phone_addresses(serial):

@@ -93,7 +93,6 @@ footer.status{background:#000;border-top:1px solid var(--line);padding:10px 20px
 .fold[open] summary::before{content:"\2212"}
 .fold summary .tag{margin-left:auto;letter-spacing:.04em}
 .fold>div{padding:6px 0 4px}
-#more{display:none}
 @media (max-width:820px){
   /* phone: the conversation first, everything else behind one button */
   header{padding:8px 12px;gap:6px 12px;position:static}
@@ -110,10 +109,7 @@ footer.status{background:#000;border-top:1px solid var(--line);padding:10px 20px
   .big{font-size:26px}
   .kicker{font-size:11px}
   .sub{font-size:14px}
-  .chat{max-height:52vh;order:5}
   .chat div{font-size:16px}
-  #more{display:block;width:100%}
-  body:not(.details) .extra{display:none!important}
   .talk{padding:8px 10px}
   .talk form{gap:8px}
   .talk input{min-width:0}
@@ -152,20 +148,97 @@ footer.status{background:#000;border-top:1px solid var(--line);padding:10px 20px
 .sec .mv{min-width:44px;min-height:44px;background:none;border:1px solid #4a433c}
 .sec .flds{display:flex;flex-direction:column;gap:10px;padding-left:34px}
 @media (max-width:820px){.brief{padding:14px}.tile.wide{grid-column:auto}.tile .bigv{font-size:38px}.tile .lns .ln:nth-child(n+5){display:none}.sec .flds{padding-left:0}}
+
+/* ---- 0.6 layout: one calm home screen, details on request ---- */
+body:not(.details) .extra{display:none!important}
+main{max-width:1180px;gap:22px}
+.panel{border-radius:8px;border-color:#211e24}
+.btn{border-radius:6px}.field input,.field select,.field textarea,.talk input,.talk button{border-radius:6px}
+.row{border-bottom-color:#1d1a20}
+.hero{display:flex;align-items:center;gap:22px;flex-wrap:wrap}
+.hero .orb{width:96px;height:96px;flex:none}
+.hero .orb .r2{inset:8px}.hero .orb .r3{inset:18px;border-width:2px}.hero .orb .c{width:42px;height:42px}
+.hero .herotext{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.hero .big{font-size:clamp(24px,3.4vw,40px)}
+.hero .sub{font-size:15px;max-width:none}
+.tiles4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.st{background:var(--panel);border:1px solid #211e24;border-radius:8px;padding:14px 16px;text-align:left;display:flex;flex-direction:column;gap:2px;min-height:76px}
+.st b{font-family:var(--disp);font-size:34px;line-height:1}
+.st span{font-size:13px;color:var(--dim)}
+.st.on{border-color:var(--a)}
+.st[data-t=wait].hot{border-color:#b84a4a;background:rgba(255,93,93,.10)}.st[data-t=wait].hot b{color:var(--red)}
+.st[data-t=run].hot b{color:var(--blue)}.st[data-t=done] b{color:var(--green)}.st[data-t=prob].hot b{color:var(--red)}
+.convo{display:flex;flex-direction:column;gap:12px}
+.chat{max-width:none;max-height:46vh;min-height:90px;gap:10px}
+.chat div{font-size:16px;line-height:1.45;border-radius:8px;padding:12px 16px;max-width:86%}
+.chat .assistant{border-left:3px solid var(--a)}
+.chat:empty::before{content:"Nothing said yet. Type below, tick VOICE, or tap a button.";color:var(--dim);font-size:15px}
+.qa{display:flex;flex-wrap:wrap;gap:8px}
+.qa button{min-height:44px;padding:0 16px;background:var(--panel);border:1px solid #3a342e;border-radius:22px;font-size:14px;font-weight:600}
+.qa button:hover,.qa button.on{border-color:var(--a);color:var(--a)}
+.link{background:none;border:0;color:var(--dim);font-size:13px;text-decoration:underline;min-height:36px;padding:0 4px}
+.statusline{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center;width:100%;background:none;border:0;border-top:1px solid var(--line);
+  padding:12px 2px;font-family:var(--mono);font-size:12px;letter-spacing:.06em;color:var(--dim);text-align:left;min-height:48px}
+.statusline .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;background:#6b6258}
+.statusline .dot.ok{background:var(--green)}.statusline .dot.bad{background:var(--red)}
+.statusline .open{margin-left:auto;color:var(--ink);text-decoration:underline}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chips button{min-height:42px;padding:0 16px;background:none;border:1px solid #3a342e;border-radius:21px;font-size:14px;color:var(--dim)}
+.chips button.on{border-color:var(--a);color:var(--ink);background:var(--panel)}
+.setsec{display:none;flex-direction:column;gap:16px}.setsec.on{display:flex}
+.tickrow{display:flex;gap:12px;align-items:flex-start;min-height:44px}
+.tickrow input{width:24px;height:24px;flex:none;margin-top:2px}.tickrow .muted{font-size:13px}
+.moregrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.mbtn{background:var(--panel);border:1px solid #211e24;border-radius:8px;padding:16px;text-align:left;display:flex;flex-direction:column;gap:4px;min-height:76px}
+.mbtn b{font-size:17px}.mbtn span{font-size:13px;color:var(--dim)}.mbtn:hover{border-color:var(--a)}
+.pj{border-top:3px solid var(--pc,var(--a));gap:12px}
+.pj .nm{font-family:var(--disp);font-size:26px;font-weight:700;text-transform:uppercase;line-height:1.05;overflow-wrap:anywhere}
+.pj .facts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.pj .facts div{background:#0b0a0f;border-radius:6px;padding:10px 8px;text-align:center}
+.pj .facts b{display:block;font-family:var(--disp);font-size:24px;line-height:1}.pj .facts span{font-size:11px;color:var(--dim)}
+.shot{background:#000;border-radius:8px;min-height:120px;display:flex;align-items:center;justify-content:center;padding:8px}
+.shot img{max-width:100%;max-height:62vh;display:block;border-radius:6px}
+.cmdg{display:flex;flex-direction:column;gap:2px}
+.cmdr{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:8px 0;border-bottom:1px solid #1d1a20}
+.cmdr code{font-family:inherit;font-size:15px;overflow-wrap:anywhere}.cmdr small{display:block;color:var(--dim);font-size:12px}
+.bnav{display:none}
+.badges .opt{display:none}
+#v-phone.nolink #pp-bottom{order:-1}#v-phone.nolink>h2{order:-2}
+@media (max-width:820px){
+  nav#nav{display:none}
+  main{padding:12px 12px 190px;gap:14px}
+  .hero{gap:12px}.hero .orb{width:54px;height:54px;zoom:1}
+  .hero .orb .r1{display:none}.hero .orb .r2{inset:2px}.hero .orb .r3{inset:9px}.hero .orb .c{width:24px;height:24px}
+  .hero .big{font-size:22px}.hero .sub{font-size:13px}
+  .tiles4{gap:8px}.st{padding:10px 8px;min-height:64px;text-align:center;align-items:center}.st b{font-size:26px}.st span{font-size:11px}
+  .chat{max-height:36vh}.chat div{max-width:94%}
+  .convo .qa,.convo #qaform{order:-1}.convo #chatwait{order:-2}
+  .qa{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -12px;padding:0 12px}.qa::-webkit-scrollbar{display:none}.qa button{flex:none}
+  #v-phone .qa,#pp-cmds{flex-wrap:wrap;overflow:visible;margin:0;padding:0}
+  .talk{bottom:58px}
+  .bnav{display:grid;grid-template-columns:repeat(4,1fr);position:fixed;left:0;right:0;bottom:0;height:58px;background:#000;border-top:1px solid var(--line);z-index:7}
+  .bnav button{background:none;border:0;color:var(--dim);font-size:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+  .bnav button i{font-style:normal;font-size:17px;line-height:1}
+  .bnav button.on{color:var(--a)}
+  .pj .facts{grid-template-columns:repeat(4,1fr)}
+  .panel{padding:16px}
+}
 </style>
 </head>
 <body>
 <header>
   <div class="logo"><span id="aname">TRILLION</span> <span>//</span> <small id="brand"></small></div>
   <nav id="nav">
-    <button data-v="control" class="on">CONTROL ROOM</button>
-    <button data-v="routines">ROUTINES</button>
+    <button data-v="control" class="on">HOME</button>
+    <button data-v="projects">PROJECTS</button>
+    <button data-v="phone">PHONE</button>
+    <button data-v="videos">VIDEOS</button>
     <button data-v="files">FILES</button>
     <button data-v="memory">MEMORY</button>
-    <button data-v="videos">VIDEOS</button>
-    <button data-v="skills">SKILLS</button>
+    <button data-v="commands">COMMANDS</button>
     <button data-v="settings">SETTINGS</button>
-    <button data-v="family" id="navfam" hidden>FAMILY</button>
+    <button data-v="more">MORE</button>
+    <span id="navfam" hidden></span>
   </nav>
   <div class="badges">
     <span id="mode" class="ok opt">● LOCAL</span>
@@ -180,42 +253,112 @@ footer.status{background:#000;border-top:1px solid var(--line);padding:10px 20px
 <main>
 <div class="view on" id="v-control">
   <section class="brief" id="brief" hidden aria-live="polite"></section>
-  <div class="stage" id="stage">
-    <div class="rail left extra">
-      <h2>Vitals</h2><div id="vitals"></div>
-      <h2 style="margin-top:8px">Brains</h2><div id="brains"></div>
-    </div>
-    <div class="center">
-      <div class="orb"><div class="r1"></div><div class="r2"></div><div class="r3"></div><div class="c"></div></div>
+  <div class="hero" id="stage">
+    <div class="orb"><div class="r1"></div><div class="r2"></div><div class="r3"></div><div class="c"></div></div>
+    <div class="herotext">
       <div class="kicker" id="kicker">READY</div>
       <h1 class="big" id="big">Standing by</h1>
       <div class="sub" id="sub">Type below, or tick VOICE and just talk.</div>
-      <div class="btns"><button class="btn" id="stop" hidden>STOP</button><button class="btn" id="clear" style="min-height:36px;font-size:12px">CLEAR CONVERSATION</button></div>
-      <div class="chat" id="chat" aria-live="polite"></div>
-      <div id="chatwait" style="display:flex;flex-direction:column;gap:10px"></div>
     </div>
-    <div class="rail right">
-      <h2 style="color:var(--red)">Waiting on you · <span id="wn">0</span></h2><div id="waiting" style="display:flex;flex-direction:column;gap:12px"></div>
-      <details class="fold" id="f-phone"><summary>My phone <span class="tag" id="phsum"></span></summary><div id="phpanel"></div></details>
-      <details class="fold" id="f-ts"><summary>Tailscale <span class="tag" id="tssum"></span></summary><div id="tspanel"></div></details>
-      <h2 class="extra" style="color:var(--blue);margin-top:8px">In progress</h2><div id="prog" class="extra" style="display:flex;flex-direction:column;gap:10px"></div>
-      <div class="extra" style="display:flex;align-items:baseline;gap:12px;margin-top:8px"><span class="count" id="done">0</span><span class="muted">jobs completed today</span></div>
+    <button class="btn" id="stop" hidden>STOP</button>
+  </div>
+  <div class="tiles4" id="htiles">
+    <button class="st" data-t="wait"><b id="t-wait">0</b><span>Waiting on you</span></button>
+    <button class="st" data-t="run"><b id="t-run">0</b><span>Running now</span></button>
+    <button class="st" data-t="done"><b id="t-done">0</b><span>Done today</span></button>
+    <button class="st" data-t="prob"><b id="t-prob">0</b><span>Problems</span></button>
+  </div>
+  <div class="panel" id="hlist" hidden></div>
+  <div class="convo">
+    <div class="chat" id="chat" aria-live="polite"></div>
+    <div id="chatwait" style="display:flex;flex-direction:column;gap:10px"></div>
+    <div class="qa" id="qa"></div>
+    <div class="panel" id="qaform" hidden></div>
+    <div style="text-align:right"><button class="link" id="clear">Clear conversation</button></div>
+  </div>
+  <button class="statusline" id="more" type="button" aria-expanded="false"></button>
+  <div class="extra" style="display:flex;flex-direction:column;gap:26px">
+    <div class="stage">
+      <div class="rail">
+        <h2>This PC</h2><div id="vitals"></div>
+        <h2 style="margin-top:8px">Brains</h2><div id="brains"></div>
+      </div>
+      <div class="rail">
+        <details class="fold" id="f-phone" open><summary>My phone <span class="tag" id="phsum"></span></summary><div id="phpanel"></div></details>
+        <details class="fold" id="f-ts" open><summary>Tailscale <span class="tag" id="tssum"></span></summary><div id="tspanel"></div></details>
+      </div>
+      <div class="rail">
+        <h2>Memory</h2><div style="display:flex;gap:28px"><div><div class="num" id="np">0</div><div class="muted">Personal notes</div></div><div><div class="num" id="nw">0</div><div class="muted">Work notes</div></div></div><div class="muted" id="nt"></div>
+        <h2 style="margin-top:8px">Website</h2><div id="site"></div>
+      </div>
+    </div>
+    <section class="band">
+      <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px">
+        <h2>Today's timeline</h2>
+        <div style="display:flex;flex-wrap:wrap;gap:16px;font-size:12px"><span><span style="color:var(--blue)">■</span> In progress</span><span><span style="color:var(--red)">■</span> Waiting on you</span><span><span style="color:var(--green)">■</span> Completed</span><span><span style="color:#8a8178">■</span> Stopped or failed</span></div>
+      </div>
+      <div class="tl" id="tl"></div>
+      <div class="ticks"><span>00:00</span><span>04:00</span><span>08:00</span><span>12:00</span><span>16:00</span><span>20:00</span><span>24:00</span></div>
+    </section>
+    <section class="band"><h2>Activity</h2><div class="log" id="log" style="margin-top:8px;max-height:230px;overflow:auto"></div></section>
+  </div>
+  <div hidden><span id="wn"></span><div id="waiting"></div><div id="prog"></div><span id="done"></span></div>
+</div>
+
+<div class="view" id="v-projects">
+  <h2>Projects</h2>
+  <div class="muted" id="pjnote"></div>
+  <div class="grid2" id="pjlist"></div>
+  <div class="panel" id="pjdetail" hidden></div>
+</div>
+
+<div class="view" id="v-phone">
+  <h2>My phone</h2>
+  <div class="grid2">
+    <div class="panel"><b>Status</b><div id="pp-stats"></div></div>
+    <div class="panel"><b>What the phone is showing</b>
+      <div class="muted" style="font-size:13px">A picture of the screen as it is right now. Nothing is saved.</div>
+      <div id="pp-shot" class="shot"><span class="muted">Not loaded yet.</span></div>
+      <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="pp-see">SHOW SCREEN NOW</button><label style="display:flex;gap:8px;align-items:center;min-height:44px"><input type="checkbox" id="pp-live" style="width:20px;height:20px"> Keep refreshing</label></div>
+      <div class="msg" id="pp-seemsg"></div>
     </div>
   </div>
-  <button class="btn" id="more" type="button">SHOW PC STATUS AND DETAILS</button>
-  <section class="band extra">
-    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px">
-      <h2>Today's timeline</h2>
-      <div style="display:flex;flex-wrap:wrap;gap:16px;font-size:12px"><span><span style="color:var(--blue)">■</span> In progress</span><span><span style="color:var(--red)">■</span> Waiting on you</span><span><span style="color:var(--green)">■</span> Completed</span><span><span style="color:#8a8178">■</span> Stopped or failed</span></div>
+  <div class="panel"><b>Send a WhatsApp</b>
+    <div class="grid2">
+      <label class="field"><span>To (start typing a contact's name)</span><input id="pp-who" list="contacts" autocomplete="off" placeholder="Llewellyn Terblanche"></label>
+      <label class="field"><span>Message</span><input id="pp-msg" autocomplete="off" placeholder="I will be there at 5"></label>
     </div>
-    <div class="tl" id="tl"></div>
-    <div class="ticks"><span>00:00</span><span>04:00</span><span>08:00</span><span>12:00</span><span>16:00</span><span>20:00</span><span>24:00</span></div>
-  </section>
-  <section class="band three extra">
-    <div><h2>Memory</h2><div style="display:flex;gap:28px;margin-top:12px"><div><div class="num" id="np">0</div><div class="muted">Personal notes</div></div><div><div class="num" id="nw">0</div><div class="muted">Work notes</div></div></div><div class="muted" style="margin-top:10px" id="nt"></div></div>
-    <div><h2>Website</h2><div id="site" style="margin-top:12px"></div></div>
-    <div><h2>Activity</h2><div class="log" id="log" style="margin-top:8px;max-height:230px;overflow:auto"></div></div>
-  </section>
+    <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="pp-send">SEND WHATSAPP</button><span class="msg" id="pp-cmsg"></span></div>
+    <div class="msg" id="pp-sendmsg" style="font-size:15px"></div>
+  </div>
+  <div class="panel"><b>Phone commands</b>
+    <div class="qa" id="pp-cmds"></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end"><label class="field" style="flex:1;min-width:180px"><span>Open an app</span><input id="pp-app" list="applist" placeholder="WhatsApp"></label><button class="btn" id="pp-open">OPEN</button></div>
+    <datalist id="applist"><option>WhatsApp</option><option>WhatsApp Business</option><option>Chrome</option><option>Maps</option><option>Camera</option><option>Gallery</option><option>Messages</option><option>Settings</option><option>Facebook</option><option>Instagram</option><option>TikTok</option><option>Spotify</option><option>Calendar</option><option>Clock</option><option>Calculator</option><option>Play Store</option><option>Tailscale</option></datalist>
+    <div class="msg" id="pp-cmdmsg" style="font-size:15px"></div>
+  </div>
+  <div class="grid2" id="pp-bottom">
+    <div class="panel"><b>What she may do on your phone</b>
+      <label class="tickrow"><input type="checkbox" id="s-whatsapp_auto_contacts"><span><b>Send WhatsApps to my saved contacts straight away</b><br><span class="muted">No approval step when the person is in your phone's contact list. Typed-in numbers that are not saved still wait for your approval.</span></span></label>
+      <label class="tickrow"><input type="checkbox" id="s-phone_full_control"><span><b>Full phone control</b><br><span class="muted">Lets her read your phone's screen, tap, type, swipe and press keys in any app. She acts as you on the phone, so only switch this on if you are comfortable with that.</span></span></label>
+      <label class="field"><span>Your own cell number, so "send me a test WhatsApp" works</span><input id="s-phone_own_number" placeholder="082 123 4567" style="max-width:240px"></label>
+      <label class="field"><span>Country code for local numbers (27 = South Africa)</span><input id="s-phone_country_code" style="max-width:120px"></label>
+      <div><button class="btn pri" id="phsave">SAVE PHONE SETTINGS</button> <span class="msg" id="phsmsg"></span></div>
+    </div>
+    <div class="panel"><b>Link</b><div id="phonebox" style="display:flex;flex-direction:column;gap:14px"><div class="muted">Looking for your phone...</div></div></div>
+  </div>
+  <datalist id="contacts"></datalist>
+</div>
+
+<div class="view" id="v-commands">
+  <h2>Commands</h2>
+  <div class="muted">Things you can say or type. USE puts the words in the bar so you can change the name or message before sending.</div>
+  <div id="cmdlist" style="display:flex;flex-direction:column;gap:16px"></div>
+</div>
+
+<div class="view" id="v-more">
+  <h2>More</h2>
+  <div class="moregrid" id="moregrid"></div>
 </div>
 
 <div class="view" id="v-routines">
@@ -256,7 +399,7 @@ footer.status{background:#000;border-top:1px solid var(--line);padding:10px 20px
       <button class="btn pri" id="vgo">CREATE VIDEO</button>
     </div>
     <div class="msg" id="vmsg"></div>
-    <div class="muted" style="font-size:13px">Real footage needs a free Pixabay key and the voice-over needs an ElevenLabs key, both under Settings. It takes a few minutes; progress shows in the Control Room.</div>
+    <div class="muted" style="font-size:13px">Real footage needs a free Pixabay key and the voice-over needs an ElevenLabs key, both under Settings. It takes a few minutes; progress shows on the home screen.</div>
   </div>
   <div class="grid2" id="vlist"></div>
 </div>
@@ -288,36 +431,38 @@ footer.status{background:#000;border-top:1px solid var(--line);padding:10px 20px
 <div class="view" id="v-settings">
   <h2>Settings</h2>
   <div class="muted" id="setver" style="font-family:var(--mono);font-size:13px"></div>
-  <div class="grid2">
-    <div class="panel"><b>Branding</b>
+  <div class="chips" id="setnav">
+    <button data-sec="look" class="on">Look and name</button><button data-sec="brain">Brain and voice</button><button data-sec="home">Home buttons</button><button data-sec="keys">Keys</button><button data-sec="other">Phone, routines, family</button>
+  </div>
+  <div class="setsec on" data-sec="look"><div class="panel"><b>Look and name</b>
       <label class="field"><span>Assistant name</span><input id="s-assistant_name"></label>
       <label class="field"><span>Personality</span><select id="s-personality"><option value="professional">Professional: calm, precise, to the point</option><option value="warm">Warm: friendly and encouraging</option><option value="witty">Witty: jokes, sarcasm and swearing</option></select></label>
       <label class="field"><span>Business name</span><input id="s-brand"></label>
       <label class="field"><span>Website</span><input id="s-site"></label>
-      <label class="field"><span>Accent colour</span><input id="s-accent" type="color" style="padding:2px;height:44px"></label>
-    </div>
-    <div class="panel"><b>Brain and voice</b>
-      <label class="field"><span>Brain</span><select id="s-brain"><option value="local">Local only (free)</option><option value="gemini">Gemini (needs your key below)</option><option value="anthropic">Claude (needs an API key below)</option></select></label>
+      <label class="field"><span>Accent colour</span><input id="s-accent" type="color" style="padding:2px;height:44px;max-width:120px"></label>
+      <div><button class="btn pri" data-save="look">SAVE LOOK AND NAME</button> <span class="msg" id="smsg-look"></span></div>
+  </div></div>
+  <div class="setsec" data-sec="brain"><div class="panel"><b>Brain and voice</b>
+      <label class="field"><span>Brain</span><select id="s-brain"><option value="local">Local only (free)</option><option value="gemini">Gemini (needs your key under Keys)</option><option value="anthropic">Claude (needs an API key under Keys)</option></select></label>
       <label class="field"><span>Local model</span><input id="s-local_model"></label>
       <label class="field"><span>Cloud model name</span><input id="s-cloud_model"></label>
-      <label class="field"><span>Voice</span><select id="s-voice"><option value="browser">This PC's voice (free)</option><option value="elevenlabs">ElevenLabs (needs your key below)</option></select></label>
+      <label class="field"><span>Voice</span><select id="s-voice"><option value="browser">This PC's voice (free)</option><option value="elevenlabs">ElevenLabs (needs your key under Keys)</option></select></label>
       <label class="field"><span>ElevenLabs voice ID</span><input id="s-eleven_voice_id"></label>
-      <label style="display:flex;gap:10px;align-items:center;min-height:44px"><input type="checkbox" id="s-daily_review" style="width:20px;height:20px"> Learn from each day's conversations at 23:30</label>
-    </div>
+      <label class="tickrow"><input type="checkbox" id="s-daily_review"><span>Learn from each day's conversations at 23:30</span></label>
+      <div><button class="btn pri" data-save="brain">SAVE BRAIN AND VOICE</button> <span class="msg" id="smsg-brain"></span></div>
+  </div></div>
+  <div class="setsec" data-sec="home"><div class="panel"><b>Home buttons</b>
+      <div class="muted">Tick the buttons you want under the conversation on your home screen.</div>
+      <div id="qapick" class="grid2" style="gap:4px 16px"></div>
+      <div><button class="btn pri" id="qasave">SAVE HOME BUTTONS</button> <span class="msg" id="smsg-home"></span></div>
+  </div></div>
+  <div class="setsec" data-sec="keys">
+    <div class="muted">Keys are encrypted on this PC and only this login can use them. Each key has its own SAVE button.</div>
+    <div class="grid2" id="keys"></div>
   </div>
-  <div><button class="btn pri" id="ssave">SAVE SETTINGS</button> <span class="msg" id="smsg"></span></div>
-  <h2>My phone</h2>
-  <div class="panel" id="phonebox"><div class="muted">Looking for your phone...</div></div>
-  <div class="panel"><b>What she may do on your phone</b>
-    <label style="display:flex;gap:12px;align-items:flex-start;min-height:44px;margin-top:6px"><input type="checkbox" id="s-phone_full_control" style="width:24px;height:24px;flex:none;margin-top:2px"><span><b>Full phone control</b><br><span class="muted" style="font-size:13px">Lets her read your phone's screen, tap, type, swipe and press keys in any app. She acts as you on the phone, so only switch this on if you are comfortable with that.</span></span></label>
-    <label style="display:flex;gap:12px;align-items:flex-start;min-height:44px"><input type="checkbox" id="s-whatsapp_auto_contacts" style="width:24px;height:24px;flex:none;margin-top:2px"><span><b>Send WhatsApps to my saved contacts straight away</b><br><span class="muted" style="font-size:13px">No approval step when the person is in your phone's contact list. Typed-in numbers that are not saved still wait for your approval.</span></span></label>
-    <label class="field"><span>Your own cell number, so "send me a test WhatsApp" works</span><input id="s-phone_own_number" placeholder="082 123 4567" style="max-width:240px"></label>
-    <label class="field"><span>Country code for local numbers (27 = South Africa)</span><input id="s-phone_country_code" style="max-width:120px"></label>
-    <div><button class="btn pri" id="phsave">SAVE PHONE SETTINGS</button> <span class="msg" id="phsmsg"></span></div>
-  </div>
-  <h2>Connections and keys</h2>
-  <div class="muted">Keys are encrypted on this PC and only this login can use them.</div>
-  <div class="grid2" id="keys"></div>
+  <div class="setsec" data-sec="other"><div class="panel"><b>Kept on their own pages</b>
+    <div class="moregrid"><button class="mbtn" data-go="phone"><b>Phone</b><span>Link, permissions, your number</span></button><button class="mbtn" data-go="routines"><b>Routines</b><span>Morning briefing, news, weather</span></button><button class="mbtn" data-go="skills"><b>Skills and connectors</b><span>Extra abilities</span></button><button class="mbtn" data-go="family" id="setfam" hidden><b>Family and update</b><span>Logins, folders, backup</span></button></div>
+  </div></div>
 </div>
 
 <div class="view" id="v-family">
@@ -329,6 +474,7 @@ footer.status{background:#000;border-top:1px solid var(--line);padding:10px 20px
 </main>
 
 <footer class="status extra" id="foot"></footer>
+<div class="bnav" id="bnav"><button data-v="control" class="on"><i>&#9679;</i>Home</button><button data-v="projects"><i>&#9638;</i>Projects</button><button data-v="phone"><i>&#9647;</i>Phone</button><button data-v="more"><i>&#8801;</i>More</button></div>
 <div class="talk"><form id="talk">
   <button type="button" class="mic" id="mic" aria-pressed="false" aria-label="Voice mode: when ticked she listens and answers aloud until you untick it">VOICE</button>
   <input id="say" placeholder="Tell Trillion what to do" aria-label="Message" autocomplete="off">
@@ -344,13 +490,23 @@ const api=async(u,o={})=>{if(o.json!==undefined){o.method=o.method||'POST';o.hea
 const hm=t=>new Date(t*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false});
 let hold=0,S=null,sending=false,speakNext=false,settingsLoaded=false,cwd='';
 
-document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>{
-  document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on',x===b));
-  document.querySelectorAll('.view').forEach(v=>v.classList.toggle('on',v.id==='v-'+b.dataset.v));
-  ({routines:loadRoutines,files:()=>loadFiles(cwd),memory:()=>loadNotes(''),videos:loadVideos,skills:loadSkills,settings:loadSettings,family:loadFamily}[b.dataset.v]||(()=>{}))();});
+const LOADERS={projects:()=>loadProjects(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>loadFiles(cwd),memory:()=>loadNotes(''),videos:()=>loadVideos(),skills:()=>loadSkills(),settings:()=>loadSettings(),family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
+let VIEW='control';
+function go(v){
+  VIEW=v;
+  const inNav=!!document.querySelector('#nav button[data-v="'+v+'"]');document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on',x.dataset.v===(inNav?v:'more')));
+  const main=['control','projects','phone'].includes(v)?v:'more';
+  document.querySelectorAll('#bnav button').forEach(x=>x.classList.toggle('on',x.dataset.v===main));
+  document.querySelectorAll('.view').forEach(x=>x.classList.toggle('on',x.id==='v-'+v));
+  (LOADERS[v]||(()=>{}))();window.scrollTo(0,0);
+}
+document.querySelectorAll('#nav button,#bnav button').forEach(b=>b.onclick=()=>go(b.dataset.v));
+document.addEventListener('click',e=>{const b=e.target.closest('[data-go]');if(b)go(b.dataset.go);});
 ['f-phone','f-ts'].forEach(id=>{const el=$(id);try{if(localStorage.getItem('trillion_'+id)==='1')el.open=true;}catch(e){}
   el.addEventListener('toggle',()=>{try{localStorage.setItem('trillion_'+id,el.open?'1':'0');}catch(e){}});});
-$('more').onclick=()=>{const on=document.body.classList.toggle('details');$('more').textContent=on?'HIDE PC STATUS AND DETAILS':'SHOW PC STATUS AND DETAILS';};
+$('more').onclick=()=>{const on=document.body.classList.toggle('details');$('more').setAttribute('aria-expanded',on?'true':'false');if(S)render();if(on)$('more').scrollIntoView({behavior:'smooth',block:'start'});};
+let TILE=null;
+document.querySelectorAll('#htiles .st').forEach(b=>b.onclick=()=>{TILE=TILE===b.dataset.t?null:b.dataset.t;if(S)render();});
 $('out').onclick=async()=>{await api('/api/logout',{method:'POST'});location.reload();};
 
 function gauge(label,val,max,unit,pct){return `<div class="g" style="margin-bottom:16px"><label><span>${label}</span><b>${val}<small> ${unit}</small></b></label><div class="bar"><i style="width:${Math.min(100,Math.max(0,pct))}%"></i></div></div>`;}
@@ -360,7 +516,7 @@ function render(){
   document.documentElement.style.setProperty('--a',s.accent||'#ffb454');
   $('aname').textContent=(s.assistant_name||'Trillion').toUpperCase();$('brand').textContent=(s.brand||'').toUpperCase();
   document.title=(s.assistant_name||'Trillion')+' · '+S.user.name;
-  $('who').textContent=S.user.name.toUpperCase();$('navfam').hidden=!S.user.is_admin;
+  $('who').textContent=S.user.name.toUpperCase();$('navfam').hidden=!S.user.is_admin;if($('setfam'))$('setfam').hidden=!S.user.is_admin;
   const cloudBrain=s.brain!=='local'||s.voice==='elevenlabs';
   $('mode').textContent=cloudBrain?'● HYBRID':'● 100% LOCAL';$('mode').className=(cloudBrain?'':'ok')+' opt';$('mode').style.color=cloudBrain?'var(--a)':'';
   $('cloud').textContent=S.cloud_calls;$('cloud').className=S.cloud_calls?'':'ok';
@@ -372,14 +528,14 @@ function render(){
     +(v.disk?gauge('Disk',v.disk.used.toFixed(0),0,'/ '+v.disk.total.toFixed(0)+' GB',100*v.disk.used/v.disk.total):'');
   $('brains').innerHTML=S.models.ok?(S.models.list.length?S.models.list.map(m=>`<div class="row"><div>${esc(m.name)}<small>${m.size.toFixed(1)} GB on disk</small></div><span class="tag ${m.loaded?'ok':'muted'}">${m.loaded?'LOADED':'STANDBY'}</span></div>`).join(''):'<div class="bad">Ollama is running but no models are installed. Run Setup.</div>'):'<div class="bad">The local brain (Ollama) is not running.</div>';
   const prog=S.tasks.filter(t=>t.status==='in_progress'),done=S.tasks.filter(t=>t.status==='completed');
-  $('stage').className='stage'+(S.busy?' busy':'')+(voiceOn&&!S.busy&&!talking?' listening':'');
+  $('stage').className='hero'+(S.busy?' busy':'')+(voiceOn&&!S.busy&&!talking?' listening':'');
   if(Date.now()<hold){}
   else if(S.busy&&prog[0]){$('kicker').textContent='NOW WORKING';$('big').textContent=prog[0].detail||'Thinking';$('sub').textContent=prog[0].title;}
   else if(voiceOn&&!sending){$('kicker').textContent=talking?'SPEAKING':(vSpoke?'HEARING YOU':'LISTENING');$('big').textContent=talking?'Answering':'Speak any time';$('sub').textContent='Voice mode is on. Untick VOICE to stop.';}
   else if(!sending){$('kicker').textContent='READY';$('big').textContent='Standing by';$('sub').textContent='Type below, or tick VOICE and just talk.';}
   $('stop').hidden=!S.busy;
   const ph=S.phone||{};
-  if(!ph.linked){$('phsum').textContent='NOT LINKED';$('phsum').className='tag muted';$('phpanel').innerHTML='<div class="muted" style="font-size:14px">Link your phone under Settings, My phone.</div>';}
+  if(!ph.linked){$('phsum').textContent='NOT LINKED';$('phsum').className='tag muted';$('phpanel').innerHTML='<div class="muted" style="font-size:14px">Link your phone on the Phone page.</div>';}
   else if(ph.pending){$('phsum').textContent='CHECKING';$('phsum').className='tag muted';$('phpanel').innerHTML='<div class="muted" style="font-size:14px">First reading is on its way.</div>';}
   else{$('phsum').textContent=ph.ok?(ph.battery_percent+'%'+(ph.charging?' CHARGING':'')):'NOT REACHABLE';$('phsum').className='tag '+(ph.ok?'ok':'bad');
     $('phpanel').innerHTML=(ph.battery_percent!==undefined?gauge('Battery'+(ph.charging?' (charging)':''),ph.battery_percent,0,'%',ph.battery_percent):'')
@@ -403,6 +559,31 @@ function render(){
   if($('vertag'))$('vertag').textContent='v'+String(S.version).split(' ')[0];
   $('chatwait').innerHTML=S.approvals.map(a=>`<div class="wait"><div style="font-size:12px;letter-spacing:.14em;color:var(--red)">NEEDS YOUR APPROVAL</div><b>${esc(a.summary)}</b><div class="two"><button class="btn red" data-a="${a.id}" data-d="approve" style="min-height:52px">Approve</button><button class="btn" data-a="${a.id}" data-d="decline" style="min-height:52px">Decline</button></div></div>`).join('');
   $('waiting').innerHTML=S.approvals.map(a=>`<div class="wait"><b>${esc(a.summary)}</b><div class="two"><button class="btn red" data-a="${a.id}" data-d="approve">Approve</button><button class="btn" data-a="${a.id}" data-d="decline">Decline</button></div></div>`).join('')||'<div class="muted" style="font-size:14px">Nothing needs you right now.</div>';
+  const failed=S.tasks.filter(t=>t.status==='failed'&&t.created>=S.day_start),doneT=done.filter(t=>t.created>=S.day_start);
+  const probs=[];
+  if(!S.models.ok)probs.push({t:'The local brain (Ollama) is not running',s:'Start Ollama on the PC, or run Setup again.'});
+  if(S.site&&!S.site.ok)probs.push({t:'Website not answering: '+(s.site||''),s:'Last checked '+hm(S.site.checked)});
+  if(ph.linked&&!ph.pending&&!ph.ok)probs.push({t:'Phone not reachable',s:ph.error||''});
+  if(S.tailscale&&S.tailscale.installed&&!S.tailscale.running)probs.push({t:'Tailscale is not connected',s:'Remote access will not work until it is.'});
+  if(S.hearing&&S.hearing!=='ready'&&S.hearing!=='loading')probs.push({t:'Hearing is not available',s:String(S.hearing)});
+  failed.forEach(t=>probs.push({t:'Did not finish: '+t.title,s:(t.detail||'')+' · '+hm(t.created)}));
+  const N={wait:S.approvals.length,run:prog.length,done:doneT.length,prob:probs.length};
+  for(const k in N){$('t-'+k).textContent=N[k];const b=document.querySelector('#htiles [data-t="'+k+'"]');b.classList.toggle('hot',N[k]>0);b.classList.toggle('on',TILE===k);}
+  const li=(t,sub)=>`<div class="row"><div>${esc(t)}${sub?`<small>${esc(sub)}</small>`:''}</div></div>`;
+  $('hlist').hidden=!TILE;
+  if(TILE==='wait')$('hlist').innerHTML='<b>Waiting on you</b>'+(S.approvals.map(a=>`<div class="wait"><b>${esc(a.summary)}</b><div class="two"><button class="btn red" data-a="${a.id}" data-d="approve">Approve</button><button class="btn" data-a="${a.id}" data-d="decline">Decline</button></div></div>`).join('')||'<div class="muted">Nothing needs you right now.</div>');
+  else if(TILE==='run')$('hlist').innerHTML='<b>Running now</b>'+(prog.map(t=>li(t.title,t.detail)).join('')||'<div class="muted">Nothing is running.</div>');
+  else if(TILE==='done')$('hlist').innerHTML='<b>Done today</b>'+(doneT.slice(0,25).map(t=>li(t.title,hm(t.created))).join('')||'<div class="muted">Nothing finished yet today.</div>');
+  else if(TILE==='prob')$('hlist').innerHTML='<b>Problems</b>'+(probs.map(x=>li(x.t,x.s)).join('')||'<div class="ok">No problems. Everything is working.</div>');
+  const dot=(ok,label)=>`<span><span class="dot ${ok===true?'ok':(ok===false?'bad':'')}"></span>${label}</span>`;
+  $('more').innerHTML=dot(S.models.ok,'BRAIN')+dot(v.cpu<92,'PC '+v.cpu.toFixed(0)+'%')
+    +dot(!ph.linked||ph.pending?null:!!ph.ok,'PHONE'+(ph.linked&&ph.ok&&ph.battery_percent!==undefined?' '+ph.battery_percent+'%':(ph.linked?'':' NOT LINKED')))
+    +dot(S.tailscale?(S.tailscale.installed?!!S.tailscale.running:null):null,'TAILSCALE')
+    +(s.site?dot(S.site?!!S.site.ok:null,'WEBSITE'):'')+dot(S.hearing==='ready'?true:(S.hearing==='loading'?null:false),'HEARING')
+    +`<span class="open">${document.body.classList.contains('details')?'HIDE DETAILS':'SHOW DETAILS'}</span>`;
+  $('v-phone').classList.toggle('nolink',!ph.linked);
+  if($('pp-stats')&&VIEW==='phone')$('pp-stats').innerHTML=ph.linked?$('phpanel').innerHTML.replace('id="phnow"','id="phnow2"'):'<div class="muted">No phone is linked yet. Use the Link box on this page.</div>';
+  {const b2=$('phnow2');if(b2)b2.onclick=async()=>{b2.disabled=true;b2.textContent='READING...';try{await api('/api/phone/refresh',{method:'POST'});}catch(e){}tick();};}
   document.querySelectorAll('[data-a]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await api('/api/approvals/'+b.dataset.a,{json:{decision:b.dataset.d}});}catch(e){alertMsg(e.message)}tick();});
   $('prog').innerHTML=prog.map(t=>`<div class="next">${esc(t.title)}</div>`).join('')||'<div class="muted" style="font-size:14px">Nothing running.</div>';
   $('done').textContent=done.length;
@@ -423,7 +604,7 @@ async function send(text,speak){
   if(!text||sending)return;sending=true;$('say').value='';
   $('chat').insertAdjacentHTML('beforeend',`<div class="user">${esc(text)}</div>`);$('chat').scrollTop=1e9;
   $('kicker').textContent='NOW WORKING';$('big').textContent='Thinking';$('sub').textContent=text;
-  try{const r=await (await api('/api/chat',{json:{message:text}})).json();await loadChat();await tick();if(S&&S.approvals.length)$('chatwait').scrollIntoView({block:'nearest'});if(r.brief)showBrief(r.brief,true);if(r.show){const b=document.querySelector('#nav button[data-v="'+r.show+'"]');if(b)b.click();}if(speak||voiceOn){talking=true;if(S)render();await say(r.reply);await new Promise(r=>setTimeout(r,350));talking=false;}}
+  try{const r=await (await api('/api/chat',{json:{message:text}})).json();await loadChat();await tick();if(S&&S.approvals.length)$('chatwait').scrollIntoView({block:'nearest'});if(r.brief)showBrief(r.brief,true);if(r.show)go(r.show);if(speak||voiceOn){talking=true;if(S)render();await say(r.reply);await new Promise(r=>setTimeout(r,350));talking=false;}}
   catch(e){$('chat').insertAdjacentHTML('beforeend',`<div class="assistant">${esc(e.message)}</div>`);}
   sending=false;tick();
 }
@@ -531,7 +712,7 @@ async function loadRoutines(){
   document.querySelectorAll('[data-rton]').forEach(b=>b.onchange=async()=>{const r=byId(b.dataset.rton);await api('/api/routines/'+r.id,{method:'PUT',json:{...r,enabled:b.checked}});});
   document.querySelectorAll('[data-rted]').forEach(b=>b.onclick=()=>editRoutine(byId(b.dataset.rted)));
   document.querySelectorAll('[data-rtdel]').forEach(b=>b.onclick=async()=>{const r=byId(b.dataset.rtdel);if(!confirm('Delete the '+r.name+' routine?'))return;await api('/api/routines/'+r.id,{method:'DELETE'});$('rtedit').hidden=true;loadRoutines();});
-  document.querySelectorAll('[data-rtrun]').forEach(b=>b.onclick=()=>{const r=byId(b.dataset.rtrun);document.querySelector('#nav [data-v="control"]').click();window.scrollTo(0,0);send(r.triggers[0],voiceOn);});
+  document.querySelectorAll('[data-rtrun]').forEach(b=>b.onclick=()=>{const r=byId(b.dataset.rtrun);go('control');send(r.triggers[0],voiceOn);});
 }
 function editRoutine(r){
   RT=JSON.parse(JSON.stringify(r||{id:null,name:'',triggers:[],enabled:true,sections:RTD.sections.map(s=>({type:s.type,on:false,...s.defaults}))}));
@@ -650,22 +831,141 @@ async function loadPhone(){
     r.ok?say(`Works. ${r.status.model}, Android ${r.status.android}, battery ${r.status.battery_percent}%${r.status.charging?' (charging)':''}, screen ${r.status.screen}.`,true):say(r.error);};
   if($('phwifi'))$('phwifi').onclick=async()=>{m.className='msg';m.textContent='Switching. This can take up to half a minute...';try{const r=await (await api('/api/phone/wireless',{json:{address:$('phaddr').value}})).json();await tick();await loadPhone();$('phmsg').className='msg ok';$('phmsg').textContent='Wireless is on at '+r.address+(r.via==='wifi'?'. This is the home Wi-Fi address, so it only works while the phone is at home. For anywhere-access, switch Tailscale on on the phone and do this again.':'. You can unplug the cable.');}catch(e){say(e.message);}};
 }
+function fillPhoneSettings(){const s=S.user.settings;$('s-phone_full_control').checked=!!s.phone_full_control;$('s-phone_country_code').value=s.phone_country_code||'27';$('s-phone_own_number').value=s.phone_own_number||'';$('s-whatsapp_auto_contacts').checked=!!s.whatsapp_auto_contacts;}
+document.querySelectorAll('#setnav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#setnav button').forEach(x=>x.classList.toggle('on',x===b));document.querySelectorAll('.setsec').forEach(x=>x.classList.toggle('on',x.dataset.sec===b.dataset.sec));});
+const SECF={look:['assistant_name','personality','brand','site','accent'],brain:['brain','local_model','cloud_model','voice','eleven_voice_id']};
 async function loadSettings(){
-  if(!S)return;const s=S.user.settings;$('s-phone_full_control').checked=!!s.phone_full_control;$('s-phone_country_code').value=s.phone_country_code||'27';$('s-phone_own_number').value=s.phone_own_number||'';$('s-whatsapp_auto_contacts').checked=!!s.whatsapp_auto_contacts;if($('setver'))$('setver').textContent='Trillion version '+S.version;loadPhone();SK.forEach(k=>$('s-'+k).value=s[k]??'');$('s-daily_review').checked=!!s.daily_review;
+  if(!S)return;const s=S.user.settings;$('setver').textContent='Trillion version '+S.version;SK.forEach(k=>$('s-'+k).value=s[k]??'');$('s-daily_review').checked=!!s.daily_review;
+  const on=s.quick_actions||[];$('qapick').innerHTML=Object.keys(QA).map(k=>`<label class="tickrow" style="align-items:center"><input type="checkbox" data-qa="${k}" ${on.includes(k)?'checked':''}><span>${esc(QA[k].label)}</span></label>`).join('');
   const ks=await (await api('/api/secrets')).json();
   $('keys').innerHTML=ks.map(k=>`<div class="panel"><b>${LABEL[k.name]}</b><div class="${k.set?(k.enabled?'ok':'muted'):'muted'}">${k.set?(k.enabled?'Saved and on '+esc(k.hint):'Saved, switched off '+esc(k.hint)):'Not added'}</div>
     <label class="field"><span>Key</span><input type="password" id="k-${k.name}" placeholder="${k.set?'Leave empty to keep the saved key':'Paste the key'}" autocomplete="off"></label>
-    <label style="display:flex;gap:10px;align-items:center;min-height:44px"><input type="checkbox" id="e-${k.name}" ${k.enabled||!k.set?'checked':''} style="width:20px;height:20px"> Switched on</label>
+    <label class="tickrow" style="align-items:center"><input type="checkbox" id="e-${k.name}" ${k.enabled||!k.set?'checked':''}><span>Switched on</span></label>
     <div class="btns" style="justify-content:flex-start"><button class="btn pri" data-k="${k.name}" data-o="save">SAVE</button><button class="btn" data-k="${k.name}" data-o="test">TEST</button><button class="btn" data-k="${k.name}" data-o="del">REMOVE</button></div><div class="msg" id="m-${k.name}"></div></div>`).join('');
   document.querySelectorAll('[data-k]').forEach(b=>b.onclick=async()=>{const n=b.dataset.k,m=$('m-'+n);try{
-    if(b.dataset.o==='save'){await api('/api/secrets/'+n,{method:'PUT',json:{value:$('k-'+n).value,enabled:$('e-'+n).checked}});loadSettings();}
+    if(b.dataset.o==='save'){await api('/api/secrets/'+n,{method:'PUT',json:{value:$('k-'+n).value,enabled:$('e-'+n).checked}});await loadSettings();$('m-'+n).textContent='Saved.';$('m-'+n).className='msg ok';}
     else if(b.dataset.o==='del'){await api('/api/secrets/'+n,{method:'DELETE'});loadSettings();}
     else{m.textContent='Testing...';const r=await (await api('/api/secrets/'+n+'/test',{method:'POST'})).json();m.textContent=r.ok?'Works.':'Did not work (code '+r.status+').';m.className='msg '+(r.ok?'ok':'bad');}
   }catch(e){m.textContent=e.message;m.className='msg bad';}});
 }
-$('phsave').onclick=async()=>{const m=$('phsmsg');try{await api('/api/settings',{method:'PUT',json:{whatsapp_auto_contacts:$('s-whatsapp_auto_contacts').checked,phone_own_number:$('s-phone_own_number').value.trim(),phone_full_control:$('s-phone_full_control').checked,phone_country_code:$('s-phone_country_code').value.replace(/\D/g,'')||'27'}});await tick();m.className='msg ok';m.textContent=$('s-phone_full_control').checked?'Saved. Full phone control is ON.':'Saved. Full phone control is off.';}catch(e){m.className='msg bad';m.textContent=e.message;}};
-$('ssave').onclick=async()=>{const j={};SK.forEach(k=>j[k]=$('s-'+k).value);j.daily_review=$('s-daily_review').checked;if($('s-phone_full_control'))j.phone_full_control=$('s-phone_full_control').checked;if($('s-phone_country_code'))j.phone_country_code=$('s-phone_country_code').value.replace(/\D/g,'')||'27';
-  try{await api('/api/settings',{method:'PUT',json:j});$('smsg').textContent='Saved.';tick();}catch(e){$('smsg').textContent=e.message;}};
+async function saveSet(j,m){try{await api('/api/settings',{method:'PUT',json:j});await tick();m.className='msg ok';m.textContent='Saved.';}catch(e){m.className='msg bad';m.textContent=e.message;}}
+document.querySelectorAll('[data-save]').forEach(b=>b.onclick=()=>{const sec=b.dataset.save,j={};SECF[sec].forEach(k=>j[k]=$('s-'+k).value);if(sec==='brain')j.daily_review=$('s-daily_review').checked;saveSet(j,$('smsg-'+sec));});
+$('qasave').onclick=async()=>{await saveSet({quick_actions:[...document.querySelectorAll('[data-qa]:checked')].map(x=>x.dataset.qa)},$('smsg-home'));drawQA();};
+$('phsave').onclick=async()=>{const m=$('phsmsg');try{await api('/api/settings',{method:'PUT',json:{whatsapp_auto_contacts:$('s-whatsapp_auto_contacts').checked,phone_own_number:$('s-phone_own_number').value.trim(),phone_full_control:$('s-phone_full_control').checked,phone_country_code:$('s-phone_country_code').value.replace(/\D/g,'')||'27'}});await tick();m.className='msg ok';m.textContent='Saved. Straight-away WhatsApps: '+($('s-whatsapp_auto_contacts').checked?'ON':'off')+'. Full phone control: '+($('s-phone_full_control').checked?'ON':'off')+'.';}catch(e){m.className='msg bad';m.textContent=e.message;}};
+
+// ---- run a command without leaving the page: the answer shows where the button is ----
+async function runHere(text,m){
+  if(sending){m.className='msg';m.textContent='She is busy with something else. Try again in a moment.';return;}
+  sending=true;m.className='msg';m.textContent='Working...';
+  try{const r=await (await api('/api/chat',{json:{message:text}})).json();m.textContent=r.reply;m.className='msg '+(/^(i could not|i did not|there is no|the phone is|full phone control is switched off)/i.test(r.reply)?'bad':'ok');if(r.show)go(r.show);if(voiceOn){talking=true;await say(r.reply);talking=false;}}
+  catch(e){m.className='msg bad';m.textContent=e.message;}
+  sending=false;loadChat();tick();
+}
+// ---- quick actions: buttons that ask only for what is missing ----
+const QA={
+  whatsapp:{label:'Send WhatsApp',fields:[{k:'who',label:'To (start typing a contact\'s name)',list:'contacts',ph:'Llewellyn Terblanche'},{k:'msg',label:'Message',ph:'I will be there at 5'}],cmd:f=>`send a whatsapp to ${f.who} saying ${f.msg}`},
+  openwa:{label:'Open WhatsApp',cmd:()=>'open my whatsapp'},
+  ring:{label:'Ring my phone',cmd:()=>'ring my phone'},
+  find:{label:'Find my phone',cmd:()=>'where is my phone'},
+  pstatus:{label:'Phone battery',cmd:()=>'how is my phone'},
+  shot:{label:'Phone screenshot',cmd:()=>'take a screenshot of my phone'},
+  briefing:{label:'Morning briefing',cmd:()=>'good morning'},
+  weather:{label:'Weather',cmd:()=>'what is the weather'},
+  news:{label:'News',cmd:()=>'give me the news'},
+  markets:{label:'Financials',cmd:()=>'how are the markets'},
+  video:{label:'Make a video',fields:[{k:'about',label:'What is it about?',ph:'our newest listings in Johannesburg'},{k:'sec',label:'Length',opts:[['15','15 seconds'],['20','20 seconds'],['30','30 seconds'],['45','45 seconds']],def:'20'}],cmd:f=>`create a ${f.sec} second cinematic video about ${f.about}`},
+  lastvideo:{label:'Show last video',cmd:()=>'open the video'},
+  pc:{label:'PC status',cmd:()=>'what is the status of my pc'},
+  site:{label:'Check my website',cmd:()=>'check my website'},
+  note:{label:'Save a note',fields:[{k:'n',label:'What should she remember?',ph:'The plumber comes on Thursday at 10'}],cmd:f=>`remember this: ${f.n}`},
+  update:{label:'Update Trillion',cmd:()=>'update yourself'},
+};
+let CONTACTS=null;
+async function loadContacts(m,fresh){
+  if(CONTACTS&&!fresh)return;
+  try{const r=await (await api('/api/phone/contacts'+(fresh?'?fresh=1':''))).json();
+    if(r.ok){CONTACTS=r.names;$('contacts').innerHTML=r.names.map(n=>`<option value="${esc(n)}">`).join('');if(m){m.className='msg muted';m.textContent=r.names.length+' contacts loaded from your phone.';}}
+    else if(m){m.className='msg muted';m.textContent=r.error;}}catch(e){}
+}
+function drawQA(){
+  if(!S)return;const on=(S.user.settings.quick_actions||[]).filter(k=>QA[k]);
+  $('qa').innerHTML=on.map(k=>`<button type="button" data-q="${k}">${esc(QA[k].label)}</button>`).join('')+`<button type="button" data-go="commands" style="color:var(--dim)">All commands</button>`;
+  $('qa').querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>qaClick(b.dataset.q,b));
+}
+function qaClick(k,b){
+  const q=QA[k],f=$('qaform');$('qa').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b&&!!q.fields));
+  if(!q.fields){f.hidden=true;send(q.cmd({}),voiceOn);return;}
+  if(!f.hidden&&f.dataset.k===k){f.hidden=true;b.classList.remove('on');return;}
+  f.dataset.k=k;f.hidden=false;
+  f.innerHTML=`<b>${esc(q.label)}</b><form id="qaf" style="display:flex;flex-direction:column;gap:12px">`+q.fields.map(x=>`<label class="field"><span>${esc(x.label)}</span>${x.opts?`<select id="qa-${x.k}">${x.opts.map(o=>`<option value="${o[0]}" ${o[0]===x.def?'selected':''}>${o[1]}</option>`).join('')}</select>`:`<input id="qa-${x.k}" ${x.list?`list="${x.list}"`:''} placeholder="${esc(x.ph||'')}" autocomplete="off">`}</label>`).join('')
+    +`<div class="btns" style="justify-content:flex-start"><button class="btn pri">${esc(q.label.toUpperCase())}</button><button class="btn" type="button" id="qax">CANCEL</button></div><div class="msg" id="qamsg"></div></form>`;
+  if(q.fields.some(x=>x.list==='contacts'))loadContacts($('qamsg'));
+  $('qax').onclick=()=>{f.hidden=true;b.classList.remove('on');};
+  $('qaf').onsubmit=e=>{e.preventDefault();const v={};for(const x of q.fields){v[x.k]=$('qa-'+x.k).value.trim();if(!v[x.k]){$('qamsg').className='msg bad';$('qamsg').textContent='Fill in: '+x.label;$('qa-'+x.k).focus();return;}}
+    f.hidden=true;b.classList.remove('on');send(q.cmd(v),voiceOn);};
+  const first=$('qa-'+q.fields[0].k);if(first)first.focus();
+}
+// ---- phone page ----
+let ppTimer=null;
+async function ppSee(){const m=$('pp-seemsg');m.className='msg';m.textContent='Asking the phone...';
+  try{const r=await fetch('/api/phone/screen.png?t='+Date.now());if(!r.ok){let d='The phone did not answer.';try{d=(await r.json()).detail||d}catch(e){}throw new Error(d);}
+    const u=URL.createObjectURL(await r.blob());$('pp-shot').innerHTML=`<img alt="The phone's screen right now" src="${u}">`;m.textContent='Taken at '+new Date().toLocaleTimeString([], {hour12:false});}
+  catch(e){m.className='msg bad';m.textContent=e.message;$('pp-live').checked=false;}}
+$('pp-see').onclick=ppSee;
+$('pp-live').onchange=()=>{clearInterval(ppTimer);if($('pp-live').checked){ppSee();ppTimer=setInterval(()=>{if(VIEW==='phone'&&$('pp-live').checked)ppSee();else{clearInterval(ppTimer);$('pp-live').checked=false;}},4000);}};
+const PPC=[['Ring it','ring my phone'],['Find it','where is my phone'],['Battery and storage','how is my phone'],['Open WhatsApp','open my whatsapp'],['Save a screenshot','take a screenshot of my phone'],['Send me a test WhatsApp','send me a test whatsapp'],
+  ['Read the screen','what is on my phone screen',1],['Home','go home on my phone',1],['Back','press back on my phone',1],['Lock','press lock on my phone',1],['Volume up','press volume up on my phone',1],['Volume down','press volume down on my phone',1]];
+async function loadPhonePage(){
+  if(!S)return;fillPhoneSettings();const full=!!S.user.settings.phone_full_control;
+  $('pp-cmds').innerHTML=PPC.filter(c=>!c[2]||full).map((c,i)=>`<button type="button" data-pc="${esc(c[1])}">${esc(c[0])}</button>`).join('')+(full?'':'<span class="muted" style="font-size:13px;align-self:center">Tick Full phone control below for Home, Back, Lock, volume and reading the screen.</span>');
+  $('pp-cmds').querySelectorAll('[data-pc]').forEach(b=>b.onclick=()=>runHere(b.dataset.pc,$('pp-cmdmsg')));
+  render();loadPhone();loadContacts($('pp-cmsg'));
+}
+$('pp-open').onclick=()=>{const a=$('pp-app').value.trim();if(a)runHere('open '+a+' on my phone',$('pp-cmdmsg'));};
+$('pp-send').onclick=()=>{const w=$('pp-who').value.trim(),t=$('pp-msg').value.trim(),m=$('pp-sendmsg');if(!w||!t){m.className='msg bad';m.textContent='Fill in who it is for and the message.';return;}
+  runHere(`send a whatsapp to ${w} saying ${t}`,m).then(()=>{if(m.className.includes('ok'))$('pp-msg').value='';});};
+// ---- projects ----
+const ago=t=>{if(!t)return 'never';const d=(Date.now()/1000-t);return d<3600?Math.max(1,Math.round(d/60))+' min ago':(d<86400?Math.round(d/3600)+' h ago':Math.round(d/86400)+' days ago');};
+async function loadProjects(){
+  const ps=await (await api('/api/projects')).json();
+  $('pjnote').textContent=ps.length>1?'One card per business. You see the figures for every login; the detail of each project belongs to its own login.':'Your business at a glance.';
+  $('pjlist').innerHTML=ps.map(p=>{const st=p.site_status;return `<div class="panel pj" style="--pc:${esc(p.accent)}">
+    <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><div><div class="nm">${esc(p.brand)}</div><div class="muted" style="font-size:13px">${esc(p.owner)}${p.site?' · '+esc(p.site):''}</div></div>
+      <span class="tag ${st?(st.ok?'ok':'bad'):'muted'}">${p.site?(st?(st.ok?'● ONLINE'+(st.ms?' '+st.ms+' ms':''):'▲ NOT ANSWERING'):'○ NOT CHECKED'):'NO WEBSITE'}</span></div>
+    <div class="facts"><div><b class="${p.waiting?'bad':''}">${p.waiting}</b><span>Waiting</span></div><div><b class="ok">${p.done_today}</b><span>Done today</span></div><div><b>${p.videos}</b><span>Videos</span></div><div><b>${p.notes}</b><span>Notes</span></div></div>
+    <div class="row"><span>Last video</span><span>${p.last_video?esc(p.last_video.title)+' · '+ago(p.last_video.created):'None yet'}</span></div>
+    <div class="row"><span>Last active</span><span>${ago(p.last_active)}</span></div>
+    <div class="row"><span>Routines · Phone</span><span>${p.routines} · ${p.phone?'linked':'not linked'}</span></div>
+    ${p.failed_today?`<div class="bad" style="font-size:14px">${p.failed_today} job${p.failed_today>1?'s':''} did not finish today.</div>`:''}
+    ${p.mine?`<div class="btns" style="justify-content:flex-start"><button class="btn pri" data-pj="open">OPEN PROJECT</button>${p.site?'<button class="btn" data-pj="check">CHECK WEBSITE NOW</button>':''}</div>`:''}</div>`}).join('');
+  const me=ps.find(p=>p.mine);
+  const b=document.querySelector('[data-pj="open"]');if(b)b.onclick=()=>{const d=$('pjdetail');d.hidden=!d.hidden;if(!d.hidden)d.scrollIntoView({behavior:'smooth',block:'start'});};
+  const c=document.querySelector('[data-pj="check"]');if(c)c.onclick=async()=>{c.disabled=true;c.textContent='CHECKING...';try{await api('/api/projects/check',{method:'POST'});}catch(e){}await tick();loadProjects();};
+  if(me)$('pjdetail').innerHTML=`<b style="font-size:20px">${esc(me.brand)}</b>
+    <div class="moregrid"><button class="mbtn" data-go="videos"><b>Videos</b><span>${me.videos} made</span></button><button class="mbtn" data-go="files"><b>Files</b><span>Documents and folders</span></button><button class="mbtn" data-go="memory"><b>Notes</b><span>${me.notes} remembered</span></button><button class="mbtn" data-go="routines"><b>Routines</b><span>${me.routines} set up</span></button></div>
+    <b>Latest videos</b><div class="grid2">${(me.recent_videos||[]).map(v=>`<div><video controls preload="none" ${v.thumb?`poster="/api/videos/${v.id}/thumb"`:''} src="/api/videos/${v.id}/file" style="width:100%;max-height:300px;background:#000;border-radius:6px"></video><div style="font-size:14px">${esc(v.title)} <span class="muted">· ${ago(v.created)}</span></div></div>`).join('')||'<div class="muted">No videos yet. Use Make a video on the home screen.</div>'}</div>
+    <b>Latest jobs</b><div>${(me.recent||[]).map(t=>`<div class="row"><div>${esc(t.title)}<small>${new Date(t.created*1000).toLocaleString()}</small></div><span class="tag ${t.status==='completed'?'ok':(t.status==='failed'?'bad':'muted')}">${esc(t.status.replace('_',' ').toUpperCase())}</span></div>`).join('')||'<div class="muted">Nothing yet.</div>'}</div>`;
+}
+// ---- commands help ----
+const CMDS=[
+  ['WhatsApp',[['send a whatsapp to Llewellyn saying I will be there at 5','Goes straight out to a saved contact'],['send a test whatsapp to Llewellyn Terblanche',''],['send me a test whatsapp','Needs your own number on the Phone page'],['open my whatsapp','']]],
+  ['Phone',[['ring my phone','Rings at full volume, even on silent'],['where is my phone','Last known position with a map link'],['how is my phone','Battery, storage, Wi-Fi'],['take a screenshot of my phone',''],['open maps on my phone','Any installed app'],['what is on my phone screen','Needs Full phone control'],['tap Chats on my phone','Needs Full phone control'],['press back on my phone','Needs Full phone control']]],
+  ['Briefings',[['good morning','Runs your morning routine'],['what is the weather',''],['give me the news',''],['how are the markets','Rand, gold, shares, crypto']]],
+  ['Videos',[['create a 20 second cinematic video about our newest listings','Takes a few minutes'],['open the video','Shows the newest one']]],
+  ['Files and documents',[['create a folder called Invoices in my Documents',''],['create a Word document called Welcome with a short welcome note',''],['create an Excel sheet of my monthly budget',''],['find all pdf files in my Downloads',''],['open my Documents folder','']]],
+  ['Memory',[['remember this: the plumber comes on Thursday at 10',''],['what do you remember about the plumber','']]],
+  ['PC and Trillion',[['what is the status of my pc',''],['check my website',''],['what version are you',''],['update yourself','Gets the newest version and restarts'],['be witty','Also: be professional, be warm']]],
+];
+function drawCommands(){
+  $('cmdlist').innerHTML=CMDS.map(g=>`<div class="panel"><b>${esc(g[0])}</b><div class="cmdg">${g[1].map(c=>`<div class="cmdr"><div><code>${esc(c[0])}</code>${c[1]?`<small>${esc(c[1])}</small>`:''}</div><button class="btn" data-use="${esc(c[0])}" style="min-height:40px;font-size:12px;flex:none">USE</button></div>`).join('')}</div></div>`).join('');
+  document.querySelectorAll('[data-use]').forEach(b=>b.onclick=()=>{go('control');$('say').value=b.dataset.use;$('say').focus();});
+}
+function drawMore(){
+  const items=[['videos','Videos','Make and watch videos'],['files','Files','Browse your folders'],['memory','Memory','What she remembers'],['routines','Routines','Morning briefing, news, weather'],['skills','Skills','Extra abilities and connectors'],['commands','Commands','Everything you can say'],['settings','Settings','Look, brain, voice, keys']];
+  if(S&&S.user.is_admin)items.push(['family','Family','Logins, update, backup']);
+  $('moregrid').innerHTML=items.map(i=>`<button class="mbtn" data-go="${i[0]}"><b>${i[1]}</b><span>${i[2]}</span></button>`).join('')+`<button class="mbtn" id="out2"><b>Sign out</b><span>${S?esc(S.user.name):''}</span></button>`;
+  $('out2').onclick=()=>$('out').click();
+}
 // family
 async function loadFamily(){const f=await (await api('/api/admin/family')).json();
   $('fam').innerHTML=f.map(u=>`<div class="panel"><b style="font-size:20px">${esc(u.name)}</b><div class="muted">${esc(u.brand)} · ${esc(u.site)}</div>
@@ -680,7 +980,7 @@ async function loadFamily(){const f=await (await api('/api/admin/family')).json(
     await api('/api/admin/family/'+id,{method:'PUT',json:b.dataset.o==='roots'?{roots:$('r-'+id).value.split('\n')}:{reset_password:true}});loadFamily();});
 }
 $('upd').onclick=async()=>{$('updmsg').textContent='Checking GitHub...';try{const r=await (await api('/api/admin/update',{method:'POST'})).json();$('updmsg').textContent=r.message;if(r.status==='updated')setTimeout(()=>location.reload(),12000);}catch(e){$('updmsg').textContent=e.message;}};
-tick().then(loadChat).then(async()=>{try{showBrief((await (await api('/api/routines')).json()).last,false);}catch(e){}});setInterval(tick,3000);
+tick().then(()=>{drawQA();return loadChat();}).then(async()=>{try{showBrief((await (await api('/api/routines')).json()).last,false);}catch(e){}});setInterval(tick,3000);
 </script>
 </body>
 </html>
