@@ -203,6 +203,87 @@ UPDATE_RE = re.compile(r"\b(update|upgrade)\s+(yourself|your ?self|herself|trill
                        r"\bcheck for (an? )?updates?\b", re.I)
 
 
+_PH = r"(?:my |the )?(?:cell ?phone|mobile(?: phone)?|phone|cell|galaxy|samsung)"
+PHONE_RULES = [
+    ("whatsapp", re.compile(r"\b(?:send\s+)?(?:a\s+)?whats ?app\s+(?:message\s+)?(?:to\s+)?(.+?)\s*(?:,?\s*saying|that says|to say|:|\bthat\b)\s+(.+)$", re.I | re.S)),
+    ("whatsapp", re.compile(r"\bsend\s+(.+?)\s+a\s+whats ?app(?:\s+message)?\s*(?:saying|that says|to say|:|\bthat\b)\s+(.+)$", re.I | re.S)),
+    ("whatsapp", re.compile(r"\b(?:tell|message|text)\s+(.+?)\s+on\s+whats ?app\s*(?:saying|that|:)?\s+(.+)$", re.I | re.S)),
+    ("open", re.compile(r"\b(?:open|launch|start)\s+(?:up\s+)?(?:my\s+|the\s+)?(.+?)\s+(?:app\s+)?on\s+" + _PH, re.I)),
+    ("screenshot", re.compile(r"\bscreenshot\b.{0,30}" + _PH + "|" + _PH + r".{0,30}\bscreenshot\b", re.I)),
+    ("ring", re.compile(r"\b(?:ring|buzz|make .{0,10}noise)\b.{0,20}" + _PH, re.I)),
+    ("locate", re.compile(r"\b(?:where(?:'s| is)|find|locate|track)\b.{0,15}" + _PH, re.I)),
+    ("status", re.compile(_PH + r".{0,40}\b(?:battery|status|storage|charge|charging|space|stats)\b|"
+                          r"\b(?:battery|status|storage|charge|stats)\b.{0,30}" + _PH + r"|\bhow(?:'s| is)\s+" + _PH, re.I)),
+]
+PHONE_WORDS = re.compile(r"\b(phone|cell|mobile|whats ?app|contact|battery|galaxy|samsung)\b", re.I)
+
+
+def phone_shortcut(user, text, tid):
+    """Common phone requests are run directly, so they do not depend on the model choosing the right tool."""
+    if len(text) > 400:
+        return None
+    for kind, rx in PHONE_RULES:
+        m = rx.search(text)
+        if not m:
+            continue
+        if kind == "whatsapp":
+            who = re.sub(r"^(?:my |to )", "", m.group(1).strip(" ,.:"), flags=re.I)
+            msg = m.group(2).strip().strip('"\u201c\u201d')
+            if not who or not msg or len(who) > 60:
+                continue
+            r = tools.execute(user, "phone_send_whatsapp", {"contact": who, "message": msg}, task_id=tid)
+            if r.get("status") == "waiting_for_approval":
+                a = core.q("SELECT summary FROM approvals WHERE user_id=? ORDER BY id DESC LIMIT 1", (user["id"],), one=True)
+                return "Ready. " + (a["summary"] if a else "The message") + ". Approve it on the dashboard and I will send it.", True, r
+            return ("I could not prepare that WhatsApp: " + r.get("error", "unknown problem")), False, r
+        if kind == "open":
+            app_name = re.sub(r"\s+app$", "", m.group(1).strip(), flags=re.I)
+            r = tools.execute(user, "phone_open_app", {"app": app_name}, task_id=tid)
+            return (f"{app_name.capitalize()} is open on your phone." if "error" not in r else r["error"]), False, r
+        if kind == "screenshot":
+            r = tools.execute(user, "phone_screenshot", {}, task_id=tid)
+            return (f"Screenshot saved to {r['saved']}." if "error" not in r else r["error"]), False, r
+        if kind == "ring":
+            r = tools.execute(user, "phone_ring", {}, task_id=tid)
+            return (r.get("note") or r.get("error") or "Done."), False, r
+        if kind == "locate":
+            r = tools.execute(user, "phone_locate", {}, task_id=tid)
+            if "error" in r:
+                return r["error"], False, r
+            acc = f", accurate to about {r['accuracy_m']} metres" if r.get("accuracy_m") else ""
+            return f"Your phone's last known position is here: {r['map']}{acc}.", False, r
+        if kind == "status":
+            r = tools.execute(user, "phone_status", {}, task_id=tid)
+            return (phone_sentence(r) if "error" not in r else r["error"]), False, r
+    return None
+
+
+def phone_sentence(r):
+    bits = [f"Your {r.get('model') or 'phone'} is at {r.get('battery_percent', '?')} percent"
+            + (" and charging" if r.get("charging") else "")]
+    if r.get("storage_free_gb") is not None:
+        bits.append(f"with {r['storage_free_gb']} GB free of {r['storage_total_gb']}")
+    out = ", ".join(bits) + "."
+    if r.get("wifi"):
+        out += f" It is on the Wi-Fi network {r['wifi']}."
+    return out + f" The screen is {r.get('screen', 'off')}."
+
+
+def tools_for(user, text):
+    """Hand the brain only the tools this request could need: fewer choices, fewer wrong ones."""
+    uid = user["id"]
+    skip = {"update_self", "create_video"}                      # both handled directly
+    if not (PHONE_WORDS.search(text) and core.settings(user).get("phone_serial")):
+        skip |= {n for n in (s_["function"]["name"] for s_ in tools.SPECS) if n.startswith("phone_")}
+    if not extend.enabled_skills(uid):
+        skip.add("use_skill")
+    if not extend.enabled_connectors(uid):
+        skip |= {"connector_tools", "connector_call"}
+    if not user["is_admin"]:
+        skip.add("run_command")
+    return [s_ for s_ in tools.SPECS if s_["function"]["name"] not in skip]
+
+
 VIDEO_RE = re.compile(r"\b(create|make|generate|produce|build|render)\b[^.?!]{0,80}\bvideo\b", re.I)
 
 
@@ -271,6 +352,17 @@ def run_agent(user, text):
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="completed", detail=reply[:200])
         return {"reply": reply, "task_id": tid, "provider": "built-in"}
+    ps = None
+    try:
+        ps = phone_shortcut(user, text, tid)
+    except Exception as e:
+        ps = (f"The phone request failed: {type(e).__name__}: {e}", False, {"error": str(e)})
+    if ps:
+        reply, waiting_, res = ps
+        BUSY[uid] = False
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="waiting" if waiting_ else ("failed" if "error" in res else "completed"), detail=reply[:200])
+        return {"reply": reply, "task_id": tid, "provider": "built-in"}
     if VIDEO_RE.search(text):  # a long job with fixed steps: run it directly
         try:
             res = tools.execute(user, "create_video", video_request(text), task_id=tid)
@@ -281,6 +373,7 @@ def run_agent(user, text):
         core.set_task(tid, status="failed" if "error" in res else "completed", detail=reply[:200])
         return {"reply": reply, "task_id": tid, "provider": LAST_PROVIDER.get(uid, "local")}
     hist = core.q("SELECT role, content FROM messages WHERE user_id=? ORDER BY id DESC LIMIT 12", (uid,))[::-1]
+    specs = tools_for(user, text)
     msgs = [{"role": "system", "content": system_prompt(user, text)}] + [dict(h) for h in hist]
     status, waiting, reply = "completed", False, ""
     try:
@@ -288,7 +381,7 @@ def run_agent(user, text):
             if uid in STOP:
                 reply, status = "Stopped.", "failed"
                 break
-            m = llm_chat(user, msgs, tools.SPECS)
+            m = llm_chat(user, msgs, specs)
             calls = m.get("tool_calls") or []
             if not calls:
                 reply = (m.get("content") or "").strip() or "Done."
@@ -471,6 +564,39 @@ def tts(p: dict = Body(...), user=Depends(auth)):
         return Response(status_code=204)
 
 
+# ---------- live phone and Tailscale readings for the dashboard ----------
+PHONE_STATS, TAILSCALE = {}, {"t": 0, "v": None}
+
+
+def refresh_phone(user):
+    try:
+        PHONE_STATS[user["id"]] = {"ok": True, "t": time.time(), **phone.status(user)}
+    except Exception as e:
+        prev = PHONE_STATS.get(user["id"]) or {}
+        PHONE_STATS[user["id"]] = {**{k: v for k, v in prev.items() if k not in ("ok", "error")},
+                                   "ok": False, "error": str(e), "t": prev.get("t", 0), "checked": time.time()}
+
+
+def tailscale_status():
+    import shutil, subprocess, os
+    exe = shutil.which("tailscale") or r"C:\Program Files\Tailscale\tailscale.exe"
+    if not (shutil.which("tailscale") or os.path.exists(exe)):
+        return {"installed": False}
+    try:
+        out = subprocess.run([exe, "status", "--json"], capture_output=True, text=True, timeout=8).stdout
+        j = json.loads(out)
+    except Exception as e:
+        return {"installed": True, "running": False, "error": type(e).__name__}
+    me = j.get("Self") or {}
+    name = (me.get("DNSName") or "").rstrip(".")
+    peers = [{"name": p.get("HostName") or (p.get("DNSName") or "").split(".")[0], "os": p.get("OS", ""),
+              "online": bool(p.get("Online")), "ip": (p.get("TailscaleIPs") or [""])[0]}
+             for p in (j.get("Peer") or {}).values()]
+    peers.sort(key=lambda p: (not p["online"], p["name"].lower()))
+    return {"installed": True, "running": j.get("BackendState") == "Running", "state": j.get("BackendState", ""),
+            "name": me.get("HostName", ""), "dns": name, "ip": (me.get("TailscaleIPs") or [""])[0], "devices": peers[:20]}
+
+
 # ---------- dashboard state ----------
 @app.get("/api/state")
 def state(user=Depends(auth)):
@@ -495,6 +621,10 @@ def state(user=Depends(auth)):
                   "today": core.q("SELECT COUNT(*) c FROM notes WHERE user_id=? AND ts>=?", (uid, ds), one=True)["c"]},
         "site": SITES.get(s.get("site")) if s.get("site") else None,
         "day_start": ds, "now": time.time(), "version": VERSION, "hearing": HEARING["state"],
+        "phone": ({"linked": True, "model": s.get("phone_model", ""), **(PHONE_STATS.get(uid) or {"pending": True})}
+                  if s.get("phone_serial") else {"linked": False}),
+        "tailscale": (TAILSCALE["v"] if user["is_admin"] else
+                      {k: v for k, v in (TAILSCALE["v"] or {}).items() if k != "devices"}) if TAILSCALE["v"] else None,
     }
 
 
@@ -726,6 +856,7 @@ def phone_link(p: dict = Body(...), user=Depends(auth)):
     s["phone_serial"], s["phone_model"] = serial, dev["model"]
     core.save_settings(user["id"], s)
     core.log(user["id"], f"Phone linked: {dev['model'] or serial}", "done")
+    threading.Thread(target=refresh_phone, args=(core.q("SELECT * FROM users WHERE id=?", (user["id"],), one=True),), daemon=True).start()
     return {"ok": True}
 
 
@@ -747,7 +878,14 @@ def phone_unlink(user=Depends(auth)):
     s.pop("phone_serial", None)
     s.pop("phone_model", None)
     core.save_settings(user["id"], s)
+    PHONE_STATS.pop(user["id"], None)
     return {"ok": True}
+
+
+@app.post("/api/phone/refresh")
+def phone_refresh(user=Depends(auth)):
+    refresh_phone(user)
+    return PHONE_STATS.get(user["id"])
 
 
 @app.post("/api/phone/test")
@@ -959,9 +1097,15 @@ def review_now(user=Depends(auth)):
 
 
 def background():
-    last_sites = 0
+    last_sites = last_phone = 0
     while True:
         try:
+            TAILSCALE.update(t=time.time(), v=tailscale_status())
+            if time.time() - last_phone > 110:
+                last_phone = time.time()
+                for u in core.q("SELECT * FROM users"):
+                    if core.settings(u).get("phone_serial") and not BUSY.get(u["id"]):
+                        refresh_phone(u)
             if time.time() - last_sites > 180:
                 last_sites = time.time()
                 for u in core.q("SELECT * FROM users"):

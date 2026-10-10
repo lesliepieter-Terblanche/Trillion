@@ -85,6 +85,14 @@ footer.status{background:#000;border-top:1px solid var(--line);padding:10px 20px
 .chat{width:100%;max-width:760px;text-align:left;display:flex;flex-direction:column;gap:8px;max-height:340px;overflow:auto}
 .chat div{padding:10px 14px;font-size:15px;overflow-wrap:anywhere;white-space:pre-wrap}
 .chat .user{align-self:flex-end;background:#2a2622}.chat .assistant{align-self:flex-start;border-left:2px solid var(--a);background:var(--panel)}
+.fold{border-top:1px solid var(--line);padding-top:10px}
+.fold summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:10px;min-height:44px;
+  font-family:var(--disp);font-size:18px;letter-spacing:.18em;text-transform:uppercase;color:var(--a)}
+.fold summary::-webkit-details-marker{display:none}
+.fold summary::before{content:"+";font-family:var(--mono);margin-right:8px;color:var(--dim)}
+.fold[open] summary::before{content:"\2212"}
+.fold summary .tag{margin-left:auto;letter-spacing:.04em}
+.fold>div{padding:6px 0 4px}
 #more{display:none}
 @media (max-width:820px){
   /* phone: the conversation first, everything else behind one button */
@@ -186,6 +194,8 @@ footer.status{background:#000;border-top:1px solid var(--line);padding:10px 20px
     </div>
     <div class="rail right">
       <h2 style="color:var(--red)">Waiting on you · <span id="wn">0</span></h2><div id="waiting" style="display:flex;flex-direction:column;gap:12px"></div>
+      <details class="fold" id="f-phone"><summary>My phone <span class="tag" id="phsum"></span></summary><div id="phpanel"></div></details>
+      <details class="fold" id="f-ts"><summary>Tailscale <span class="tag" id="tssum"></span></summary><div id="tspanel"></div></details>
       <h2 class="extra" style="color:var(--blue);margin-top:8px">In progress</h2><div id="prog" class="extra" style="display:flex;flex-direction:column;gap:10px"></div>
       <div class="extra" style="display:flex;align-items:baseline;gap:12px;margin-top:8px"><span class="count" id="done">0</span><span class="muted">jobs completed today</span></div>
     </div>
@@ -328,6 +338,8 @@ document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on',x===b));
   document.querySelectorAll('.view').forEach(v=>v.classList.toggle('on',v.id==='v-'+b.dataset.v));
   ({routines:loadRoutines,files:()=>loadFiles(cwd),memory:()=>loadNotes(''),videos:loadVideos,skills:loadSkills,settings:loadSettings,family:loadFamily}[b.dataset.v]||(()=>{}))();});
+['f-phone','f-ts'].forEach(id=>{const el=$(id);try{if(localStorage.getItem('trillion_'+id)==='1')el.open=true;}catch(e){}
+  el.addEventListener('toggle',()=>{try{localStorage.setItem('trillion_'+id,el.open?'1':'0');}catch(e){}});});
 $('more').onclick=()=>{const on=document.body.classList.toggle('details');$('more').textContent=on?'HIDE PC STATUS AND DETAILS':'SHOW PC STATUS AND DETAILS';};
 $('out').onclick=async()=>{await api('/api/logout',{method:'POST'});location.reload();};
 
@@ -356,6 +368,27 @@ function render(){
   else if(voiceOn&&!sending){$('kicker').textContent=talking?'SPEAKING':(vSpoke?'HEARING YOU':'LISTENING');$('big').textContent=talking?'Answering':'Speak any time';$('sub').textContent='Voice mode is on. Untick VOICE to stop.';}
   else if(!sending){$('kicker').textContent='READY';$('big').textContent='Standing by';$('sub').textContent='Type below, or tick VOICE and just talk.';}
   $('stop').hidden=!S.busy;
+  const ph=S.phone||{};
+  if(!ph.linked){$('phsum').textContent='NOT LINKED';$('phsum').className='tag muted';$('phpanel').innerHTML='<div class="muted" style="font-size:14px">Link your phone under Settings, My phone.</div>';}
+  else if(ph.pending){$('phsum').textContent='CHECKING';$('phsum').className='tag muted';$('phpanel').innerHTML='<div class="muted" style="font-size:14px">First reading is on its way.</div>';}
+  else{$('phsum').textContent=ph.ok?(ph.battery_percent+'%'+(ph.charging?' CHARGING':'')):'NOT REACHABLE';$('phsum').className='tag '+(ph.ok?'ok':'bad');
+    $('phpanel').innerHTML=(ph.battery_percent!==undefined?gauge('Battery'+(ph.charging?' (charging)':''),ph.battery_percent,0,'%',ph.battery_percent):'')
+      +(ph.storage_total_gb?gauge('Storage used',(ph.storage_total_gb-ph.storage_free_gb).toFixed(0),0,'/ '+ph.storage_total_gb.toFixed(0)+' GB',100*(ph.storage_total_gb-ph.storage_free_gb)/ph.storage_total_gb):'')
+      +`<div class="row"><span>Phone</span><span>${esc(ph.model||'')}${ph.android?' · Android '+esc(ph.android):''}</span></div>`
+      +(ph.wifi?`<div class="row"><span>Wi-Fi</span><span>${esc(ph.wifi)}</span></div>`:'')
+      +(ph.screen?`<div class="row"><span>Screen</span><span>${esc(ph.screen)}</span></div>`:'')
+      +(ph.battery_temp_c?`<div class="row"><span>Battery heat</span><span>${ph.battery_temp_c} °C</span></div>`:'')
+      +(ph.ok?'':`<div class="bad" style="font-size:13px;margin-top:6px">${esc(ph.error||'')}</div>`)
+      +`<div class="muted" style="font-size:12px;margin-top:6px">${ph.t?'Read at '+hm(ph.t):'No reading yet'}</div><button class="btn" id="phnow" style="min-height:40px;font-size:12px;margin-top:8px">READ NOW</button>`;
+    const b=$('phnow');if(b)b.onclick=async()=>{b.disabled=true;b.textContent='READING...';try{await api('/api/phone/refresh',{method:'POST'});}catch(e){}tick();};}
+  const ts=S.tailscale;
+  if(!ts){$('tssum').textContent='CHECKING';$('tssum').className='tag muted';$('tspanel').innerHTML='';}
+  else if(!ts.installed){$('tssum').textContent='NOT INSTALLED';$('tssum').className='tag muted';$('tspanel').innerHTML='<div class="muted" style="font-size:14px">Tailscale is not installed on this PC.</div>';}
+  else{$('tssum').textContent=ts.running?'CONNECTED':'OFF';$('tssum').className='tag '+(ts.running?'ok':'bad');
+    $('tspanel').innerHTML=(ts.running?`<div class="row"><span>This PC</span><span>${esc(ts.name||'')}</span></div><div class="row"><span>Address</span><span style="font-family:var(--mono);font-size:13px">${esc(ts.ip||'')}</span></div>`
+      +(ts.dns?`<div class="row"><span>Secure link</span><span style="font-family:var(--mono);font-size:12px;overflow-wrap:anywhere;text-align:right">https://${esc(ts.dns)}</span></div>`:'')
+      :`<div class="bad" style="font-size:14px">Tailscale is not connected${ts.state?' ('+esc(ts.state)+')':''}. Remote access will not work until it is.</div>`)
+      +(ts.devices?`<div class="muted" style="font-size:13px;margin:8px 0 2px">Devices on your network</div>`+(ts.devices.map(d=>`<div class="row"><div>${esc(d.name)}<small>${esc(d.os)} · ${esc(d.ip)}</small></div><span class="tag ${d.online?'ok':'muted'}">${d.online?'ONLINE':'OFFLINE'}</span></div>`).join('')||'<div class="muted" style="font-size:13px">No other devices.</div>'):'');}
   $('wn').textContent=S.approvals.length;
   $('waiting').innerHTML=S.approvals.map(a=>`<div class="wait"><b>${esc(a.summary)}</b><div class="two"><button class="btn red" data-a="${a.id}" data-d="approve">Approve</button><button class="btn" data-a="${a.id}" data-d="decline">Decline</button></div></div>`).join('')||'<div class="muted" style="font-size:14px">Nothing needs you right now.</div>';
   document.querySelectorAll('[data-a]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await api('/api/approvals/'+b.dataset.a,{json:{decision:b.dataset.d}});}catch(e){alertMsg(e.message)}tick();});
