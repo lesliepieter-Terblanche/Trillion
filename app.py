@@ -353,6 +353,16 @@ def run_agent(user, text):
         core.set_task(tid, status=status, detail=f"{rt['name']} routine")
         core.log(uid, f"Routine run: {rt['name']}", "done" if status == "completed" else "waiting")
         return {"reply": out["reply"], "task_id": tid, "provider": "built-in", "brief": out["brief"]}
+    try:
+        one = routines.ask(user, text, SITES)
+    except Exception:
+        one = None
+    if one:  # "what's the weather": just that one section
+        BUSY[uid] = False
+        core.x("UPDATE tasks SET domain='ROUTINE', title=? WHERE id=?", (one["name"], tid))
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", one["reply"], time.time()))
+        core.set_task(tid, status="completed", detail=one["name"])
+        return {"reply": one["reply"], "task_id": tid, "provider": "built-in", "brief": one["brief"]}
     pm = PERSONA_RE.search(text) if len(text) < 90 else None
     if pm:  # "switch to witty mode": change it straight away
         choice = PERSONA_WORDS[(pm.group(1) or pm.group(2)).lower()]

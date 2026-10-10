@@ -780,3 +780,53 @@ def run(user, routine, sites=None):
              "cards": [{k: v for k, v in c.items() if k != "say"} for c in cards]}
     core.x("UPDATE routines SET last_run=?, last_brief=? WHERE id=?", (brief["ts"], json.dumps(brief), r["id"]))
     return {"reply": reply, "brief": brief}
+
+
+# ---------- asking for one thing: "what's the weather", "give me the news", "how's the rand" ----------
+ASK = [
+    ("weather", re.compile(r"\b(weather|forecast|temperature|is it (?:going to )?rain\w*|will it rain)\b", re.I)),
+    ("news", re.compile(r"\b(news|headlines)\b", re.I)),
+    ("markets", re.compile(r"\b(financials?|markets?|exchange rates?|the rand|rand dollar|dollar rate|gold price|price of gold|"
+                           r"bitcoin|crypto)\b", re.I)),
+]
+NOT_AN_ASK = re.compile(r"\b(write|create|make|draft|save|note|email|whats ?app|send|open|file|folder|video|document|"
+                        r"post|article|website|search|find|remember|routine|add|change|set)\b", re.I)
+
+
+def ask(user, text, sites=None):
+    """One section on its own, using the choices from that login's routines. None if this is not such a request."""
+    if len(text) > 90 or NOT_AN_ASK.search(text):
+        return None
+    kind = next((k for k, rx in ASK if rx.search(text)), None)
+    if not kind:
+        return None
+    ensure(user)
+    cfg = None
+    for r in list_for(user):                     # reuse what the user already chose for this section
+        cfg = next((dict(x) for x in r["sections"] if x["type"] == kind), None)
+        if cfg:
+            break
+    cfg = cfg or {"type": kind, **BY_TYPE[kind]["defaults"]}
+    cfg["on"] = True
+    if kind == "weather":
+        if re.search(r"\btomorrow\b", text, re.I):
+            cfg["day"] = "tomorrow"
+        elif re.search(r"\b(today|now|outside)\b", text, re.I):
+            cfg["day"] = "today"
+        m = re.search(r"\b(?:in|for|at)\s+([A-Za-z][A-Za-z .'-]{2,40}?)(?:\s+(?:today|tomorrow|now|please))?[?.!]*$", text)
+        if m and m.group(1).strip().lower() not in ("today", "tomorrow", "the morning", "the week"):
+            cfg["city"] = m.group(1).strip()
+    label = BY_TYPE[kind]["label"]
+    try:
+        card = RUNNERS[kind](user, cfg, {"sites": sites})
+    except Miss as e:
+        card = {"title": label, "error": str(e), "say": str(e)}
+    except Exception as e:
+        core.log(user["id"], f"The {label.lower()} could not be fetched ({type(e).__name__}: {e})"[:300], "waiting")
+        card = {"title": label, "error": "I could not get this just now.", "say": f"I could not get the {label.lower()} just now."}
+    card["type"] = kind
+    now = datetime.datetime.now()
+    brief = {"id": None, "routine": label, "ts": time.time(), "title": label,
+             "date": f"{now.strftime('%A')} {now.day} {now.strftime('%B')}",
+             "cards": [{k: v for k, v in card.items() if k != "say"}]}
+    return {"reply": card.get("say") or f"Here is the {label.lower()}.", "brief": brief, "name": label}
