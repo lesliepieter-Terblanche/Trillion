@@ -215,6 +215,7 @@ UPDATE_RE = re.compile(r"\b(update|upgrade)\s+(yourself|your ?self|herself|trill
                        r"\bcheck for (an? )?updates?\b", re.I)
 
 
+VERSION_RE = re.compile(r"\b(?:what|which)\s+version\b|\bversion\s+(?:are|is|do)\b|\byour\s+version\b", re.I)
 _PH = r"(?:my |the )?(?:cell ?phone|mobile(?: phone)?|phone|cell|galaxy|samsung)"
 PHONE_RULES = [
     ("mynumber", re.compile(r"\bmy\s+(?:own\s+)?(?:%s|cell ?phone|cell|mobile|phone)\s+number\s+is\s+([+\d][\d\s()-]{6,})" % r"what'?s ?(?:app|up)", re.I)),
@@ -414,6 +415,15 @@ def run_agent(user, text):
     tid = core.add_task(uid, text)
     core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "user", text, time.time()))
     core.log(uid, f'Heard: "{text[:140]}"', "voice")
+    if VERSION_RE.search(text) and not UPDATE_RE.search(text):
+        st = core.settings(user)
+        reply = (f"I am running version {VERSION}. WhatsApps to saved contacts: "
+                 + ("sent straight away, no approval." if st.get("whatsapp_auto_contacts") else "wait for your approval (switch is off under Settings, My phone).")
+                 + " Full phone control: " + ("on." if st.get("phone_full_control") else "off."))
+        BUSY[uid] = False
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="completed", detail=reply[:200])
+        return {"reply": reply, "task_id": tid, "provider": "built-in"}
     if UPDATE_RE.search(text):  # never leave this one to the model's judgement
         res = tools.execute(user, "update_self", {}, task_id=tid)
         reply = update_reply(res)

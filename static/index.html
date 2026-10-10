@@ -171,6 +171,7 @@ footer.status{background:#000;border-top:1px solid var(--line);padding:10px 20px
     <span id="mode" class="ok opt">● LOCAL</span>
     <span class="opt">CLOUD CALLS <b id="cloud" class="ok">0</b></span>
     <span id="clock" class="opt" style="color:var(--a);font-weight:700"></span>
+    <span id="vertag" class="muted" style="font-family:var(--mono);font-size:11px"></span>
     <span id="who"></span>
     <button class="btn" id="out" style="min-height:36px;padding:0 12px;font-size:12px">SIGN OUT</button>
   </div>
@@ -399,6 +400,7 @@ function render(){
       :`<div class="bad" style="font-size:14px">Tailscale is not connected${ts.state?' ('+esc(ts.state)+')':''}. Remote access will not work until it is.</div>`)
       +(ts.devices?`<div class="muted" style="font-size:13px;margin:8px 0 2px">Devices on your network</div>`+(ts.devices.map(d=>`<div class="row"><div>${esc(d.name)}<small>${esc(d.os)} · ${esc(d.ip)}</small></div><span class="tag ${d.online?'ok':'muted'}">${d.online?'ONLINE':'OFFLINE'}</span></div>`).join('')||'<div class="muted" style="font-size:13px">No other devices.</div>'):'');}
   $('wn').textContent=S.approvals.length;
+  if($('vertag'))$('vertag').textContent='v'+String(S.version).split(' ')[0];
   $('chatwait').innerHTML=S.approvals.map(a=>`<div class="wait"><div style="font-size:12px;letter-spacing:.14em;color:var(--red)">NEEDS YOUR APPROVAL</div><b>${esc(a.summary)}</b><div class="two"><button class="btn red" data-a="${a.id}" data-d="approve" style="min-height:52px">Approve</button><button class="btn" data-a="${a.id}" data-d="decline" style="min-height:52px">Decline</button></div></div>`).join('');
   $('waiting').innerHTML=S.approvals.map(a=>`<div class="wait"><b>${esc(a.summary)}</b><div class="two"><button class="btn red" data-a="${a.id}" data-d="approve">Approve</button><button class="btn" data-a="${a.id}" data-d="decline">Decline</button></div></div>`).join('')||'<div class="muted" style="font-size:14px">Nothing needs you right now.</div>';
   document.querySelectorAll('[data-a]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await api('/api/approvals/'+b.dataset.a,{json:{decision:b.dataset.d}});}catch(e){alertMsg(e.message)}tick();});
@@ -413,7 +415,8 @@ function render(){
   $('foot').innerHTML=`<span class="${S.models.ok?'ok':'bad'}">● LOCAL BRAIN</span><span>${s.brain!=='local'?'<span style="color:var(--a)">●</span> '+esc(s.brain.toUpperCase())+' ON':'○ CLOUD BRAIN OFF'}</span><span>${s.voice==='elevenlabs'?'<span style="color:var(--a)">●</span> ELEVENLABS VOICE':'● PC VOICE'}</span><span class="${st&&!st.ok?'bad':'ok'}">${st?(st.ok?'● WEBSITE UP':'▲ WEBSITE DOWN'):'○ WEBSITE'}</span><span class="muted">HOME ${esc(S.user.home)}</span><span class="${S.hearing==='ready'?'ok':(S.hearing==='loading'?'muted':'bad')}">${S.hearing==='ready'?'● HEARING READY':'○ HEARING '+esc(String(S.hearing).toUpperCase())}</span><span class="muted">VERSION ${esc(S.version)}</span>`;
 }
 function alertMsg(m){$('sub').textContent=m;}
-async function tick(){try{S=await (await api('/api/state')).json();render();}catch(e){}}
+let SEENV=null;
+async function tick(){try{S=await (await api('/api/state')).json();if(SEENV&&S.version!==SEENV){location.reload();return;}SEENV=S.version;render();}catch(e){}}
 async function loadChat(){const ms=await (await api('/api/messages')).json();$('chat').innerHTML=ms.slice(-14).map(m=>`<div class="${esc(m.role)}">${esc(m.content)}</div>`).join('');$('chat').scrollTop=1e9;}
 
 async function send(text,speak){
