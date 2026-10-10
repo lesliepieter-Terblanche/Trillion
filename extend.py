@@ -58,6 +58,14 @@ def starter_pack():
 # Skills
 # =====================================================================================
 PACKS_DIR = core.BASE / "skill_packs"
+# what each pack held when it was first shipped with a single per-pack marker (up to 0.7.9)
+PACK_BASELINE = {
+    "replica": ["replica-architect", "replica-backend", "replica-brand", "replica-build", "replica-deploy", "replica-design",
+                "replica-diff", "replica-entrepreneur", "replica-launch", "replica-recon", "replica-test"],
+    "anthropic-web-artifacts": ["web-artifacts-builder"], "superpowers": ["subagent-driven-development"],
+    "superpowers-problem-solving": ["scale-game"], "ai-skills-imagen": ["imagen"],
+    "mattpocock-skills": ["grilling", "loop-me"], "marketingskills": ["seo-audit"],
+}
 
 
 def install_packs():
@@ -68,13 +76,20 @@ def install_packs():
         return
     owner = core.q("SELECT * FROM users WHERE is_admin=1 ORDER BY id LIMIT 1", one=True)
     for pack in sorted(p for p in PACKS_DIR.iterdir() if p.is_dir()):
-        marker = core.DATA / f"skill_pack_{pack.name}_v1.done"
-        if marker.exists() or not owner:
+        if not owner:
             continue
+        # which of this pack's skills have been installed before (so one he removed never comes back, and one added
+        # to the pack later still arrives)
+        marker = core.DATA / f"skill_pack_{pack.name}_v2.json"
+        try:
+            done = set(json.loads(marker.read_text(encoding="utf-8")))
+        except Exception:
+            done = set(PACK_BASELINE.get(pack.name, [])) if (core.DATA / f"skill_pack_{pack.name}_v1.done").exists() else set()
         src = (pack / "SOURCE.txt").read_text(encoding="utf-8").strip().splitlines() if (pack / "SOURCE.txt").exists() else []
         link = next((ln.split("Source:", 1)[1].strip() for ln in src if ln.startswith("Source:")), f"bundled pack: {pack.name}")
         names = []
-        for folder in sorted(f for f in pack.iterdir() if (f / "SKILL.md").exists()):
+        for folder in sorted(f for f in pack.iterdir() if (f / "SKILL.md").exists() and f.name not in done):
+            done.add(folder.name)
             name, desc, body = parse_skill((folder / "SKILL.md").read_text(encoding="utf-8"))
             slug = slugify(name)
             dest = SKILLS_DIR / slug
@@ -92,7 +107,7 @@ def install_packs():
             # a pack can ask to be installed switched off (for playbooks she cannot really carry out)
             save_skill(name, desc, body, link, owner_id=None if any(ln.strip().lower() == "enabled: no" for ln in src) else owner["id"])
             names.append(name)
-        marker.write_text("installed", encoding="utf-8")
+        marker.write_text(json.dumps(sorted(done)), encoding="utf-8")
         if names:
             core.log(owner["id"], f"Skill pack added ({pack.name}): " + ", ".join(names), "done")
 
