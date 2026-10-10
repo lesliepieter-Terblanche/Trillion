@@ -152,8 +152,8 @@ def execute(user, name, args, task_id=None, approved=False, direct=False):
                 st = core.settings(user)
                 own = phone.normalise(st["phone_own_number"], str(st.get("phone_country_code", "27"))) if st.get("phone_own_number") else None
                 in_contacts = who != number and not re.fullmatch(r"[\d\s+()-]{7,}", who)   # found by name in the phone's contact list
-                # only when the user asked for it in their own words (direct), never on the model's own initiative
-                if direct and st.get("whatsapp_auto_contacts") and (in_contacts or number == own):
+                # the user's standing choice: saved contacts get the message at once, however the request was worded
+                if st.get("whatsapp_auto_contacts") and (in_contacts or number == own):
                     out = t_phone_send_whatsapp(user, **args)
                     core.log(uid, describe(name, args), "done")
                     return out
