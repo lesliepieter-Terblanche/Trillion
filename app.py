@@ -21,6 +21,7 @@ app = FastAPI(title="Trillion")
 COOKIE = "trillion"
 BUSY, STOP, SITES, LAST_PROVIDER = {}, set(), {}, {}
 VERSION = tools.version()
+tools.RUNNING = VERSION
 
 PROVIDERS = {
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
@@ -206,14 +207,15 @@ UPDATE_RE = re.compile(r"\b(update|upgrade)\s+(yourself|your ?self|herself|trill
 
 _PH = r"(?:my |the )?(?:cell ?phone|mobile(?: phone)?|phone|cell|galaxy|samsung)"
 PHONE_RULES = [
-    ("whatsapp", re.compile(r"\bwhats ?app\b.{0,20}?\bsend\s+(.+?)\s+(?:a\s+)?(?:message|text)\s*(?:saying|that says|to say|:|\bthat\b)\s+(.+)$", re.I | re.S)),
-    ("whatsapp", re.compile(r"\b(?:send\s+)?(?:a\s+)?whats ?app\s+(?:message\s+)?(?:to\s+)?(.+?)\s*(?:,?\s*saying|that says|to say|:|\bthat\b)\s+(.+)$", re.I | re.S)),
-    ("whatsapp", re.compile(r"\bsend\s+(.+?)\s+a\s+whats ?app(?:\s+message)?\s*(?:saying|that says|to say|:|\bthat\b)\s+(.+)$", re.I | re.S)),
-    ("whatsapp", re.compile(r"\b(?:tell|message|text)\s+(.+?)\s+on\s+whats ?app\s*(?:saying|that|:)?\s+(.+)$", re.I | re.S)),
+    ("whatsapp", re.compile(r"\bwhat'?s ?(?:app|up)\b.{0,20}?\bsend\s+(.+?)\s+(?:a\s+)?(?:message|text)\s*(?:saying|that says|to say|:|\bthat\b)\s+(.+)$", re.I | re.S)),
+    ("whatsapp", re.compile(r"\b(?:send\s+)?(?:a\s+)?what'?s ?(?:app|up)\s+(?:message\s+)?(?:to\s+)?(.+?)\s*(?:,?\s*saying|that says|to say|:|\bthat\b)\s+(.+)$", re.I | re.S)),
+    ("whatsapp", re.compile(r"\bsend\s+(.+?)\s+a\s+what'?s ?(?:app|up)(?:\s+message)?\s*(?:saying|that says|to say|:|\bthat\b)\s+(.+)$", re.I | re.S)),
+    ("whatsapp", re.compile(r"\b(?:tell|message|text)\s+(.+?)\s+on\s+what'?s ?(?:app|up)\s*(?:saying|that|:)?\s+(.+)$", re.I | re.S)),
     ("open", re.compile(r"\b(?:open|launch|start)\s+(?:up\s+)?(?:my\s+|the\s+)?(.+?)\s+(?:app\s+)?on\s+" + _PH, re.I)),
     # "open my WhatsApp" with no device named: these apps live on the phone
-    ("open", re.compile(r"\b(?:open|launch|start)\s+(?:up\s+)?(?:my\s+|the\s+)?(whats ?app(?: business)?|instagram|tiktok|telegram|"
-                        r"facebook|messages|gallery|play store|tailscale)(?:\s+app)?\s*(?:for me|please|now)?[.!?]?\s*$", re.I)),
+    ("open", re.compile(r"\b(?:open|launch|start)\s+(?:up\s+)?(?:my\s+|the\s+)?(what'?s ?(?:app|up)(?: business)?|instagram|tiktok|telegram|"
+                        r"facebook|messenger|messages|gallery|camera|contacts|youtube|spotify|gmail|maps|chrome|play store|tailscale)"
+                        r"(?:\s+app)?\s*(?:for me|please|now|,?\s*\w+)?[.!?]?\s*$", re.I)),
     ("screen", re.compile(r"\bwhat(?:'s| is)\s+(?:showing\s+)?on\s+" + _PH + r"(?:\s+screen)?|\bread\s+" + _PH + r"(?:'s)?\s+screen", re.I)),
     ("press", re.compile(r"\b(?:press|go|hit)\s+(?:the\s+)?(back|home|recents|enter|lock|wake|play|pause|next|previous|"
                          r"volume up|volume down|mute)(?:\s+(?:button|key))?\s+on\s+" + _PH, re.I)),
@@ -226,7 +228,7 @@ PHONE_RULES = [
     ("status", re.compile(_PH + r".{0,40}\b(?:battery|status|storage|charge|charging|space|stats)\b|"
                           r"\b(?:battery|status|storage|charge|stats)\b.{0,30}" + _PH + r"|\bhow(?:'s| is)\s+" + _PH, re.I)),
 ]
-PHONE_WORDS = re.compile(r"\b(phone|cell|mobile|whats ?app|contact|battery|galaxy|samsung)\b", re.I)
+PHONE_WORDS = re.compile(r"\b(phone|cell|mobile|what'?s ?(?:app|up)|contact|battery|galaxy|samsung)\b", re.I)
 
 
 def phone_shortcut(user, text, tid):
@@ -240,7 +242,7 @@ def phone_shortcut(user, text, tid):
         if kind == "whatsapp":
             who = m.group(1).strip(" ,.:")
             who = re.sub(r"^(?:and\s+)?(?:then\s+)?(?:send|tell|message|text)\s+", "", who, flags=re.I)
-            who = re.sub(r"\s+(?:a|the)\s+(?:whats ?app\s+)?(?:message|text|note)$", "", who, flags=re.I)
+            who = re.sub(r"\s+(?:a|the)\s+(?:what'?s ?(?:app|up)\s+)?(?:message|text|note)$", "", who, flags=re.I)
             who = re.sub(r"^(?:my |to )", "", who, flags=re.I).strip()
             msg = m.group(2).strip().strip('"\u201c\u201d')
             if not who or not msg or len(who) > 60:
@@ -253,7 +255,7 @@ def phone_shortcut(user, text, tid):
         if kind == "open":
             if re.search(r"\b(pc|computer|desktop|laptop|browser|web)\b", text, re.I):
                 continue
-            app_name = re.sub(r"^whats\s+app", "whatsapp", m.group(1).strip(), flags=re.I)
+            app_name = re.sub(r"^what'?s ?(?:app|up)", "whatsapp", m.group(1).strip(), flags=re.I)
             app_name = re.sub(r"\s+app$", "", app_name, flags=re.I)
             r = tools.execute(user, "phone_open_app", {"app": app_name}, task_id=tid)
             shown = {"whatsapp": "WhatsApp", "whatsapp business": "WhatsApp Business", "tiktok": "TikTok"}.get(
@@ -355,7 +357,11 @@ def update_reply(res):
     if res.get("status") == "already_up_to_date":
         return f"I am already on the newest version, {res['version']}."
     changes = "; ".join(res.get("what_changed", [])[:4])
-    return f"Updated to version {res['version']}. What changed: {changes}. I am restarting now and will be back in a few seconds."
+    if not changes:
+        return (f"The newest version, {res['version']}, was already downloaded but I was still running "
+                f"{res.get('was', 'an older one')}. I am restarting now to switch over and will be back in a few seconds.")
+    return (f"Updated from {res.get('was', 'the old version')} to {res['version']}. What changed: {changes}. "
+            "I am restarting now and will be back in a few seconds.")
 
 
 def run_agent(user, text):
@@ -891,8 +897,8 @@ def phone_info(user=Depends(auth)):
             o = phone.owner_of(d["serial"])
             d["linked_to"] = o["name"] if o else None
             out["devices"].append(d)
-    except phone.PhoneError as e:
-        out["adb"], out["error"] = False, str(e)
+    except Exception as e:  # a slow or hung phone link must not empty the settings box
+        out["adb"], out["error"] = False, (str(e) if isinstance(e, phone.PhoneError) else "The phone link did not answer. Click LOOK AGAIN.")
     return out
 
 
@@ -909,6 +915,7 @@ def phone_link(p: dict = Body(...), user=Depends(auth)):
         raise HTTPException(403, f"That phone is already linked to {o['name']}")
     s = core.settings(user)
     s["phone_serial"], s["phone_model"] = serial, dev["model"]
+    s["phone_wifi" if ":" in serial else "phone_usb"] = serial
     core.save_settings(user["id"], s)
     core.log(user["id"], f"Phone linked: {dev['model'] or serial}", "done")
     threading.Thread(target=refresh_phone, args=(core.q("SELECT * FROM users WHERE id=?", (user["id"],), one=True),), daemon=True).start()
@@ -922,7 +929,9 @@ def phone_wireless(p: dict = Body(...), user=Depends(auth)):
     except phone.PhoneError as e:
         raise HTTPException(400, str(e))
     s = core.settings(user)
-    s["phone_serial"] = target
+    if ":" not in str(s.get("phone_serial", "")):
+        s["phone_usb"] = s.get("phone_serial")
+    s["phone_serial"] = s["phone_wifi"] = target
     core.save_settings(user["id"], s)
     return {"ok": True, "address": target, "via": via}
 
@@ -932,6 +941,8 @@ def phone_unlink(user=Depends(auth)):
     s = core.settings(user)
     s.pop("phone_serial", None)
     s.pop("phone_model", None)
+    s.pop("phone_usb", None)
+    s.pop("phone_wifi", None)
     core.save_settings(user["id"], s)
     PHONE_STATS.pop(user["id"], None)
     return {"ok": True}

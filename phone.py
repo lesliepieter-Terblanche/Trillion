@@ -73,17 +73,55 @@ def owner_of(serial):
     return None
 
 
+_ADB_ERR = re.compile(r"^(?:adb(?:\.exe)?|error)\s*:\s*(.*)$", re.I | re.M)
+UNREACHABLE = ("The phone is not reachable. Plug it in, or check it is on the same Tailscale network with wireless debugging on.")
+
+
+def _ready(serial, seen):
+    return any(d["serial"] == serial and d["state"] == "device" for d in seen)
+
+
+def working_serial(user):
+    """The address this login's phone answers on right now. The same phone shows up under a different name on
+    the cable and over the network, so if the saved one has gone quiet the other one is tried before giving up."""
+    s = core.settings(user)
+    serial = s.get("phone_serial")
+    if not serial:
+        raise PhoneError("No phone is linked to this login yet. Link one under Settings, My phone.")
+    seen = devices()
+    if _ready(serial, seen):
+        return serial
+    known = [x for x in dict.fromkeys([serial, s.get("phone_wifi"), s.get("phone_usb")]) if x]
+    for x in known:
+        if ":" in x:
+            _run(["connect", x], timeout=12)
+    seen = devices()
+    for x in known:
+        if _ready(x, seen):
+            return x
+    # an older link only remembers one name: accept the same model if it is the only free phone in sight
+    model = (s.get("phone_model") or "").lower()
+    free = [d for d in seen if d["state"] == "device" and model and d["model"].lower() == model
+            and (owner_of(d["serial"]) or user)["id"] == user["id"]]
+    if len(free) == 1:
+        return free[0]["serial"]
+    if any(d["serial"] in known and d["state"] == "unauthorized" for d in seen):
+        raise PhoneError("The phone has not allowed this PC. Unlock it and tap Allow on the USB debugging prompt.")
+    raise PhoneError(UNREACHABLE)
+
+
 def sh(user, command, timeout=25):
     """Run a command on this login's own phone."""
-    serial = linked_serial(user)
-    if ":" in serial and not any(d["serial"] == serial and d["state"] == "device" for d in devices()):
-        _run(["connect", serial], timeout=12)
+    serial = working_serial(user)
     code, out = _run(["-s", serial, "shell", command], timeout=timeout)
-    low = out.lower()
-    if "unauthorized" in low:
-        raise PhoneError("The phone has not allowed this PC. Unlock it and tap Allow on the USB debugging prompt.")
-    if "not found" in low and "device" in low or "offline" in low or "no devices" in low or "failed to connect" in low:
-        raise PhoneError("The phone is not reachable. Plug it in, or check it is on the same Tailscale network with wireless debugging on.")
+    if code != 0:
+        # only adb's own complaint counts; the same words inside the phone's answer are just text
+        for m in _ADB_ERR.finditer(out):
+            low = m.group(1).lower()
+            if "unauthorized" in low:
+                raise PhoneError("The phone has not allowed this PC. Unlock it and tap Allow on the USB debugging prompt.")
+            if re.search(r"device .*not found|offline|no devices|failed to connect|^closed|connection reset", low):
+                raise PhoneError(UNREACHABLE)
     return out
 
 
@@ -363,7 +401,7 @@ def shell(user, command):
 
 
 def screenshot(user):
-    serial = linked_serial(user)
+    serial = working_serial(user)
     dest = core.user_home(user) / "Phone screenshots"
     dest.mkdir(parents=True, exist_ok=True)
     path = dest / time.strftime("phone-%Y%m%d-%H%M%S.png")
@@ -393,6 +431,9 @@ def go_wireless(user, address=""):
     address = (address or "").strip()
     if address and not re.fullmatch(r"[\w.-]+", address):
         raise PhoneError("That does not look like an address. Use the phone's Tailscale address, such as 100.x.x.x.")
+    usb = core.settings(user).get("phone_usb")
+    if ":" in serial and usb and _ready(usb, devices()):
+        serial = usb                     # wireless link went quiet but the cable is in: set it up again from the cable
     if ":" in serial:
         raise PhoneError("This phone is already linked wirelessly. To set it up again, unlink it, plug in the cable and link it first.")
     ts, wifi = phone_addresses(serial)

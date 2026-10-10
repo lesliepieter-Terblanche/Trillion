@@ -285,6 +285,7 @@ footer.status{background:#000;border-top:1px solid var(--line);padding:10px 20px
 
 <div class="view" id="v-settings">
   <h2>Settings</h2>
+  <div class="muted" id="setver" style="font-family:var(--mono);font-size:13px"></div>
   <div class="grid2">
     <div class="panel"><b>Branding</b>
       <label class="field"><span>Assistant name</span><input id="s-assistant_name"></label>
@@ -304,7 +305,12 @@ footer.status{background:#000;border-top:1px solid var(--line);padding:10px 20px
   </div>
   <div><button class="btn pri" id="ssave">SAVE SETTINGS</button> <span class="msg" id="smsg"></span></div>
   <h2>My phone</h2>
-  <div class="panel" id="phonebox"></div>
+  <div class="panel" id="phonebox"><div class="muted">Looking for your phone...</div></div>
+  <div class="panel"><b>What she may do on your phone</b>
+    <label style="display:flex;gap:12px;align-items:flex-start;min-height:44px;margin-top:6px"><input type="checkbox" id="s-phone_full_control" style="width:24px;height:24px;flex:none;margin-top:2px"><span><b>Full phone control</b><br><span class="muted" style="font-size:13px">Lets her read your phone's screen, tap, type, swipe and press keys in any app. She acts as you on the phone, so only switch this on if you are comfortable with that.</span></span></label>
+    <label class="field"><span>Country code for local numbers (27 = South Africa)</span><input id="s-phone_country_code" style="max-width:120px"></label>
+    <div><button class="btn pri" id="phsave">SAVE PHONE SETTINGS</button> <span class="msg" id="phsmsg"></span></div>
+  </div>
   <h2>Connections and keys</h2>
   <div class="muted">Keys are encrypted on this PC and only this login can use them.</div>
   <div class="grid2" id="keys"></div>
@@ -617,7 +623,7 @@ $('cnsave').onclick=async()=>{try{await api('/api/connectors',{json:{name:$('cnn
 const SK=['personality','assistant_name','brand','site','accent','brain','local_model','cloud_model','voice','eleven_voice_id'];
 const LABEL={gemini:'Google Gemini',anthropic:'Claude (API key)',elevenlabs:'ElevenLabs voice',pexels:'Pexels stock footage (only if you already have a key)',pixabay:'Pixabay stock footage (free key from pixabay.com/api/docs)'};
 async function loadPhone(){
-  const p=await (await api('/api/phone')).json();let h='';
+  let p;try{p=await (await api('/api/phone')).json();}catch(e){p={adb:false,error:'Could not check the phone just now: '+e.message};}let h='';
   if(!p.adb){h=`<div class="bad">${esc(p.error)}</div>`;}
   else{
     h+=p.linked?`<div><b style="font-size:17px">${esc(p.model||'Phone')}</b> <span class="tag ok">LINKED</span><div class="muted" style="font-size:13px;font-family:var(--mono)">${esc(p.linked)}</div></div>
@@ -628,8 +634,7 @@ async function loadPhone(){
     h+=`<div style="font-size:14px;margin-top:6px">Phones this PC can see:</div>`+(p.devices.map(d=>`<div class="row"><div>${esc(d.model||'Android phone')}<small>${esc(d.serial)} · ${d.state==='device'?'ready':(d.state==='unauthorized'?'waiting for Allow on the phone':'offline')}${d.linked_to?' · linked to '+esc(d.linked_to):''}</small></div>${d.linked_to?'':`<button class="btn pri" data-ph="${esc(d.serial)}" style="min-height:40px">LINK TO ME</button>`}</div>`).join('')||'<div class="muted">None right now.</div>');
     h+=`<div><button class="btn" id="phref" style="min-height:40px;font-size:12px">LOOK AGAIN</button></div>`;
   }
-  h+=`<label style="display:flex;gap:12px;align-items:flex-start;min-height:44px;margin-top:6px"><input type="checkbox" id="s-phone_full_control" ${S.user.settings.phone_full_control?'checked':''} style="width:22px;height:22px;flex:none;margin-top:2px"><span><b>Full phone control</b><br><span class="muted" style="font-size:13px">Lets her read your phone's screen, tap, type, swipe and press keys in any app. She acts as you on the phone, so only switch this on if you are comfortable with that. Click SAVE SETTINGS after changing it.</span></span></label>`;
-  h+=`<label class="field"><span>Country code for local numbers (27 = South Africa)</span><input id="s-phone_country_code" value="${esc(S.user.settings.phone_country_code||'27')}" style="max-width:120px"></label><div class="msg" id="phmsg" style="overflow-wrap:anywhere"></div>`;
+  h+=`<div class="msg" id="phmsg" style="overflow-wrap:anywhere"></div>`;
   $('phonebox').innerHTML=h;const m=$('phmsg');const say=(t,ok)=>{m.className='msg '+(ok?'ok':'bad');m.textContent=t;};
   document.querySelectorAll('[data-ph]').forEach(b=>b.onclick=async()=>{try{await api('/api/phone/link',{json:{serial:b.dataset.ph}});await tick();loadPhone();}catch(e){say(e.message);}});
   if($('phref'))$('phref').onclick=loadPhone;
@@ -639,7 +644,7 @@ async function loadPhone(){
   if($('phwifi'))$('phwifi').onclick=async()=>{m.className='msg';m.textContent='Switching. This can take up to half a minute...';try{const r=await (await api('/api/phone/wireless',{json:{address:$('phaddr').value}})).json();await tick();await loadPhone();$('phmsg').className='msg ok';$('phmsg').textContent='Wireless is on at '+r.address+(r.via==='wifi'?'. This is the home Wi-Fi address, so it only works while the phone is at home. For anywhere-access, switch Tailscale on on the phone and do this again.':'. You can unplug the cable.');}catch(e){say(e.message);}};
 }
 async function loadSettings(){
-  if(!S)return;loadPhone();const s=S.user.settings;SK.forEach(k=>$('s-'+k).value=s[k]??'');$('s-daily_review').checked=!!s.daily_review;
+  if(!S)return;const s=S.user.settings;$('s-phone_full_control').checked=!!s.phone_full_control;$('s-phone_country_code').value=s.phone_country_code||'27';if($('setver'))$('setver').textContent='Trillion version '+S.version;loadPhone();SK.forEach(k=>$('s-'+k).value=s[k]??'');$('s-daily_review').checked=!!s.daily_review;
   const ks=await (await api('/api/secrets')).json();
   $('keys').innerHTML=ks.map(k=>`<div class="panel"><b>${LABEL[k.name]}</b><div class="${k.set?(k.enabled?'ok':'muted'):'muted'}">${k.set?(k.enabled?'Saved and on '+esc(k.hint):'Saved, switched off '+esc(k.hint)):'Not added'}</div>
     <label class="field"><span>Key</span><input type="password" id="k-${k.name}" placeholder="${k.set?'Leave empty to keep the saved key':'Paste the key'}" autocomplete="off"></label>
@@ -651,6 +656,7 @@ async function loadSettings(){
     else{m.textContent='Testing...';const r=await (await api('/api/secrets/'+n+'/test',{method:'POST'})).json();m.textContent=r.ok?'Works.':'Did not work (code '+r.status+').';m.className='msg '+(r.ok?'ok':'bad');}
   }catch(e){m.textContent=e.message;m.className='msg bad';}});
 }
+$('phsave').onclick=async()=>{const m=$('phsmsg');try{await api('/api/settings',{method:'PUT',json:{phone_full_control:$('s-phone_full_control').checked,phone_country_code:$('s-phone_country_code').value.replace(/\D/g,'')||'27'}});await tick();m.className='msg ok';m.textContent=$('s-phone_full_control').checked?'Saved. Full phone control is ON.':'Saved. Full phone control is off.';}catch(e){m.className='msg bad';m.textContent=e.message;}};
 $('ssave').onclick=async()=>{const j={};SK.forEach(k=>j[k]=$('s-'+k).value);j.daily_review=$('s-daily_review').checked;if($('s-phone_full_control'))j.phone_full_control=$('s-phone_full_control').checked;if($('s-phone_country_code'))j.phone_country_code=$('s-phone_country_code').value.replace(/\D/g,'')||'27';
   try{await api('/api/settings',{method:'PUT',json:j});$('smsg').textContent='Saved.';tick();}catch(e){$('smsg').textContent=e.message;}};
 // family

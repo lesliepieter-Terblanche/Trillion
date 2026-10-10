@@ -403,28 +403,48 @@ def version():
     return v
 
 
+RUNNING = None  # the version this running copy was started with (set at start-up)
+
+
 def t_update_self(user):
     if not (core.BASE / ".git").exists():
         return {"error": "Trillion is not connected to GitHub yet. Run '3 - Connect to GitHub.bat' once."}
+    was = RUNNING or version()
     try:
-        code, before = _git("rev-parse", "HEAD", timeout=10)
-        code, out = _git("pull", "--ff-only")
+        _, before = _git("rev-parse", "HEAD", timeout=10)
+        code, out = _git("fetch", "origin")
     except FileNotFoundError:
         return {"error": "Git is not installed. Run Setup again."}
+    except subprocess.TimeoutExpired:
+        return {"error": "GitHub did not answer in time. Check the internet connection and try again."}
     if code != 0:
-        return {"error": "Could not pull the update: " + out[-400:]}
+        return {"error": "Could not reach GitHub: " + out[-400:]}
+    code, target = _git("rev-parse", "--abbrev-ref", "@{u}", timeout=10)
+    if code != 0 or not target.strip():
+        target = "origin/main"
+    target = target.strip().splitlines()[-1]
+    code, out = _git("merge", "--ff-only", target)
+    if code != 0:
+        # something on this PC is in the way of a normal update (an edited or half-written file):
+        # take GitHub's copy exactly. Logins, keys, memory and files live in data/, which git never touches.
+        code, out = _git("reset", "--hard", target)
+        if code != 0:
+            return {"error": "Could not apply the update: " + out[-400:]}
     _, after = _git("rev-parse", "HEAD", timeout=10)
-    if before == after:
-        return {"status": "already_up_to_date", "version": version()}
-    _, changes = _git("log", "--pretty=%s", f"{before}..{after}", timeout=10)
-    _, files = _git("diff", "--name-only", before, after, timeout=10)
+    now = version()
+    if before == after and now == was:
+        return {"status": "already_up_to_date", "version": now}
+    changes, files = "", ""
+    if before != after:
+        _, changes = _git("log", "--pretty=%s", f"{before}..{after}", timeout=10)
+        _, files = _git("diff", "--name-only", before, after, timeout=10)
     if "requirements.txt" in files:
         import sys
         subprocess.run([sys.executable, "-m", "pip", "install", "-r", "requirements.txt", "--quiet"],
                        cwd=str(core.BASE), timeout=900)
     import threading
     threading.Timer(4, lambda: os._exit(42)).start()  # the start script restarts on code 42
-    return {"status": "updated", "version": version(), "what_changed": changes.splitlines()[:10],
+    return {"status": "updated", "version": now, "was": was, "what_changed": changes.splitlines()[:10],
             "note": "Restarting in a few seconds. Tell the user the dashboard will reconnect by itself."}
 
 
