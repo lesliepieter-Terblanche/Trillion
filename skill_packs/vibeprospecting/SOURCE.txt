@@ -1,0 +1,4 @@
+vibe-prospecting skill by Explorium, MIT licence.
+Source: https://github.com/explorium-ai/vibeprospecting-plugin
+Copied unchanged into Trillion. See LICENSE.
+Enabled: no
