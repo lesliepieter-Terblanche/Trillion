@@ -177,11 +177,14 @@ main{max-width:1180px;gap:22px}
 .qa button{min-height:44px;padding:0 16px;background:var(--panel);border:1px solid #3a342e;border-radius:22px;font-size:14px;font-weight:600}
 .qa button:hover,.qa button.on{border-color:var(--a);color:var(--a)}
 .link{background:none;border:0;color:var(--dim);font-size:13px;text-decoration:underline;min-height:36px;padding:0 4px}
-.statusline{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:center;width:100%;background:none;border:0;border-top:1px solid var(--line);
-  padding:12px 2px;font-family:var(--mono);font-size:12px;letter-spacing:.06em;color:var(--dim);text-align:left;min-height:48px}
+.statusline{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center;width:100%;background:none;border:0;border-top:1px solid var(--line);
+  padding:10px 0;font-family:var(--mono);font-size:12px;letter-spacing:.06em;color:var(--dim);text-align:left;min-height:48px}
+.statusline button{background:none;border:1px solid transparent;border-radius:18px;min-height:40px;padding:0 12px 0 10px;font:inherit;letter-spacing:inherit;color:var(--dim);display:inline-flex;align-items:center}
+.statusline button:hover,.statusline button:focus-visible{border-color:#3a342e;color:var(--ink)}
 .statusline .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;background:#6b6258}
 .statusline .dot.ok{background:var(--green)}.statusline .dot.bad{background:var(--red)}
 .statusline .open{margin-left:auto;color:var(--ink);text-decoration:underline}
+.extra{display:none!important}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chips button{min-height:42px;padding:0 16px;background:none;border:1px solid #3a342e;border-radius:21px;font-size:14px;color:var(--dim)}
 .chips button.on{border-color:var(--a);color:var(--ink);background:var(--panel)}
@@ -204,6 +207,7 @@ main{max-width:1180px;gap:22px}
 .pop{position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.72);display:flex;align-items:flex-start;justify-content:center;padding:4vh 16px;overflow:auto}
 .popbox{background:var(--panel);border:1px solid color-mix(in srgb,var(--a) 45%,var(--line));border-radius:10px;width:100%;max-width:1040px;padding:22px;display:flex;flex-direction:column;gap:16px;
   background-image:linear-gradient(180deg,color-mix(in srgb,var(--a) 10%,var(--panel)),var(--panel) 220px);box-shadow:0 20px 80px rgba(0,0,0,.6)}
+.pop.narrow .popbox{max-width:620px}
 .pophead{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
 .pophead h3{font-family:var(--disp);font-weight:700;font-size:clamp(24px,3.2vw,40px);margin:4px 0;text-transform:uppercase;line-height:1.05;overflow-wrap:anywhere}
 a.btn{color:var(--ink)}a.btn.pri{color:#1a1206}
@@ -285,7 +289,7 @@ a.btn{color:var(--ink)}a.btn.pri{color:#1a1206}
     <div class="panel" id="qaform" hidden></div>
     <div style="text-align:right"><button class="link" id="clear">Clear conversation</button></div>
   </div>
-  <button class="statusline" id="more" type="button" aria-expanded="false"></button>
+  <div class="statusline" id="more"></div>
   <div class="extra" style="display:flex;flex-direction:column;gap:26px">
     <div class="stage">
       <div class="rail">
@@ -518,7 +522,25 @@ document.querySelectorAll('#nav button,#bnav button').forEach(b=>b.onclick=()=>g
 document.addEventListener('click',e=>{const b=e.target.closest('[data-go]');if(b)go(b.dataset.go);});
 ['f-phone','f-ts'].forEach(id=>{const el=$(id);try{if(localStorage.getItem('trillion_'+id)==='1')el.open=true;}catch(e){}
   el.addEventListener('toggle',()=>{try{localStorage.setItem('trillion_'+id,el.open?'1':'0');}catch(e){}});});
-$('more').onclick=()=>{const on=document.body.classList.toggle('details');$('more').setAttribute('aria-expanded',on?'true':'false');if(S)render();if(on)$('more').scrollIntoView({behavior:'smooth',block:'start'});};
+let STAT=null;
+function statBody(k){
+  const s=S.user.settings,st=S.site;
+  if(k==='brain')return `<div class="row"><span>Mode</span><span>${s.brain==='local'?'100% local, nothing leaves this PC':'Hybrid: '+esc(s.brain)+' is switched on'}</span></div><div class="row"><span>Cloud calls today</span><span>${S.cloud_calls}</span></div><div class="row"><span>Voice</span><span>${s.voice==='elevenlabs'?'ElevenLabs':"This PC's own voice"}</span></div><div style="margin-top:10px">${$('brains').innerHTML}</div>`;
+  if(k==='pc')return $('vitals').innerHTML+`<div class="muted" style="font-size:13px">Home folder: ${esc(S.user.home)}</div>`;
+  if(k==='phone')return $('phpanel').innerHTML.replace('id="phnow"','id="phnow3"')+`<div class="btns" style="justify-content:flex-start;margin-top:10px"><button class="btn" data-go="phone" id="statgo">OPEN THE PHONE PAGE</button></div>`;
+  if(k==='ts')return $('tspanel').innerHTML||'<div class="muted">Still checking.</div>';
+  if(k==='site')return ($('site').innerHTML)+`<div class="btns" style="justify-content:flex-start;margin-top:12px"><button class="btn pri" id="statsite">CHECK NOW</button>${s.site?`<a class="btn" style="display:inline-flex;align-items:center;text-decoration:none" href="${esc(/^https?:/.test(s.site)?s.site:'https://'+s.site)}" target="_blank" rel="noopener">OPEN THE WEBSITE</a>`:''}</div>`;
+  if(k==='hear')return `<div style="font-size:16px">${S.hearing==='ready'?'<span class="ok">Ready.</span> She can hear you when VOICE is ticked.':(S.hearing==='loading'?'Still loading. This takes a minute after she starts.':'<span class="bad">Not available: '+esc(String(S.hearing))+'.</span> Run Setup again to install it.')}</div><div class="muted" style="font-size:13px;margin-top:8px">Hearing runs on this PC. The microphone works on the PC itself and over the secure https address on your phone.</div>`;
+  if(k==='act')return `<div class="tl">${$('tl').innerHTML}</div><div class="ticks"><span>00:00</span><span>04:00</span><span>08:00</span><span>12:00</span><span>16:00</span><span>20:00</span><span>24:00</span></div><div class="log" style="margin-top:14px;max-height:46vh;overflow:auto">${$('log').innerHTML}</div>`;
+  return '';
+}
+const STATT={brain:'Brain',pc:'This PC',phone:'My phone',ts:'Tailscale',site:'Website',hear:'Hearing',act:"Today's activity"};
+function statBind(){
+  const b=$('phnow3');if(b)b.onclick=async()=>{b.disabled=true;b.textContent='READING...';try{await api('/api/phone/refresh',{method:'POST'});}catch(e){}tick();};
+  const g=$('statgo');if(g)g.addEventListener('click',()=>closePop());
+  const c=$('statsite');if(c)c.onclick=async()=>{c.disabled=true;c.textContent='CHECKING...';try{await api('/api/projects/check',{method:'POST'});}catch(e){}tick();};
+}
+function openStat(k){STAT=k;popup({narrow:k!=='act',kicker:'STATUS',title:STATT[k],html:`<div style="max-width:640px">${statBody(k)}</div>`,onclose:()=>{STAT=null;}});statBind();}
 let TILE=null;
 document.querySelectorAll('#htiles .st').forEach(b=>b.onclick=()=>{TILE=TILE===b.dataset.t?null:b.dataset.t;if(S)render();});
 $('out').onclick=async()=>{await api('/api/logout',{method:'POST'});location.reload();};
@@ -589,12 +611,13 @@ function render(){
   else if(TILE==='run')$('hlist').innerHTML='<b>Running now</b>'+(prog.map(t=>li(t.title,t.detail)).join('')||'<div class="muted">Nothing is running.</div>');
   else if(TILE==='done')$('hlist').innerHTML='<b>Done today</b>'+(doneT.slice(0,25).map(t=>li(t.title,hm(t.created))).join('')||'<div class="muted">Nothing finished yet today.</div>');
   else if(TILE==='prob')$('hlist').innerHTML='<b>Problems</b>'+(probs.map(x=>li(x.t,x.s)).join('')||'<div class="ok">No problems. Everything is working.</div>');
-  const dot=(ok,label)=>`<span><span class="dot ${ok===true?'ok':(ok===false?'bad':'')}"></span>${label}</span>`;
-  $('more').innerHTML=dot(S.models.ok,'BRAIN')+dot(v.cpu<92,'PC '+v.cpu.toFixed(0)+'%')
-    +dot(!ph.linked||ph.pending?null:!!ph.ok,'PHONE'+(ph.linked&&ph.ok&&ph.battery_percent!==undefined?' '+ph.battery_percent+'%':(ph.linked?'':' NOT LINKED')))
-    +dot(S.tailscale?(S.tailscale.installed?!!S.tailscale.running:null):null,'TAILSCALE')
-    +(s.site?dot(S.site?!!S.site.ok:null,'WEBSITE'):'')+dot(S.hearing==='ready'?true:(S.hearing==='loading'?null:false),'HEARING')
-    +`<span class="open">${document.body.classList.contains('details')?'HIDE DETAILS':'SHOW DETAILS'}</span>`;
+  const dot=(k,ok,label)=>`<button type="button" data-s="${k}"><span class="dot ${ok===true?'ok':(ok===false?'bad':'')}"></span>${label}</button>`;
+  $('more').innerHTML=dot('brain',S.models.ok,'BRAIN')+dot('pc',v.cpu<92,'PC '+v.cpu.toFixed(0)+'%')
+    +dot('phone',!ph.linked||ph.pending?null:!!ph.ok,'PHONE'+(ph.linked&&ph.ok&&ph.battery_percent!==undefined?' '+ph.battery_percent+'%':(ph.linked?'':' NOT LINKED')))
+    +dot('ts',S.tailscale?(S.tailscale.installed?!!S.tailscale.running:null):null,'TAILSCALE')
+    +(s.site?dot('site',S.site?!!S.site.ok:null,'WEBSITE'):'')+dot('hear',S.hearing==='ready'?true:(S.hearing==='loading'?null:false),'HEARING')
+    +`<button type="button" data-s="act" class="open">ACTIVITY</button>`;
+  $('more').querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>openStat(b.dataset.s));
   $('v-phone').classList.toggle('nolink',!ph.linked);
   if($('pp-stats')&&VIEW==='phone')$('pp-stats').innerHTML=ph.linked?$('phpanel').innerHTML.replace('id="phnow"','id="phnow2"'):'<div class="muted">No phone is linked yet. Use the Link box on this page.</div>';
   {const b2=$('phnow2');if(b2)b2.onclick=async()=>{b2.disabled=true;b2.textContent='READING...';try{await api('/api/phone/refresh',{method:'POST'});}catch(e){}tick();};}
@@ -610,12 +633,13 @@ function render(){
   $('foot').innerHTML=`<span class="${S.models.ok?'ok':'bad'}">● LOCAL BRAIN</span><span>${s.brain!=='local'?'<span style="color:var(--a)">●</span> '+esc(s.brain.toUpperCase())+' ON':'○ CLOUD BRAIN OFF'}</span><span>${s.voice==='elevenlabs'?'<span style="color:var(--a)">●</span> ELEVENLABS VOICE':'● PC VOICE'}</span><span class="${st&&!st.ok?'bad':'ok'}">${st?(st.ok?'● WEBSITE UP':'▲ WEBSITE DOWN'):'○ WEBSITE'}</span><span class="muted">HOME ${esc(S.user.home)}</span><span class="${S.hearing==='ready'?'ok':(S.hearing==='loading'?'muted':'bad')}">${S.hearing==='ready'?'● HEARING READY':'○ HEARING '+esc(String(S.hearing).toUpperCase())}</span><span class="muted">VERSION ${esc(S.version)}</span>`;
 }
 function alertMsg(m){$('sub').textContent=m;}
+function statRefresh(){if(STAT&&!$('pop').hidden&&['pc','phone','ts','site','brain','hear'].includes(STAT)){$('popbody').innerHTML=`<div style="max-width:640px">${statBody(STAT)}</div>`;statBind();}}
 const linkify=t=>esc(t).replace(/https?:\/\/[^\s<]+[^\s<.,;:!?)\]]/g,u=>`<a href="${u}" target="_blank" rel="noopener">${u}</a>`);
 let popClose=null,popBack=null;
 function popup(o){
   $('popkick').textContent=o.kicker||'';$('poptitle').textContent=o.title||'';$('popsub').textContent=o.sub||'';
   $('popbody').innerHTML=o.html||'';$('popfoot').innerHTML=(o.foot||'')+'<button class="btn pri" id="popok">DONE</button>';
-  popBack=document.activeElement;popClose=o.onclose||null;$('pop').hidden=false;document.body.style.overflow='hidden';$('pop').scrollTop=0;$('popx').focus();
+  $('pop').classList.toggle('narrow',!!o.narrow);popBack=document.activeElement;popClose=o.onclose||null;$('pop').hidden=false;document.body.style.overflow='hidden';$('pop').scrollTop=0;$('popx').focus();
   $('popok').onclick=closePop;
 }
 function closePop(){if($('pop').hidden)return;$('pop').hidden=true;document.body.style.overflow='';$('popbody').innerHTML='';if(popClose)popClose();popClose=null;if(popBack&&popBack.focus)popBack.focus();}
@@ -630,7 +654,7 @@ function showMap(m){
   $('popring').onclick=()=>{closePop();send('ring my phone',voiceOn);};
 }
 let SEENV=null;
-async function tick(){try{S=await (await api('/api/state')).json();if(SEENV&&S.version!==SEENV){location.reload();return;}SEENV=S.version;render();}catch(e){}}
+async function tick(){try{S=await (await api('/api/state')).json();if(SEENV&&S.version!==SEENV){location.reload();return;}SEENV=S.version;render();statRefresh();}catch(e){}}
 async function loadChat(){const ms=await (await api('/api/messages')).json();$('chat').innerHTML=ms.slice(-14).map(m=>`<div class="${esc(m.role)}">${m.role==='assistant'?linkify(m.content):esc(m.content)}</div>`).join('');$('chat').scrollTop=1e9;}
 
 async function send(text,speak){
