@@ -356,6 +356,9 @@ def tools_for(user, text):
 VIDEO_RE = re.compile(r"\b(create|make|generate|produce|build|render)\b[^.?!]{0,80}\bvideo\b", re.I)
 
 
+OPEN_VIDEO_RE = re.compile(r"\b(open|play|show|watch|view)\b[^.?!]{0,30}\b(video|clip|it)\b", re.I)
+
+
 def video_request(text):
     m = re.search(r"(\d{1,2})[\s-]*(seconds?|secs?|s)\b", text, re.I)
     low = text.lower()
@@ -446,6 +449,26 @@ def run_agent(user, text):
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="waiting" if waiting_ else ("failed" if "error" in res else "completed"), detail=reply[:200])
         return {"reply": reply, "task_id": tid, "provider": "built-in"}
+    if OPEN_VIDEO_RE.search(text) and not VIDEO_RE.search(text):
+        import os
+        v = core.q("SELECT * FROM videos WHERE user_id=? ORDER BY id DESC LIMIT 1", (uid,), one=True)
+        if not v:
+            reply = "There is no video yet. Ask me to create one first."
+        elif not os.path.exists(v["path"]):
+            reply = f"The newest video, {v['title']}, was moved or deleted from {v['path']}."
+        else:
+            on_pc = ""
+            if hasattr(os, "startfile"):
+                try:
+                    os.startfile(v["path"])
+                    on_pc = " It is also playing on the PC screen."
+                except OSError:
+                    pass
+            reply = f"Here is {v['title']}. I have opened the Videos page: press play on the top one." + on_pc
+        BUSY[uid] = False
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="completed", detail=reply[:200])
+        return {"reply": reply, "task_id": tid, "provider": "built-in", "show": "videos" if v else ""}
     if VIDEO_RE.search(text):  # a long job with fixed steps: run it directly
         try:
             res = tools.execute(user, "create_video", video_request(text), task_id=tid)

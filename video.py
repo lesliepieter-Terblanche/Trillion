@@ -629,7 +629,11 @@ def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progre
         if missing:
             notes.append(f"No stock footage was found for {missing} of {len(p['scenes'])} scenes, so those use a light backdrop.")
     else:
-        notes.append("No stock footage: add a free Pixabay key in Settings to get real footage. This one uses light backdrops.")
+        saved = core.get_secret(uid, "pixabay", only_enabled=False) or core.get_secret(uid, "pexels", only_enabled=False)
+        notes.append("No stock footage: your footage key is saved but switched off. Tick its box under Settings, Connections and keys, "
+                     "click SAVE next to it, then ask again." if saved else
+                     "No stock footage: no Pixabay key is saved for this login yet. Paste a free one under Settings, Connections and keys, "
+                     "click SAVE next to it, then ask again. This one uses light backdrops.")
 
     music, music_name = pick_music()
     say("Rendering")

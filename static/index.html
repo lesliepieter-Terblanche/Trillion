@@ -417,7 +417,7 @@ async function send(text,speak){
   if(!text||sending)return;sending=true;$('say').value='';
   $('chat').insertAdjacentHTML('beforeend',`<div class="user">${esc(text)}</div>`);$('chat').scrollTop=1e9;
   $('kicker').textContent='NOW WORKING';$('big').textContent='Thinking';$('sub').textContent=text;
-  try{const r=await (await api('/api/chat',{json:{message:text}})).json();await loadChat();if(r.brief)showBrief(r.brief,true);if(speak||voiceOn){talking=true;if(S)render();await say(r.reply);await new Promise(r=>setTimeout(r,350));talking=false;}}
+  try{const r=await (await api('/api/chat',{json:{message:text}})).json();await loadChat();if(r.brief)showBrief(r.brief,true);if(r.show){const b=document.querySelector('#nav button[data-v="'+r.show+'"]');if(b)b.click();}if(speak||voiceOn){talking=true;if(S)render();await say(r.reply);await new Promise(r=>setTimeout(r,350));talking=false;}}
   catch(e){$('chat').insertAdjacentHTML('beforeend',`<div class="assistant">${esc(e.message)}</div>`);}
   sending=false;tick();
 }
