@@ -356,7 +356,7 @@ def tools_for(user, text):
 VIDEO_RE = re.compile(r"\b(create|make|generate|produce|build|render)\b[^.?!]{0,80}\bvideo\b", re.I)
 
 
-OPEN_VIDEO_RE = re.compile(r"\b(open|play|show|watch|view)\b[^.?!]{0,30}\b(video|clip|it)\b", re.I)
+OPEN_VIDEO_RE = re.compile(r"\b(open|play|show|watch|view)\b[^.?!]{0,30}\b(video|clip)s?\b", re.I)
 
 
 def video_request(text):
