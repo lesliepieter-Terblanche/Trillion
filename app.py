@@ -248,6 +248,7 @@ UPDATE_RE = re.compile(r"\b(update|upgrade)\s+(yourself|your ?self|herself|trill
 
 
 THEMES = {"night": "#ffb454", "day": "#b45309", "ocean": "#38bdf8", "forest": "#86efac", "royal": "#c084fc"}
+WAKE_RE = re.compile(r"\bwake ?word\b.{0,20}\b(on|off)\b|\b(?:turn|switch|enable|disable|activate|use|stop)\b.{0,25}\bwake ?word\b", re.I)
 THEME_RE = re.compile(r"\b(?:switch|change|go|turn|set|use|put)\b.{0,30}\b(night|dark|day|light|ocean|forest|royal)\b.{0,12}\b(?:mode|theme|colou?rs?)\b|"
                       r"^\s*(night|dark|day|light|ocean|forest|royal)\s+(?:mode|theme)[.!]?\s*$", re.I)
 VERSION_RE = re.compile(r"\b(?:what|which)\s+version\b|\bversion\s+(?:are|is|do)\b|\byour\s+version\b", re.I)
@@ -513,6 +514,18 @@ def run_agent(user, text):
     tid = core.add_task(uid, text)
     core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "user", text, time.time()))
     core.log(uid, f'Heard: "{text[:140]}"', "voice")
+    wm = WAKE_RE.search(text) if len(text) < 80 else None
+    if wm:
+        st = core.settings(user)
+        st["wake_word"] = bool(re.search(r"\b(on|enable|activate|use|start)\b", text, re.I)) and not re.search(r"\b(off|disable|stop|no)\b", text, re.I)
+        core.save_settings(uid, st)
+        name = st.get("assistant_name") or "Trillion"
+        reply = (f"Wake word is on. In voice mode, say {name} first and I will answer." if st["wake_word"]
+                 else "Wake word is off. In voice mode I answer whenever you speak.")
+        BUSY[uid] = False
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="completed", detail=reply)
+        return {"reply": reply, "task_id": tid, "provider": "built-in"}
     tm = THEME_RE.search(text) if len(text) < 80 else None
     if tm:
         name = {"dark": "night", "light": "day"}.get((tm.group(1) or tm.group(2)).lower(), (tm.group(1) or tm.group(2)).lower())
@@ -992,7 +1005,7 @@ def messages(user=Depends(auth)):
 
 
 # ---------- settings and keys ----------
-EDITABLE = ["video_ai_images", "wa_inbox", "fast_answers", "theme", "quick_actions", "whatsapp_auto_contacts", "phone_own_number", "phone_full_control", "personality", "phone_country_code", "assistant_name", "brand", "accent", "site", "brain", "local_model", "cloud_model", "voice",
+EDITABLE = ["wake_word", "video_ai_images", "wa_inbox", "fast_answers", "theme", "quick_actions", "whatsapp_auto_contacts", "phone_own_number", "phone_full_control", "personality", "phone_country_code", "assistant_name", "brand", "accent", "site", "brain", "local_model", "cloud_model", "voice",
             "eleven_voice_id", "daily_review"]
 
 

@@ -535,6 +535,7 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
       <label class="field"><span>Cloud model name</span><input id="s-cloud_model"></label>
       <label class="field"><span>Voice</span><select id="s-voice"><option value="browser">This PC's voice (free)</option><option value="elevenlabs">ElevenLabs (needs your key under Keys)</option></select></label>
       <label class="field"><span>ElevenLabs voice ID</span><input id="s-eleven_voice_id"></label>
+      <label class="tickrow"><input type="checkbox" id="s-wake_word"><span><b>Wake word</b><br><span class="muted">In voice mode she only responds when she hears her name, for example "<span id="wakeex">Trillion</span>, what is the weather". Switch this on in noisy places so other talk does not set her off. Her name is the Assistant name under Look and name.</span></span></label>
       <label class="tickrow"><input type="checkbox" id="s-fast_answers"><span><b>Quick answers</b><br><span class="muted">Plain questions go to the small fast model. Anything she has to do, look up or remember still uses the full brain.</span></span></label>
       <label class="tickrow"><input type="checkbox" id="s-daily_review"><span>Learn from each day's conversations at 23:30</span></label>
       <div><button class="btn pri" data-save="brain">SAVE BRAIN AND VOICE</button> <span class="msg" id="smsg-brain"></span></div>
@@ -643,7 +644,7 @@ function render(){
   $('stage').className='hero'+(S.busy?' busy':'')+(voiceOn&&!S.busy&&!talking?' listening':'');
   if(Date.now()<hold){}
   else if(S.busy&&prog[0]){$('kicker').textContent='NOW WORKING';$('big').textContent=prog[0].detail||'Thinking';$('sub').textContent=prog[0].title;}
-  else if(voiceOn&&!sending){$('kicker').textContent=talking?'SPEAKING':(vSpoke?'HEARING YOU':'LISTENING');$('big').textContent=talking?'Answering':'Speak any time';$('sub').textContent='Voice mode is on. Untick VOICE to stop.';}
+  else if(voiceOn&&!sending){$('kicker').textContent=talking?'SPEAKING':(vSpoke?'HEARING YOU':'LISTENING');$('big').textContent=talking?'Answering':(s.wake_word?'Say "'+(s.assistant_name||'Trillion')+'"':'Speak any time');$('sub').textContent=s.wake_word?'Wake word is on: start with my name. Untick VOICE to stop.':'Voice mode is on. Untick VOICE to stop.';}
   else if(!sending){$('kicker').textContent='READY';$('big').textContent='Standing by';$('sub').textContent='Type below, or tick VOICE and just talk.';}
   $('stop').hidden=!S.busy;
   const ph=S.phone||{};
@@ -812,11 +813,35 @@ function vadTick(){
   if(vSpoke&&(vSilMs>=1300||vIdleMs>30000))endSegment(true);   // you stopped talking: send it
   else if(!vSpoke&&vIdleMs>9000)endSegment(false);             // nothing said: start a fresh, short recording
 }
+// ---- wake word: with it on, she only acts on speech that starts with or contains her name ----
+let wakeUntil=0;
+const wakeName=()=>((S&&S.user.settings.assistant_name)||'Trillion').trim();
+function lev(a,b){const m=[];for(let i=0;i<=a.length;i++){m[i]=[i];}for(let j=1;j<=b.length;j++)m[0][j]=j;
+  for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++)m[i][j]=Math.min(m[i-1][j]+1,m[i][j-1]+1,m[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return m[a.length][b.length];}
+function wakeCheck(text){
+  if(!S||!S.user.settings.wake_word)return {go:true,text};
+  if(Date.now()<wakeUntil){wakeUntil=0;return {go:true,text};}          // she just answered "Yes?": this is the request
+  const name=wakeName().toLowerCase().replace(/[^a-z0-9 ]/g,''),nw=name.split(/\s+/).length,slack=name.length<=4?1:2;
+  const words=text.split(/\s+/);
+  for(let i=0;i<Math.min(words.length,12);i++){
+    const cand=words.slice(i,i+nw).join(' ').toLowerCase().replace(/[^a-z0-9 ]/g,'');
+    const dd=cand?lev(cand,name):9;
+    if(cand&&(dd<=1||(dd<=slack&&cand[0]===name[0]))&&!(dd>0&&name.length<=3)){
+      let rest=words.slice(0,i).concat(words.slice(i+nw)).join(' ').replace(/^(hey|hi|ok|okay|hello|yo)[,\s]+/i,'').replace(/^[,.\s]+|[,\s]+$/g,'').trim();
+      if(/^(hey|hi|ok|okay|hello|yo)?[.!?,]*$/i.test(rest))return {go:false,called:true};
+      return {go:true,text:rest};}
+  }
+  return {go:false,called:false};
+}
 async function heard(blob){
   vHearing=true;hold=Date.now()+90000;$('kicker').textContent='HEARING';$('big').textContent='Listening back';$('sub').textContent='Working out what you said...';
   try{const j=await (await api('/api/stt',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:blob})).json();
     hold=0;
-    if(j.text&&j.text.trim().length>1){vHearing=false;await send(j.text,true);}
+    if(j.text&&j.text.trim().length>1){vHearing=false;
+      const w=wakeCheck(j.text);
+      if(w.go)await send(w.text,true);
+      else if(w.called){wakeUntil=Date.now()+9000;hold=Date.now()+9000;$('kicker').textContent='LISTENING';$('big').textContent='Yes?';$('sub').textContent='Go ahead, I am listening.';talking=true;await say('Yes?');talking=false;}
+      else{hold=Date.now()+3000;$('kicker').textContent='WAITING FOR MY NAME';$('big').textContent='Not for me';$('sub').textContent='Heard: "'+j.text.slice(0,90)+'". Say "'+wakeName()+'" first.';}}
     else{hold=Date.now()+2500;$('big').textContent='Not heard';alertMsg(j.why||"I didn't catch that.");}
   }catch(e){hold=Date.now()+6000;$('big').textContent='Not heard';alertMsg(e.message);}
   vHearing=false;
@@ -988,7 +1013,7 @@ function drawThemes(){const cur=(S.user.settings.theme||'night');
     try{await api('/api/settings',{method:'PUT',json:{theme:t[0],accent:t[3]}});await tick();$('s-accent').value=t[3];drawThemes();$('thmsg').className='msg ok';$('thmsg').textContent=t[1]+' mode is on.';}catch(e){$('thmsg').className='msg bad';$('thmsg').textContent=e.message;}});}
 const SECF={look:['assistant_name','personality','brand','site','accent'],brain:['brain','local_model','cloud_model','voice','eleven_voice_id']};
 async function loadSettings(){
-  if(!S)return;const s=S.user.settings;$('setver').textContent='Trillion version '+S.version;SK.forEach(k=>$('s-'+k).value=s[k]??'');$('s-daily_review').checked=!!s.daily_review;$('s-fast_answers').checked=s.fast_answers!==false;drawThemes();
+  if(!S)return;const s=S.user.settings;$('setver').textContent='Trillion version '+S.version;SK.forEach(k=>$('s-'+k).value=s[k]??'');$('s-daily_review').checked=!!s.daily_review;$('s-fast_answers').checked=s.fast_answers!==false;$('s-wake_word').checked=!!s.wake_word;$('wakeex').textContent=s.assistant_name||'Trillion';drawThemes();
   const on=s.quick_actions||[];$('qapick').innerHTML=Object.keys(QA).map(k=>`<label class="tickrow" style="align-items:center"><input type="checkbox" data-qa="${k}" ${on.includes(k)?'checked':''}><span>${esc(QA[k].label)}</span></label>`).join('');
   const ks=await (await api('/api/secrets')).json();
   $('keys').innerHTML=ks.map(k=>`<div class="panel"><b>${LABEL[k.name]}</b><div class="${k.set?(k.enabled?'ok':'muted'):'muted'}">${k.set?(k.enabled?'Saved and on '+esc(k.hint):'Saved, switched off '+esc(k.hint)):'Not added'}</div>
@@ -1002,7 +1027,7 @@ async function loadSettings(){
   }catch(e){m.textContent=e.message;m.className='msg bad';}});
 }
 async function saveSet(j,m){try{await api('/api/settings',{method:'PUT',json:j});await tick();m.className='msg ok';m.textContent='Saved.';}catch(e){m.className='msg bad';m.textContent=e.message;}}
-document.querySelectorAll('[data-save]').forEach(b=>b.onclick=()=>{const sec=b.dataset.save,j={};SECF[sec].forEach(k=>j[k]=$('s-'+k).value);if(sec==='brain'){j.daily_review=$('s-daily_review').checked;j.fast_answers=$('s-fast_answers').checked;}saveSet(j,$('smsg-'+sec));});
+document.querySelectorAll('[data-save]').forEach(b=>b.onclick=()=>{const sec=b.dataset.save,j={};SECF[sec].forEach(k=>j[k]=$('s-'+k).value);if(sec==='brain'){j.daily_review=$('s-daily_review').checked;j.fast_answers=$('s-fast_answers').checked;j.wake_word=$('s-wake_word').checked;}saveSet(j,$('smsg-'+sec));});
 $('qasave').onclick=async()=>{await saveSet({quick_actions:[...document.querySelectorAll('[data-qa]:checked')].map(x=>x.dataset.qa)},$('smsg-home'));drawQA();};
 $('phsave').onclick=async()=>{const m=$('phsmsg');try{await api('/api/settings',{method:'PUT',json:{wa_inbox:$('s-wa_inbox').checked,whatsapp_auto_contacts:$('s-whatsapp_auto_contacts').checked,phone_own_number:$('s-phone_own_number').value.trim(),phone_full_control:$('s-phone_full_control').checked,phone_country_code:$('s-phone_country_code').value.replace(/\D/g,'')||'27'}});await tick();m.className='msg ok';ppUse();loadPhonePage();m.textContent='Saved. Straight-away WhatsApps: '+($('s-whatsapp_auto_contacts').checked?'ON':'off')+'. Full phone control: '+($('s-phone_full_control').checked?'ON':'off')+'.';}catch(e){m.className='msg bad';m.textContent=e.message;}};
 

@@ -32,6 +32,7 @@ DEFAULT_SETTINGS = {
     "fast_model": "qwen2.5:3b",
     "wa_inbox": True,                  # show incoming WhatsApp messages (read from the phone's notifications) on the dashboard
     "video_ai_images": True,           # scenes with no stock footage get an AI-made picture instead of a plain backdrop
+    "wake_word": False,                # voice mode only acts on speech that includes her name
     "theme": "night",                  # colour mode: night, day, ocean, forest or royal
     "whatsapp_auto_contacts": False,   # send WhatsApps to saved contacts straight away, without the approval step
     "phone_country_code": "27",    # used to turn 082... into +2782... for WhatsApp
