@@ -16,4 +16,12 @@ if %errorlevel%==42 (
   echo Trillion updated herself. Restarting...
   goto run
 )
+if not defined TRILLION_SAFE (
+  set TRILLION_SAFE=1
+  echo.
+  echo Trillion stopped unexpectedly. Starting her again in safe mode...
+  goto run
+)
+echo.
+echo Trillion stopped again. Please send Claude the last lines shown above.
 pause

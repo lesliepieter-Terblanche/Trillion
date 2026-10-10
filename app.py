@@ -751,6 +751,45 @@ def _cuda_dlls():
                 pass
 
 
+def _cuda_safe(name):
+    """Try hearing on the graphics card in a separate helper program first. A missing library there can stop a
+    program dead rather than raise an error, and that must never take Trillion herself down. The answer is
+    remembered, so the trial runs once per version."""
+    import os, sys, subprocess
+    if os.environ.get("TRILLION_SAFE"):
+        return False
+    mark = core.DATA / "hearing_gpu.txt"
+    tag = VERSION.split(" ")[0]
+    try:
+        seen = mark.read_text(encoding="utf-8").split("|")
+        if seen[0] == tag:
+            return seen[1] == "ok"
+    except Exception:
+        pass
+    mark.write_text(f"{tag}|bad", encoding="utf-8")       # stays "bad" unless the trial below finishes cleanly
+    code = ("import os,sys,glob\n"
+            "for b in sys.path:\n"
+            "    for d in glob.glob(os.path.join(b,'nvidia','*','bin'))+glob.glob(os.path.join(b,'nvidia','*','lib')):\n"
+            "        try:\n"
+            "            os.add_dll_directory(d) if hasattr(os,'add_dll_directory') else None\n"
+            "            os.environ['PATH']=d+os.pathsep+os.environ.get('PATH','')\n"
+            "        except OSError: pass\n"
+            "import numpy as np\n"
+            "from faster_whisper import WhisperModel\n"
+            f"m=WhisperModel({name!r},device='cuda',compute_type='float16')\n"
+            "list(m.transcribe(np.zeros(16000,dtype='float32'),language='en')[0])\n"
+            "print('GPU_OK')\n")
+    try:
+        r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=240)
+        ok = r.returncode == 0 and "GPU_OK" in r.stdout
+    except Exception:
+        ok = False
+    mark.write_text(f"{tag}|{'ok' if ok else 'bad'}", encoding="utf-8")
+    if not ok:
+        core.log(1, "Hearing stays on the processor: the graphics card trial did not pass", "waiting")
+    return ok
+
+
 def load_whisper():
     global _whisper
     with _whisper_lock:
@@ -765,13 +804,10 @@ def load_whisper():
             raise
         name = os.environ.get("TRILLION_WHISPER_MODEL", "small")
         want = os.environ.get("TRILLION_WHISPER_DEVICE") or ("cuda" if core.gpu() else "cpu")
-        if want == "cuda":
+        if want == "cuda" and _cuda_safe(name):
             try:
-                import numpy as np
                 _cuda_dlls()
-                m = WhisperModel(name, device="cuda", compute_type="float16")
-                list(m.transcribe(np.zeros(16000, dtype="float32"), language="en")[0])   # proves the card's libraries really load
-                _whisper = m
+                _whisper = WhisperModel(name, device="cuda", compute_type="float16")
                 HEARING.update(state="ready", device="graphics card")
                 return _whisper
             except Exception as e:
