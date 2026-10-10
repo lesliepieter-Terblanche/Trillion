@@ -715,7 +715,7 @@ const linkify=t=>esc(t).replace(/https?:\/\/[^\s<]+[^\s<.,;:!?)\]]/g,u=>`<a href
 let popClose=null,popBack=null;
 const wide=()=>window.matchMedia('(min-width:821px)').matches;
 function replyPop(asked,r){
-  if(!wide()||r.brief||r.map||r.show)return;          // phones keep the answer in the conversation; briefings and maps have their own window
+  if(!wide()||r.brief||r.map||r.show||r.image)return;          // phones keep the answer in the conversation; briefings and maps have their own window
   const ap=(S&&S.approvals||[]);
   popup({narrow:r.reply.length<700,kicker:'YOU ASKED',title:asked.length>60?asked.slice(0,57)+'...':asked,
     html:`<div style="font-size:18px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere">${linkify(r.reply)}</div>`
@@ -732,6 +732,10 @@ function popup(o){
 function closePop(){if($('pop').hidden)return;$('pop').hidden=true;document.body.style.overflow='';$('popbody').innerHTML='';if(popClose)popClose();popClose=null;if(popBack&&popBack.focus)popBack.focus();}
 $('popx').onclick=closePop;$('pop').addEventListener('click',e=>{if(e.target===$('pop'))closePop();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closePop();});
+function showImage(i){
+  popup({kicker:'PICTURE',title:i.title||'Your picture',sub:'Saved at '+i.saved,html:`<div style="text-align:center"><img src="${esc(i.url)}" alt="${esc(i.title||'The picture she made')}" style="max-width:100%;max-height:68vh;border-radius:8px"></div>`,
+    foot:`<a class="btn" style="display:inline-flex;align-items:center;text-decoration:none" href="${esc(i.url)}" download>DOWNLOAD</a>`});
+}
 function showMap(m){
   const q=encodeURIComponent(m.lat+','+m.lon);
   popup({kicker:'FIND MY PHONE',title:m.title||'Your phone was last here',sub:(m.accuracy_m?'Accurate to about '+m.accuracy_m+' metres. ':'')+'This is the last position the phone recorded.',
@@ -749,7 +753,7 @@ async function send(text,speak){
   $('chat').insertAdjacentHTML('beforeend',`<div class="user">${esc(text)}</div>`);$('chat').scrollTop=1e9;
   $('kicker').textContent='NOW WORKING';$('big').textContent='Thinking';$('sub').textContent=text;
   const liveT=setInterval(async()=>{try{const l=await (await fetch('/api/live')).json();if(l.text){let b=$('livebub');if(!b){$('chat').insertAdjacentHTML('beforeend','<div class="assistant" id="livebub"></div>');b=$('livebub');}b.textContent=l.text+' ▍';$('chat').scrollTop=1e9;$('big').textContent='Answering';}}catch(e){}},350);
-  try{const r=await (await api('/api/chat',{json:{message:text}})).json();clearInterval(liveT);await loadChat();await tick();if(S&&S.approvals.length)$('chatwait').scrollIntoView({block:'nearest'});if(r.brief)showBrief(r.brief,true);if(r.map)showMap(r.map);replyPop(text,r);if(r.show)go(r.show);if(speak||voiceOn){talking=true;if(S)render();await say(r.reply);await new Promise(r=>setTimeout(r,350));talking=false;}}
+  try{const r=await (await api('/api/chat',{json:{message:text}})).json();clearInterval(liveT);await loadChat();await tick();if(S&&S.approvals.length)$('chatwait').scrollIntoView({block:'nearest'});if(r.brief)showBrief(r.brief,true);if(r.map)showMap(r.map);if(r.image)showImage(r.image);replyPop(text,r);if(r.show)go(r.show);if(speak||voiceOn){talking=true;if(S)render();await say(r.reply);await new Promise(r=>setTimeout(r,350));talking=false;}}
   catch(e){$('chat').insertAdjacentHTML('beforeend',`<div class="assistant">${esc(e.message)}</div>`);}
   clearInterval(liveT);sending=false;tick();
 }
@@ -1055,6 +1059,7 @@ const QA={
   weather:{label:'Weather',cmd:()=>'what is the weather'},
   news:{label:'News',cmd:()=>'give me the news'},
   markets:{label:'Financials',cmd:()=>'how are the markets'},
+  image:{label:'Make a picture',fields:[{k:'about',label:'What should it show?',ph:'a modern family home at sunset'},{k:'shape',label:'Shape',opts:[['square','Square'],['tall','Tall (phone, stories)'],['wide','Wide (banner, YouTube)']],def:'square'}],cmd:f=>`create a ${f.shape} picture of ${f.about}`},
   video:{label:'Make a video',fields:[{k:'about',label:'What is it about?',ph:'our newest listings in Johannesburg'},{k:'sec',label:'Length',opts:[['15','15 seconds'],['20','20 seconds'],['30','30 seconds'],['45','45 seconds']],def:'20'}],cmd:f=>`create a ${f.sec} second cinematic video about ${f.about}`},
   lastvideo:{label:'Show last video',cmd:()=>'open the video'},
   pc:{label:'PC status',cmd:()=>'what is the status of my pc'},
@@ -1197,6 +1202,7 @@ const CMDS=[
   ['WhatsApp',[['read my whatsapps','Reads out new incoming messages'],['send a whatsapp to Llewellyn saying I will be there at 5','Goes straight out to a saved contact'],['send a test whatsapp to Llewellyn Terblanche',''],['send me a test whatsapp','Needs your own number on the Phone page'],['open my whatsapp','']]],
   ['Phone',[['ring my phone','Rings at full volume, even on silent'],['where is my phone','Last known position with a map link'],['how is my phone','Battery, storage, Wi-Fi'],['unlock my phone','Needs an unlock code saved on the Phone page'],['put my phone to sleep','Screen off and locked'],['take a screenshot of my phone',''],['open maps on my phone','Any installed app'],['what is on my phone screen','Needs Full phone control'],['tap Chats on my phone','Needs Full phone control'],['press back on my phone','Needs Full phone control']]],
   ['Briefings',[['good morning','Runs your morning routine'],['what is the weather',''],['give me the news',''],['how are the markets','Rand, gold, shares, crypto']]],
+  ['Pictures',[['create a picture of a modern family home at sunset','Needs your Google Gemini key under Settings, Keys'],['make a wide banner for TrueHome with a city skyline','']]],
   ['Videos',[['create a 20 second cinematic video about our newest listings','Takes a few minutes'],['open the video','Shows the newest one']]],
   ['Files and documents',[['create a folder called Invoices in my Documents',''],['create a Word document called Welcome with a short welcome note',''],['create an Excel sheet of my monthly budget',''],['find all pdf files in my Downloads',''],['open my Documents folder','']]],
   ['Memory',[['remember this: the plumber comes on Thursday at 10',''],['what do you remember about the plumber','']]],

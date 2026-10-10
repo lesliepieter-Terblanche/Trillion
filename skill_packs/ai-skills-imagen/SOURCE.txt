@@ -1,0 +1,4 @@
+imagen skill from ai-skills by sanjay3290, Apache License 2.0.
+Source: https://github.com/sanjay3290/ai-skills/tree/main/skills/imagen
+Copied unchanged into Trillion (its .gitignore left out). See LICENSE.
+Enabled: no

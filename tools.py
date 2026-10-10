@@ -63,6 +63,8 @@ SPECS = [
     fn("phone_swipe", "Swipe the phone screen up, down, left or right (swipe up to scroll down a page).", {"direction": S}),
     fn("phone_shell", "Run an Android shell command on the user's phone. Owner only, and always needs approval.", {"command": S}),
     fn("phone_screenshot", "Take a screenshot of the user's phone screen and save it to their folder.", {}),
+    fn("create_image", "Create a picture (PNG) from a description with Google's image model, using this login's own Gemini key. "
+       "shape is square, tall or wide.", {"prompt": S, "shape": S}, ["prompt"]),
     fn("create_video", "Create a finished cinematic social media video (MP4) from a plain description. No media is "
        "needed: she writes the script, finds stock footage, adds voice-over, music, titles and captions. "
        "format is vertical, square or landscape. Takes a few minutes.",
@@ -107,6 +109,7 @@ def describe(name, a):
         "move_path": f"Moving {g('source')}", "delete_path": f"Delete {g('path')}",
         "open_path": f"Opening {g('path')}", "create_word": f"Creating Word document {g('path')}",
         "create_excel": f"Creating Excel workbook {g('path')}",
+        "create_image": f"Creating a picture: {g('prompt')[:80]}",
         "create_powerpoint": f"Creating PowerPoint {g('path')}", "save_note": f"Remembering: {g('title')}",
         "search_memory": f"Searching memory for {g('query')}", "check_website": f"Checking {g('url')}",
         "use_skill": f"Reading the skill {g('name')}", "draft_skill": f"Drafting a playbook: {g('name')}",
@@ -541,6 +544,66 @@ def t_phone_ring(user):
 def t_phone_screenshot(user):
     import phone
     return phone.screenshot(user)
+
+
+# ---------- pictures ----------
+IMAGE_API = os.environ.get("TRILLION_IMAGE_API", "https://generativelanguage.googleapis.com/v1beta/models")
+IMAGE_MODELS = ["gemini-3-pro-image-preview", "gemini-2.5-flash-image"]
+
+
+def t_create_image(user, prompt, shape="square"):
+    """Google's image model, called with the login's own key. Tries the newest model first, then the older one."""
+    import base64
+    prompt = str(prompt or "").strip()
+    if not prompt:
+        return {"error": "Say what the picture should show."}
+    key = core.get_secret(user["id"], "gemini")
+    if not key:
+        return {"error": "Making pictures needs a Google Gemini key. Add one under Settings, Keys (Google Gemini), tick it on and click SAVE."}
+    shape = str(shape or "square").lower()
+    ratio = "9:16" if shape in ("tall", "vertical", "portrait") else ("16:9" if shape in ("wide", "landscape", "horizontal") else "1:1")
+    wanted = [m for m in [core.settings(user).get("image_model")] + IMAGE_MODELS if m]
+    last = "no answer"
+    for model in dict.fromkeys(wanted):
+        for cfg in ({"responseModalities": ["IMAGE", "TEXT"], "imageConfig": {"aspectRatio": ratio}}, {"responseModalities": ["IMAGE", "TEXT"]}):
+            try:
+                r = httpx.post(f"{IMAGE_API}/{model}:generateContent", params={"key": key}, timeout=180,
+                               json={"contents": [{"role": "user", "parts": [{"text": prompt}]}], "generationConfig": cfg})
+            except Exception as e:
+                last = f"could not reach Google ({type(e).__name__})"
+                break
+            if r.status_code == 200:
+                data = None
+                for cand in r.json().get("candidates", []):
+                    for part in (cand.get("content") or {}).get("parts", []):
+                        blob = part.get("inlineData") or part.get("inline_data")
+                        if blob and blob.get("data"):
+                            data = base64.b64decode(blob["data"])
+                            break
+                    if data:
+                        break
+                if not data:
+                    last = "Google answered without a picture (the request may have been refused)"
+                    break
+                folder = core.user_home(user) / "Trillion Images"
+                folder.mkdir(parents=True, exist_ok=True)
+                slug = re.sub(r"[^a-z0-9]+", "-", prompt.lower()).strip("-")[:40] or "picture"
+                path = folder / f"{slug}-{time.strftime('%Y%m%d-%H%M%S')}.png"
+                path.write_bytes(data)
+                core.bump_usage(user["id"], "gemini")
+                return {"saved": str(path), "file": path.name, "model": model, "shape": ratio}
+            try:
+                msg = (r.json().get("error") or {}).get("message", "")[:200]
+            except Exception:
+                msg = r.text[:200]
+            last = {429: "your Gemini key has used up its allowance for now", 403: "Google refused the key for picture making",
+                    401: "Google did not accept the key"}.get(r.status_code, f"code {r.status_code}") + (f": {msg}" if msg else "")
+            if r.status_code == 400 and "imageConfig" in cfg:
+                continue                       # this model does not take a shape: ask again without it
+            break
+        if last.startswith(("your Gemini key", "Google did not accept", "could not reach")):
+            break
+    return {"error": "I could not make the picture: " + last + "."}
 
 
 # ---------- video ----------

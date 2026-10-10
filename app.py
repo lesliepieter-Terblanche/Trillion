@@ -473,6 +473,8 @@ VIDEO_RE = re.compile(r"\b(create|make|generate|produce|build|render)\b[^.?!]{0,
 
 SITE_RE = re.compile(r"\b(?:check|is|how is|how's)\b.{0,12}\b(?:my|the|our)\s+(?:web ?site|site)\b", re.I)
 PC_RE = re.compile(r"\b(?:status|health|how is|how's)\b.{0,14}\b(?:my |the |this )?(?:pc|computer)\b|\bpc status\b", re.I)
+IMAGE_RE = re.compile(r"\b(create|make|generate|draw|design|paint)\b[^.?!]{0,30}\b(image|picture|photo|logo|icon|illustration|poster|banner|artwork|drawing)\b"
+                      r"(?:\s+(?:of|for|about|showing|with|that shows))?\s*(.*)$", re.I | re.S)
 OPEN_VIDEO_RE = re.compile(r"\b(open|play|show|watch|view)\b[^.?!]{0,30}\b(video|clip)s?\b", re.I)
 
 
@@ -623,6 +625,27 @@ def run_agent(user, text):
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", quick, time.time()))
         core.set_task(tid, status="completed", detail=quick[:200])
         return {"reply": quick, "task_id": tid, "provider": "built-in"}
+    im = IMAGE_RE.search(text) if not VIDEO_RE.search(text) else None
+    if im and len(text) < 600:
+        want = (im.group(3) or "").strip(" .") or text
+        kind = im.group(2).lower()
+        if kind in ("logo", "icon", "poster", "banner"):
+            want = f"{kind} {('for ' if not want.lower().startswith(('for', 'of')) else '')}{want}" if want != text else text
+        shape = "tall" if re.search(r"\b(tall|vertical|portrait|story|tiktok|reel)\b", text, re.I) else (
+            "wide" if re.search(r"\b(wide|landscape|horizontal|banner|youtube|cover)\b", text, re.I) else "square")
+        core.set_task(tid, detail="Making the picture")
+        try:
+            res = tools.execute(user, "create_image", {"prompt": want, "shape": shape}, task_id=tid)
+        finally:
+            BUSY[uid] = False
+        ok = "error" not in res
+        reply = (f"Your picture is ready. It is saved at {res['saved']}." if ok else res["error"])
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="completed" if ok else "failed", detail=reply[:200])
+        out = {"reply": reply, "task_id": tid, "provider": "gemini" if ok else "built-in"}
+        if ok:
+            out["image"] = {"url": "/api/images/" + res["file"], "title": want[:80], "saved": res["saved"]}
+        return out
     if OPEN_VIDEO_RE.search(text) and not VIDEO_RE.search(text):
         import os
         v = core.q("SELECT * FROM videos WHERE user_id=? ORDER BY id DESC LIMIT 1", (uid,), one=True)
@@ -882,6 +905,17 @@ def transcribe(data):
         segs, _ = w.transcribe(audio, vad_filter=False, language="en")
         text = " ".join(s.text.strip() for s in segs).strip()
     return text
+
+
+@app.get("/api/images/{name}")
+def image_file(name: str, user=Depends(auth)):
+    """A picture she made for this login (only from that login's own Trillion Images folder)."""
+    if not re.fullmatch(r"[\w.-]+\.png", name):
+        raise HTTPException(404, "No such picture")
+    path = core.user_home(user) / "Trillion Images" / name
+    if not path.exists():
+        raise HTTPException(404, "No such picture")
+    return FileResponse(str(path), media_type="image/png")
 
 
 @app.get("/api/live")
