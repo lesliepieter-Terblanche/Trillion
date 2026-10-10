@@ -53,6 +53,14 @@ Tailscale address. She can then report the phone's status, open apps, look up co
 WhatsApp (always after your approval), locate it, ring it and take a screenshot.
 Needs the Android phone tools: run Setup again once if it says ADB is not installed.
 
+ROUTINES (Routines page, or just say the words)
+Say "morning" and she gives you the weather, news, financials, the latest jobs she finished, what is
+outstanding, your website and the PC's health, aloud and as a panel in the Control Room. Every login
+has its own routines: Morning, Evening wrap-up ("good night") and Status check ("status") to start
+with. On the Routines page each person changes the words, the town, the news sources, the list of
+currencies, metals and crypto, the order, adds a reminder of their own, or adds new routines.
+All of it is free and needs no keys.
+
 SKILLS AND CONNECTORS (Skills page)
 - Skill: a written playbook. The owner pastes a GitHub link, previews it and installs it; each
   login switches it on or off. Playbooks Trillion drafts herself wait there for approval.

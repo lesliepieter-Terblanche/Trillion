@@ -9,12 +9,14 @@ from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, Redirect
 import core
 import extend
 import phone
+import routines
 import tools
 import video
 
 core.init()
 extend.init()
 video.init()
+routines.init()
 app = FastAPI(title="Trillion")
 COOKIE = "trillion"
 BUSY, STOP, SITES, LAST_PROVIDER = {}, set(), {}, {}
@@ -190,7 +192,10 @@ Skills switched on for this user (call use_skill with the name before doing that
 {skills}
 
 Connectors switched on for this user (call connector_tools first, then connector_call):
-{connectors}"""
+{connectors}
+
+Routines this user has set up (each runs by itself when they say its phrase; they are edited on the Routines page):
+{routines.prompt_line(user)}"""
 
 
 UPDATE_RE = re.compile(r"\b(update|upgrade)\s+(yourself|your ?self|herself|trillion|now)\b|"
@@ -241,6 +246,20 @@ def run_agent(user, text):
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="failed" if "error" in res else "completed", detail=reply[:200])
         return {"reply": reply, "task_id": tid, "provider": "built-in"}
+    rt = routines.match(user, text)
+    if rt:  # "morning": run that login's routine straight away, no model needed
+        core.x("UPDATE tasks SET domain='ROUTINE', title=? WHERE id=?", (rt["name"] + " routine", tid))
+        try:
+            out = routines.run(user, rt, SITES)
+            status = "completed"
+        except Exception as e:
+            out, status = {"reply": f"I could not run the {rt['name']} routine: {type(e).__name__}: {e}", "brief": None}, "failed"
+        finally:
+            BUSY[uid] = False
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", out["reply"], time.time()))
+        core.set_task(tid, status=status, detail=f"{rt['name']} routine")
+        core.log(uid, f"Routine run: {rt['name']}", "done" if status == "completed" else "waiting")
+        return {"reply": out["reply"], "task_id": tid, "provider": "built-in", "brief": out["brief"]}
     pm = PERSONA_RE.search(text) if len(text) < 90 else None
     if pm:  # "switch to witty mode": change it straight away
         choice = PERSONA_WORDS[(pm.group(1) or pm.group(2)).lower()]
@@ -443,7 +462,7 @@ def tts(p: dict = Body(...), user=Depends(auth)):
     try:
         r = httpx.post(f"https://api.elevenlabs.io/v1/text-to-speech/{s['eleven_voice_id']}",
                        params={"output_format": "mp3_44100_128"}, headers={"xi-api-key": key}, timeout=60,
-                       json={"text": (p.get("text") or "")[:1500], "model_id": "eleven_turbo_v2_5"})
+                       json={"text": (p.get("text") or "")[:2500], "model_id": "eleven_turbo_v2_5"})
         r.raise_for_status()
         core.bump_usage(user["id"], "elevenlabs")
         return Response(r.content, media_type="audio/mpeg")
@@ -597,6 +616,35 @@ def note_add(p: dict = Body(...), user=Depends(auth)):
 @app.delete("/api/notes/{nid}")
 def note_del(nid: int, user=Depends(auth)):
     core.x("DELETE FROM notes WHERE id=? AND user_id=?", (nid, user["id"]))
+    return {"ok": True}
+
+
+# ---------- routines ----------
+@app.get("/api/routines")
+def routines_list(user=Depends(auth)):
+    return {"routines": routines.list_for(user), "sections": routines.SECTIONS,
+            "feeds": [{"key": k, "label": v[0]} for k, v in routines.FEEDS.items()], "last": routines.last_brief(user)}
+
+
+@app.post("/api/routines")
+def routines_add(p: dict = Body(...), user=Depends(auth)):
+    try:
+        return {"id": routines.save(user, p)}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.put("/api/routines/{rid}")
+def routines_put(rid: int, p: dict = Body(...), user=Depends(auth)):
+    try:
+        return {"id": routines.save(user, p, rid)}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.delete("/api/routines/{rid}")
+def routines_delete(rid: int, user=Depends(auth)):
+    routines.delete(user, rid)
     return {"ok": True}
 
 
