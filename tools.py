@@ -1,5 +1,5 @@
 """Trillion tools: what the assistant can actually do on the PC."""
-import os, json, math, shutil, subprocess, time, fnmatch
+import os, re, json, math, shutil, subprocess, time, fnmatch
 from pathlib import Path
 
 import httpx
@@ -126,7 +126,7 @@ def describe(name, a):
     }.get(name, name)
 
 
-def execute(user, name, args, task_id=None, approved=False):
+def execute(user, name, args, task_id=None, approved=False, direct=False):
     """Run one tool. Returns a JSON-safe dict. Never raises."""
     uid = user["id"]
     try:
@@ -149,6 +149,14 @@ def execute(user, name, args, task_id=None, approved=False):
                 args = {"contact": number, "message": str(args.get("message", "")), "_name": who}
                 if not args["message"].strip():
                     return {"error": "There is no message to send."}
+                st = core.settings(user)
+                own = phone.normalise(st["phone_own_number"], str(st.get("phone_country_code", "27"))) if st.get("phone_own_number") else None
+                in_contacts = who != number and not re.fullmatch(r"[\d\s+()-]{7,}", who)   # found by name in the phone's contact list
+                # only when the user asked for it in their own words (direct), never on the model's own initiative
+                if direct and st.get("whatsapp_auto_contacts") and (in_contacts or number == own):
+                    out = t_phone_send_whatsapp(user, **args)
+                    core.log(uid, describe(name, args), "done")
+                    return out
             summary = describe(name, args)
             core.x("INSERT INTO approvals(user_id,task_id,tool,args,summary,created) VALUES(?,?,?,?,?,?)",
                    (uid, task_id, name, json.dumps(args), summary, time.time()))

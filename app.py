@@ -14,6 +14,14 @@ import tools
 import video
 
 core.init()
+for _u in core.q("SELECT * FROM users WHERE is_admin=1"):   # the owner asked for this; the other logins choose for themselves
+    try:
+        _raw = json.loads(_u["settings"] or "{}")
+    except Exception:
+        _raw = {}
+    if not _raw.get("wa_auto_set"):
+        _raw["whatsapp_auto_contacts"] = _raw["wa_auto_set"] = True
+        core.save_settings(_u["id"], _raw)
 extend.init()
 video.init()
 routines.init()
@@ -236,6 +244,12 @@ PHONE_RULES = [
 PHONE_WORDS = re.compile(r"\b(phone|cell|mobile|what'?s ?(?:app|up)|contact|battery|galaxy|samsung)\b", re.I)
 
 
+def sent_sentence(r, msg):
+    if r["status"] == "send_pressed":
+        return f'Sent to {r.get("to")} on WhatsApp: "{msg}". I pressed Send; I cannot confirm delivery from here.'
+    return f'The WhatsApp to {r.get("to")} is typed in the chat but I could not press Send. Press it on the phone.'
+
+
 def phone_shortcut(user, text, tid):
     """Common phone requests are run directly, so they do not depend on the model choosing the right tool."""
     if len(text) > 400:
@@ -257,7 +271,9 @@ def phone_shortcut(user, text, tid):
                 return ("I do not know your own number yet. Tell me once, like this: my WhatsApp number is 082 123 4567. "
                         "Then ask me again."), False, {"error": "own number not set"}
             msg = (m.group(1) or "").strip().strip('"\u201c\u201d') or f"Test message from {core.settings(user).get('assistant_name') or 'Trillion'}."
-            r = tools.execute(user, "phone_send_whatsapp", {"contact": own, "message": msg}, task_id=tid)
+            r = tools.execute(user, "phone_send_whatsapp", {"contact": own, "message": msg}, task_id=tid, direct=True)
+            if r.get("status") in ("send_pressed", "typed_not_sent"):
+                return sent_sentence(r, msg), False, r
             if r.get("status") == "waiting_for_approval":
                 return f'Ready. A WhatsApp to your own number ({own}): "{msg}". Approve it on the dashboard and I will send it.', True, r
             return ("I could not prepare that WhatsApp: " + r.get("error", "unknown problem")), False, r
@@ -269,7 +285,9 @@ def phone_shortcut(user, text, tid):
             msg = m.group(2).strip().strip('"\u201c\u201d')
             if not who or not msg or len(who) > 60:
                 continue
-            r = tools.execute(user, "phone_send_whatsapp", {"contact": who, "message": msg}, task_id=tid)
+            r = tools.execute(user, "phone_send_whatsapp", {"contact": who, "message": msg}, task_id=tid, direct=True)
+            if r.get("status") in ("send_pressed", "typed_not_sent"):
+                return sent_sentence(r, msg), False, r
             if r.get("status") == "waiting_for_approval":
                 a = core.q("SELECT summary FROM approvals WHERE user_id=? ORDER BY id DESC LIMIT 1", (user["id"],), one=True)
                 return "Ready. " + (a["summary"] if a else "The message") + ". Approve it on the dashboard and I will send it.", True, r
@@ -747,7 +765,7 @@ def messages(user=Depends(auth)):
 
 
 # ---------- settings and keys ----------
-EDITABLE = ["phone_own_number", "phone_full_control", "personality", "phone_country_code", "assistant_name", "brand", "accent", "site", "brain", "local_model", "cloud_model", "voice",
+EDITABLE = ["whatsapp_auto_contacts", "phone_own_number", "phone_full_control", "personality", "phone_country_code", "assistant_name", "brand", "accent", "site", "brain", "local_model", "cloud_model", "voice",
             "eleven_voice_id", "daily_review"]
 
 
