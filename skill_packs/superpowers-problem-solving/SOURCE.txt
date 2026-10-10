@@ -1,0 +1,3 @@
+Scale Game skill from superpowers-skills by Jesse Vincent, MIT licence.
+Source: https://github.com/obra/superpowers-skills/tree/main/skills/problem-solving/scale-game
+Copied unchanged into Trillion. See LICENSE.
