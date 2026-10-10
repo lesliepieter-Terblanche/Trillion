@@ -91,7 +91,10 @@ def logout(request: Request, response: Response):
 
 
 # ---------- the brain ----------
-def llm_chat(user, messages, tool_specs=None):
+LIVE = {}   # uid -> the answer as far as it has been written, so the page can show it while she is still writing
+
+
+def llm_chat(user, messages, tool_specs=None, fast=False, live=False):
     """One model call in OpenAI chat format. Local by default; a cloud brain only if that login enabled it."""
     s = core.settings(user)
     uid = user["id"]
@@ -112,6 +115,10 @@ def llm_chat(user, messages, tool_specs=None):
         except Exception as e:
             core.log(uid, f"Cloud brain ({brain}) failed, used the local one instead: {type(e).__name__}", "waiting")
     model = core.pick_local_model(s.get("local_model", "qwen2.5:14b"))
+    if fast:   # a plain question needs no tools: the small model answers several times faster
+        small = core.pick_local_model(s.get("fast_model") or "qwen2.5:3b")
+        if small.split(":")[0] in ("qwen2.5", "gemma3", "llama3.2", "phi4-mini") and small != model:
+            model = small
     # Ollama's own chat endpoint, so the memory window can be set. The default window is too
     # small for the tool list and cuts the instructions off, which makes the model ramble.
     native = []
@@ -130,19 +137,43 @@ def llm_chat(user, messages, tool_specs=None):
             m["tool_calls"] = fixed
         m.pop("tool_call_id", None)
         native.append(m)
-    req = {"model": model, "messages": native, "stream": False, "keep_alive": "30m",
-           "options": {"num_ctx": int(s.get("context_size", 12288)), "temperature": 0.2}}
+    req = {"model": model, "messages": native, "stream": True, "keep_alive": "4h",
+           "options": {"num_ctx": 6144 if fast else int(s.get("context_size", 12288)), "temperature": 0.2}}
     if tool_specs:
         req["tools"] = tool_specs
+    content, calls = "", []
     try:
-        r = httpx.post(core.OLLAMA + "/api/chat", timeout=600, json=req)
+        with httpx.stream("POST", core.OLLAMA + "/api/chat", timeout=600, json=req) as r:
+            if r.status_code == 400:
+                body_text = r.read().decode(errors="replace")
+                if "does not support tools" in body_text:
+                    raise RuntimeError(f"The model {model} cannot use tools. Set the local model to qwen2.5:14b in Settings.")
+            r.raise_for_status()
+            for line in r.iter_lines():
+                if not line:
+                    continue
+                try:
+                    j = json.loads(line)
+                except ValueError:
+                    continue
+                msg = j.get("message") or {}
+                if msg.get("tool_calls"):
+                    calls += msg["tool_calls"]
+                if msg.get("content"):
+                    content += msg["content"]
+                    if live and not calls:
+                        LIVE[uid] = content
+                if uid in STOP:
+                    break
+                if j.get("done"):
+                    break
     except httpx.ConnectError:
         raise RuntimeError("The local brain (Ollama) is not running. Start Ollama and try again.")
-    if r.status_code == 400 and "does not support tools" in r.text:
-        raise RuntimeError(f"The model {model} cannot use tools. Set the local model to qwen2.5:14b in Settings.")
-    r.raise_for_status()
     LAST_PROVIDER[uid] = model
-    return r.json()["message"]
+    out = {"role": "assistant", "content": content}
+    if calls:
+        out["tool_calls"] = calls
+    return out
 
 
 core.LLM = llm_chat
@@ -238,6 +269,8 @@ PHONE_RULES = [
     ("open", re.compile(r"\b(?:open|launch|start)\s+(?:up\s+)?(?:my\s+|the\s+)?(what'?s ?(?:app|up)(?: business)?|instagram|tiktok|telegram|"
                         r"facebook|messenger|messages|gallery|camera|contacts|youtube|spotify|gmail|maps|chrome|play store|tailscale)"
                         r"(?:\s+app)?\s*(?:for me|please|now|,?\s*\w+)?[.!?]?\s*$", re.I)),
+    ("wa_read", re.compile(r"\b(?:read|check|show|any|what(?:'s| are| is))\b.{0,20}\b(?:new\s+|unread\s+|incoming\s+)?%s(?:\s*(?:messages?|msgs?|s|es))?\b"
+                           % r"what'?s ?(?:app|up)", re.I)),
     ("unlock", re.compile(r"\bunlock\s+" + _PH + r"\b", re.I)),
     ("simple:sleep", re.compile(r"\b(?:put|send|set)\b.{0,10}" + _PH + r".{0,10}\b(?:to sleep|sleep mode|asleep)\b|\b(?:lock|sleep)\s+" + _PH + r"\b|"
                                 + _PH + r"\s+(?:to\s+)?sleep(?: mode)?\b|\bturn\s+(?:off\s+)?" + _PH + r"(?:'s)?\s+screen\s+off\b|\bturn off\s+" + _PH + r"(?:'s)?\s+screen\b", re.I)),
@@ -334,6 +367,16 @@ def phone_shortcut(user, text, tid):
             shown = {"whatsapp": "WhatsApp", "whatsapp business": "WhatsApp Business", "tiktok": "TikTok"}.get(
                 app_name.lower(), app_name.capitalize())
             return (f"{shown} is open on your phone." if "error" not in r else r["error"]), False, r
+        if kind == "wa_read":
+            if re.search(r"\b(send|open|launch|start)\b", text, re.I):
+                continue
+            wa_poll(user)
+            rows = wa_rows(user["id"], only_new=True, limit=8)[::-1]
+            if not rows:
+                return "No new WhatsApp messages.", False, {"ok": True}
+            core.x("UPDATE wa_inbox SET seen=1 WHERE user_id=?", (user["id"],))
+            said = " ".join(f"{r['sender']}{' in ' + r['chat'] if r['is_group'] else ''} says: {r['text'][:220]}." for r in rows)
+            return f"You have {len(rows)} new WhatsApp message{'s' if len(rows) != 1 else ''}. {said}", False, {"ok": True}
         if kind == "unlock":
             try:
                 r = phone.unlock(user, explicit=True)
@@ -398,6 +441,15 @@ def phone_sentence(r):
     return out + f" The screen is {r.get('screen', 'off')}."
 
 
+# words that mean she has to DO something or look something up: those go to the full brain with its tools
+NEEDS_TOOLS = re.compile(
+    r"\b(creat\w*|make|made|build|write|wrote|draft|generat\w*|open|launch|start|run|delet\w*|remov\w*|mov(?:e|ing)|renam\w*|cop(?:y|ies)|past\w*|"
+    r"find|search|look\s+(?:up|for|in)|list|show|read|check|sav\w*|remember|recall|not(?:e|es)|memory|forget|send|sent|messag\w*|text|whats ?app|"
+    r"email|call|phone|cell|contact|file|folder|document|docx?|word|excel|sheet|spreadsheet|powerpoint|deck|slide|pdf|download\w*|desktop|"
+    r"website|site|browser|web|online|internet|skill|connector|install|update|video|screenshot|window|app|program|schedul\w*|remind\w*|"
+    r"today|tomorrow|yesterday|latest|current|news|weather|price|my)\b", re.I)
+
+
 def tools_for(user, text):
     """Hand the brain only the tools this request could need: fewer choices, fewer wrong ones."""
     uid = user["id"]
@@ -436,7 +488,8 @@ def video_reply(res):
         return "I could not make the video: " + res["error"]
     extra = " ".join(res.get("notes", []))
     return (f"Your video is ready: {res['title']}, {round(res['seconds'])} seconds, "
-            f"{'with' if res['voice_over'] else 'without'} voice-over and {res['footage_clips']} stock clips. "
+            f"{'with' if res['voice_over'] else 'without'} voice-over, {res['footage_clips']} stock clip{'s' if res['footage_clips'] != 1 else ''}"
+            f"{' and ' + str(res['ai_pictures']) + ' AI-made picture' + ('s' if res['ai_pictures'] != 1 else '') if res.get('ai_pictures') else ''}. "
             f"It is on the Videos page and saved at {res['saved']}. {extra}").strip()
 
 
@@ -588,14 +641,19 @@ def run_agent(user, text):
         return {"reply": reply, "task_id": tid, "provider": LAST_PROVIDER.get(uid, "local")}
     hist = core.q("SELECT role, content FROM messages WHERE user_id=? ORDER BY id DESC LIMIT 12", (uid,))[::-1]
     specs = tools_for(user, text)
-    msgs = [{"role": "system", "content": system_prompt(user, text)}] + [dict(h) for h in hist]
+    fast = bool(core.settings(user).get("fast_answers", True)) and not NEEDS_TOOLS.search(text) and len(text) < 400
+    if fast:
+        specs = None
+    LIVE.pop(uid, None)
+    msgs = [{"role": "system", "content": system_prompt(user, text) + (
+        "\n\nThis turn is a plain question: you have no tools now. Just answer it, briefly and directly." if fast else "")}] + [dict(h) for h in hist]
     status, waiting, reply = "completed", False, ""
     try:
         for _ in range(10):
             if uid in STOP:
                 reply, status = "Stopped.", "failed"
                 break
-            m = llm_chat(user, msgs, specs)
+            m = llm_chat(user, msgs, specs, fast=fast, live=True)
             calls = m.get("tool_calls") or []
             if not calls:
                 reply = (m.get("content") or "").strip() or "Done."
@@ -680,6 +738,19 @@ _whisper_lock = threading.Lock()
 HEARING = {"state": "not loaded"}
 
 
+def _cuda_dlls():
+    """The graphics-card libraries pip installs sit in their own folders; Windows has to be told where."""
+    import os, sys, glob
+    for base in sys.path:
+        for d in glob.glob(os.path.join(base, "nvidia", "*", "bin")) + glob.glob(os.path.join(base, "nvidia", "*", "lib")):
+            try:
+                if hasattr(os, "add_dll_directory"):
+                    os.add_dll_directory(d)
+                os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
+            except OSError:
+                pass
+
+
 def load_whisper():
     global _whisper
     with _whisper_lock:
@@ -689,13 +760,25 @@ def load_whisper():
         HEARING["state"] = "loading"
         try:
             from faster_whisper import WhisperModel
-            dev = os.environ.get("TRILLION_WHISPER_DEVICE", "cpu")
-            _whisper = WhisperModel(os.environ.get("TRILLION_WHISPER_MODEL", "small"), device=dev,
-                                    compute_type="float16" if dev == "cuda" else "int8")
-            HEARING["state"] = "ready"
         except ImportError:
             HEARING["state"] = "not installed"
             raise
+        name = os.environ.get("TRILLION_WHISPER_MODEL", "small")
+        want = os.environ.get("TRILLION_WHISPER_DEVICE") or ("cuda" if core.gpu() else "cpu")
+        if want == "cuda":
+            try:
+                import numpy as np
+                _cuda_dlls()
+                m = WhisperModel(name, device="cuda", compute_type="float16")
+                list(m.transcribe(np.zeros(16000, dtype="float32"), language="en")[0])   # proves the card's libraries really load
+                _whisper = m
+                HEARING.update(state="ready", device="graphics card")
+                return _whisper
+            except Exception as e:
+                core.log(1, f"Hearing could not use the graphics card ({type(e).__name__}), so it runs on the processor", "waiting")
+        try:
+            _whisper = WhisperModel(name, device="cpu", compute_type="int8")
+            HEARING.update(state="ready", device="processor")
         except Exception as e:
             HEARING["state"] = f"failed: {type(e).__name__}"
             raise
@@ -750,6 +833,12 @@ def transcribe(data):
         segs, _ = w.transcribe(audio, vad_filter=False, language="en")
         text = " ".join(s.text.strip() for s in segs).strip()
     return text
+
+
+@app.get("/api/live")
+def live(user=Depends(auth)):
+    """The answer so far, while she is still writing it."""
+    return {"text": LIVE.get(user["id"], "") if BUSY.get(user["id"]) else ""}
 
 
 @app.post("/api/stt")
@@ -845,7 +934,8 @@ def state(user=Depends(auth)):
         "notes": {"personal": n("PERSONAL"), "work": n("WORK"),
                   "today": core.q("SELECT COUNT(*) c FROM notes WHERE user_id=? AND ts>=?", (uid, ds), one=True)["c"]},
         "site": SITES.get(s.get("site")) if s.get("site") else None,
-        "day_start": ds, "now": time.time(), "version": VERSION, "hearing": HEARING["state"],
+        "day_start": ds, "now": time.time(), "wa_unseen": core.q("SELECT COUNT(*) c FROM wa_inbox WHERE user_id=? AND seen=0", (uid,), one=True)["c"],
+        "version": VERSION, "hearing": HEARING["state"], "hearing_device": HEARING.get("device", ""),
         "phone": ({"linked": True, "model": s.get("phone_model", ""), **(PHONE_STATS.get(uid) or {"pending": True})}
                   if s.get("phone_serial") else {"linked": False}),
         "tailscale": (TAILSCALE["v"] if user["is_admin"] else
@@ -866,7 +956,7 @@ def messages(user=Depends(auth)):
 
 
 # ---------- settings and keys ----------
-EDITABLE = ["theme", "quick_actions", "whatsapp_auto_contacts", "phone_own_number", "phone_full_control", "personality", "phone_country_code", "assistant_name", "brand", "accent", "site", "brain", "local_model", "cloud_model", "voice",
+EDITABLE = ["video_ai_images", "wa_inbox", "fast_answers", "theme", "quick_actions", "whatsapp_auto_contacts", "phone_own_number", "phone_full_control", "personality", "phone_country_code", "assistant_name", "brand", "accent", "site", "brain", "local_model", "cloud_model", "voice",
             "eleven_voice_id", "daily_review"]
 
 
@@ -1087,6 +1177,113 @@ def phone_contacts(fresh: int = 0, user=Depends(auth)):
     if v["ok"]:
         CONTACT_CACHE[user["id"]] = {"t": time.time(), "v": v}
     return v
+
+
+# ---------- incoming WhatsApp, read from the phone's notifications ----------
+core.x("""CREATE TABLE IF NOT EXISTS wa_inbox(id INTEGER PRIMARY KEY, user_id INTEGER, chat TEXT, sender TEXT, text TEXT, kind TEXT,
+          is_group INTEGER DEFAULT 0, ts REAL, seen INTEGER DEFAULT 0, replied TEXT DEFAULT '', dedupe TEXT UNIQUE)""")
+WA_STATE = {}
+
+
+def wa_poll(user):
+    """Look at the phone's notifications and file any WhatsApp message not seen before. Returns how many were new."""
+    import hashlib
+    uid = user["id"]
+    try:
+        items = phone.whatsapp_notifications(user)
+        WA_STATE[uid] = {"ok": True, "t": time.time()}
+    except Exception as e:
+        WA_STATE[uid] = {"ok": False, "t": time.time(), "error": str(e)[:160]}
+        return 0
+    fresh = 0
+    for it in items:
+        d = hashlib.sha1(f"{uid}|{it['chat']}|{it['sender']}|{it['text']}|{it['when'] or it['key']}".encode()).hexdigest()
+        if core.q("SELECT 1 FROM wa_inbox WHERE dedupe=?", (d,), one=True):
+            continue
+        core.x("INSERT INTO wa_inbox(user_id,chat,sender,text,kind,is_group,ts,dedupe) VALUES(?,?,?,?,?,?,?,?)",
+               (uid, it["chat"], it["sender"], it["text"], it["kind"], 1 if it["group"] else 0, it["when"] or time.time(), d))
+        fresh += 1
+        who = it["sender"] + (f" in {it['chat']}" if it["group"] else "")
+        core.log(uid, f"WhatsApp from {who}: {it['text'][:80]}", "voice")
+    return fresh
+
+
+def wa_rows(uid, only_new=False, limit=60):
+    rows = core.q("SELECT id, chat, sender, text, kind, is_group, ts, seen, replied FROM wa_inbox WHERE user_id=?"
+                  + (" AND seen=0" if only_new else "") + " ORDER BY id DESC LIMIT ?", (uid, limit))
+    return [dict(r) for r in rows]
+
+
+@app.get("/api/wa")
+def wa_list(user=Depends(auth)):
+    uid = user["id"]
+    return {"on": bool(core.settings(user).get("wa_inbox")), "linked": bool(core.settings(user).get("phone_serial")),
+            "state": WA_STATE.get(uid), "messages": wa_rows(uid),
+            "unseen": core.q("SELECT COUNT(*) c FROM wa_inbox WHERE user_id=? AND seen=0", (uid,), one=True)["c"]}
+
+
+@app.post("/api/wa/check")
+def wa_check(user=Depends(auth)):
+    n = wa_poll(user)
+    return dict(wa_list(user), fresh=n)
+
+
+@app.post("/api/wa/seen")
+def wa_seen(p: dict = Body(default={}), user=Depends(auth)):
+    if p.get("id"):
+        core.x("UPDATE wa_inbox SET seen=1 WHERE user_id=? AND id=?", (user["id"], int(p["id"])))
+    else:
+        core.x("UPDATE wa_inbox SET seen=1 WHERE user_id=?", (user["id"],))
+    return {"ok": True}
+
+
+@app.delete("/api/wa")
+def wa_clear(user=Depends(auth)):
+    core.x("DELETE FROM wa_inbox WHERE user_id=?", (user["id"],))
+    return {"ok": True}
+
+
+def _wa_one(user, mid):
+    r = core.q("SELECT * FROM wa_inbox WHERE user_id=? AND id=?", (user["id"], mid), one=True)
+    if not r:
+        raise HTTPException(404, "That message is no longer in the list")
+    return r
+
+
+@app.post("/api/wa/{mid}/suggest")
+def wa_suggest(mid: int, user=Depends(auth)):
+    """A draft reply in the user's voice. Nothing is sent: the user reads it, changes it and sends it."""
+    r = _wa_one(user, mid)
+    earlier = core.q("SELECT sender, text FROM wa_inbox WHERE user_id=? AND chat=? AND id<=? ORDER BY id DESC LIMIT 5",
+                     (user["id"], r["chat"], mid))[::-1]
+    convo = "\n".join(f"{e['sender']}: {e['text'][:400]}" for e in earlier)
+    try:
+        m = llm_chat(user, [
+            {"role": "system", "content": f"You draft short WhatsApp replies for {user['name']}. Write ONE reply of one or two sentences, "
+             "natural and friendly, in the same language the other person wrote in (often Afrikaans or English). "
+             "Do not invent facts, times or promises. Reply with the message text only, no quotes, no explanation."},
+            {"role": "user", "content": f"Latest messages in the chat '{r['chat']}':\n{convo}\n\nDraft {user['name']}'s reply."}], fast=True)
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
+    text = (m.get("content") or "").strip().strip('"\u201c\u201d')
+    if not text:
+        raise HTTPException(503, "I could not think of a reply. Type one yourself.")
+    return {"text": text[:600]}
+
+
+@app.post("/api/wa/{mid}/reply")
+def wa_reply(mid: int, p: dict = Body(...), user=Depends(auth)):
+    r = _wa_one(user, mid)
+    text = str(p.get("text", "")).strip()
+    if not text:
+        raise HTTPException(400, "Type the reply first")
+    res = tools.execute(user, "phone_send_whatsapp", {"contact": r["chat"], "message": text}, direct=True)
+    if res.get("status") in ("send_pressed", "typed_not_sent"):
+        core.x("UPDATE wa_inbox SET seen=1, replied=? WHERE id=?", (text[:500], mid))
+        return {"ok": res["status"] == "send_pressed", "message": sent_sentence(res, text)}
+    if res.get("status") == "waiting_for_approval":
+        return {"ok": True, "message": "Ready. Press Approve in the red box and I will send it."}
+    raise HTTPException(409, res.get("error", "The reply could not be sent"))
 
 
 @app.post("/api/phone/touch")
@@ -1513,13 +1710,41 @@ def background():
         time.sleep(60)
 
 
+def wa_background():
+    """Every 20 seconds, for each login with a linked phone and the inbox switched on."""
+    while True:
+        time.sleep(20)
+        try:
+            for u in core.q("SELECT * FROM users"):
+                st = core.settings(u)
+                if st.get("phone_serial") and st.get("wa_inbox") and not BUSY.get(u["id"]):
+                    last = WA_STATE.get(u["id"]) or {}
+                    if not last.get("ok", True) and time.time() - last.get("t", 0) < 90:
+                        continue          # phone was unreachable a moment ago: do not hammer it
+                    wa_poll(u)
+        except Exception:
+            pass
+
+
 @app.on_event("startup")
 def start_background():
     threading.Thread(target=background, daemon=True).start()
+    threading.Thread(target=wa_background, daemon=True).start()
 
-    def warm():  # load the hearing model up front so the first spoken command is not slow
+    def warm():  # load hearing and the brains up front so the first request is not slow
         try:
             load_whisper()
+        except Exception:
+            pass
+        try:
+            names = [m["name"] for m in core.models()["list"]]
+            for u in core.q("SELECT * FROM users WHERE is_admin=1 LIMIT 1"):
+                st = core.settings(u)
+                for want in (st.get("local_model", "qwen2.5:14b"), st.get("fast_model") or "qwen2.5:3b"):
+                    if want in names:
+                        httpx.post(core.OLLAMA + "/api/chat", timeout=300,
+                                   json={"model": want, "messages": [], "keep_alive": "4h",
+                                         "options": {"num_ctx": 12288 if want == st.get("local_model", "qwen2.5:14b") else 6144}})
         except Exception:
             pass
     threading.Thread(target=warm, daemon=True).start()

@@ -28,6 +28,10 @@ DEFAULT_SETTINGS = {
     "phone_full_control": False,   # read the screen, tap, type, swipe: off until the login switches it on
     "quick_actions": ["whatsapp", "ring", "find", "briefing", "video", "openwa"],   # the buttons on this login's home screen
     "phone_auto_unlock": False,        # unlock the phone by herself with the saved code when a command needs it
+    "fast_answers": True,              # plain questions go to the small quick model; anything she has to do uses the full one
+    "fast_model": "qwen2.5:3b",
+    "wa_inbox": True,                  # show incoming WhatsApp messages (read from the phone's notifications) on the dashboard
+    "video_ai_images": True,           # scenes with no stock footage get an AI-made picture instead of a plain backdrop
     "theme": "night",                  # colour mode: night, day, ocean, forest or royal
     "whatsapp_auto_contacts": False,   # send WhatsApps to saved contacts straight away, without the approval step
     "phone_country_code": "27",    # used to turn 082... into +2782... for WhatsApp

@@ -175,7 +175,8 @@ def plan(llm, user, prompt, seconds, n_scenes, with_voice):
 Brand: {s.get('brand') or 'none'}. Website: {s.get('site') or 'none'}.
 Reply with JSON only, in exactly this shape:
 {{"title": "short title", "scenes": [{{"search": "2 to 4 plain words describing generic stock footage for this moment, no brand names",
-"headline": "at most 5 punchy words", "caption": "one short supporting sentence"}}],
+"headline": "at most 5 punchy words", "caption": "one short supporting sentence",
+"visual": "one vivid sentence describing a cinematic photograph for this moment: the subject, the setting, the light and the mood. No words, signs or logos in the picture"}}],
 "narration": "a voice-over of about {words} words for the whole video, warm and confident, no hashtags"}}
 Give exactly {n_scenes} scenes. English only."""
     data = {}
@@ -195,6 +196,7 @@ Give exactly {n_scenes} scenes. English only."""
     for sc in scenes:
         sc["search"] = re.sub(r"[^\w\s-]", "", str(sc.get("search") or sc["headline"]))[:60]
         sc["headline"], sc["caption"] = str(sc["headline"])[:60], str(sc.get("caption") or "")[:140]
+        sc["visual"] = re.sub(r"\s+", " ", str(sc.get("visual") or sc["search"] or sc["headline"]))[:300]
     narration = re.sub(r"\s+", " ", str(data.get("narration") or "")).strip() if with_voice else ""
     return {"title": str(data.get("title") or prompt)[:70], "scenes": scenes, "narration": narration}
 
@@ -267,6 +269,38 @@ def pixabay_clip(key, query, w, h, need_seconds, used):
         used.add(v["id"])
         return str(path), v.get("user") or "Pixabay"
     return None, None
+
+
+AI_IMAGE_URL = os.environ.get("TRILLION_AI_IMAGE_URL", "https://image.pollinations.ai/prompt/")
+AI_STYLE = ", cinematic photograph, dramatic natural light, shallow depth of field, rich colour, 35mm film still, highly detailed, no text"
+
+
+def ai_image(visual, w, h, seed):
+    """A picture made for this scene by a free image service, when there is no stock footage for it.
+    Only the scene description is sent. Returns a local file path, or None if the service did not deliver."""
+    from urllib.parse import quote
+    gw, gh = (768, 1344) if h > w else ((1024, 1024) if h == w else (1344, 768))
+    path = CACHE / f"ai-{abs(hash((visual, gw, gh, seed))) % 10 ** 12}.jpg"
+    if path.exists():
+        return str(path)
+    try:
+        r = httpx.get(AI_IMAGE_URL + quote((visual + AI_STYLE)[:700], safe=""), timeout=120, follow_redirects=True,
+                      params={"width": gw, "height": gh, "seed": seed, "nologo": "true", "model": "flux"})
+        r.raise_for_status()
+        if not r.headers.get("content-type", "").startswith("image/") or len(r.content) < 8000:
+            return None
+        path.write_bytes(r.content)
+        with Image.open(path) as im:
+            im.verify()
+            if min(im.size) < 256:
+                raise ValueError("too small")
+        return str(path)
+    except Exception:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return None
 
 
 def clip_frames(path, dur, w, h):
@@ -414,8 +448,16 @@ def render(out_path, brand, scenes, website="", accent="#ffb454", fmt="vertical"
         sc["head"] = _wrap(probe, str(sc.get("headline", "")).upper(), f_head, w - 2 * margin)[:3]
         sc["cap"] = [] if captions else _wrap(probe, sc.get("caption", ""), f_cap, w - 2 * margin)[:3]
         if not sc.get("clip"):
-            sc["base"] = _abstract_bg(w, h, accent, seed=i + 1)
-            sc["move"] = (1.22, 1.0, 0.6, 0.3) if i % 2 == 0 else (1.0, 1.22, -0.6, 0.3)
+            sc["base"] = None
+            if sc.get("image"):
+                try:
+                    sc["base"] = _cover(Image.open(sc["image"]), w, h, scale=1.32)
+                except Exception:
+                    sc["base"] = None
+            if sc["base"] is None:
+                sc["base"] = _abstract_bg(w, h, accent, seed=i + 1)
+            # push in, pull out, drift left, drift right: a different move each scene so pictures never feel like a slideshow
+            sc["move"] = [(1.26, 1.0, 0.5, 0.25), (1.0, 1.26, -0.5, 0.3), (1.18, 1.06, 0.9, -0.2), (1.06, 1.2, -0.9, 0.2)][i % 4]
     end_bg = _abstract_bg(w, h, accent, seed=99)
     head_bottom = int(h * (0.66 if captions else 0.80)) if not wide else int(h * (0.70 if captions else 0.84))
 
@@ -488,10 +530,14 @@ def render(out_path, brand, scenes, website="", accent="#ffb454", fmt="vertical"
     try:
         for idx, sc in enumerate(scenes):
             frames_needed = int(round((idx + 1) * per * FPS)) - int(round(idx * per * FPS))
-            src = clip_frames(sc["clip"], per, w, h) if sc.get("clip") else None
+            two = bool(sc.get("clip") and sc.get("clip2"))
+            src = clip_frames(sc["clip"], per / 2 if two else per, w, h) if sc.get("clip") else None
             last = None
             for k in range(frames_needed):
                 lt = k / FPS
+                if two and k == frames_needed // 2:      # cut to the second shot
+                    src.close()
+                    src, last = clip_frames(sc["clip2"], per / 2, w, h), None
                 frame = None
                 if src is not None:
                     frame = next(src, None)
@@ -625,15 +671,34 @@ def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progre
             if clip:
                 sc["clip"] = clip
                 credits.append(who)
-        missing = sum(1 for sc in p["scenes"] if not sc.get("clip"))
-        if missing:
-            notes.append(f"No stock footage was found for {missing} of {len(p['scenes'])} scenes, so those use a light backdrop.")
-    else:
+                if per >= 3.6:                       # long enough for two shots: quicker cuts feel more like a film
+                    clip2, who2 = find_clip(stock_key, sc["search"], w, h, per / 2, used)
+                    if clip2:
+                        sc["clip2"] = clip2
+                        credits.append(who2)
+    bare = [sc for sc in p["scenes"] if not sc.get("clip")]
+    made = 0
+    if bare and s.get("video_ai_images", True):
+        for i, sc in enumerate(bare):
+            say(f"Making picture {i + 1} of {len(bare)}")
+            img = ai_image(sc["visual"], w, h, seed=int(time.time()) % 100000 + i)
+            if img:
+                sc["image"] = img
+                made += 1
+            elif i == 0 and len(bare) > 1:
+                break                                # the picture service is not answering: do not wait for every scene
+        if made:
+            notes.append(f"{made} scene{'s' if made != 1 else ''} use{'s' if made == 1 else ''} AI-made pictures from the free Pollinations service "
+                         "(only the scene description is sent to it).")
+    left = len(bare) - made
+    if left:
         saved = core.get_secret(uid, "pixabay", only_enabled=False) or core.get_secret(uid, "pexels", only_enabled=False)
-        notes.append("No stock footage: your footage key is saved but switched off. Tick its box under Settings, Connections and keys, "
-                     "click SAVE next to it, then ask again." if saved else
-                     "No stock footage: no Pixabay key is saved for this login yet. Paste a free one under Settings, Connections and keys, "
-                     "click SAVE next to it, then ask again. This one uses light backdrops.")
+        why = ("the picture service did not answer" if s.get("video_ai_images", True) else "AI pictures are switched off")
+        notes.append(f"{left} scene{'s' if left != 1 else ''} use{'s' if left == 1 else ''} a plain backdrop because no footage was found and {why}."
+                     + ("" if stock_key else (" Your footage key is saved but switched off." if saved else
+                                              " Add a free Pixabay key under Settings, Keys for real moving footage.")))
+    elif not stock_key and made:
+        notes.append("For real moving footage instead of pictures, add a free Pixabay key under Settings, Keys.")
 
     music, music_name = pick_music()
     say("Rendering")
@@ -648,9 +713,11 @@ def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progre
             os.unlink(vo_path)
         except OSError:
             pass
-    detail = {"scenes": [sc["headline"] for sc in p["scenes"]], "narration": p["narration"] if vo_path else "",
+    for sc in p["scenes"]:
+        sc.pop("base", None)
+    detail = {"ai_pictures": made, "scenes": [sc["headline"] for sc in p["scenes"]], "narration": p["narration"] if vo_path else "",
               "footage": sorted(set(credits)), "footage_source": stock_name if credits else "", "music": music_name, "format": fmt, "notes": notes}
     vid = core.x("INSERT INTO videos(user_id,title,path,thumb,seconds,detail,created) VALUES(?,?,?,?,?,?,?)",
                  (uid, p["title"], str(out), thumb if os.path.exists(thumb) else "", seconds, json.dumps(detail), time.time()))
     return {"video_id": vid, "title": p["title"], "saved": str(out), "seconds": round(seconds, 1),
-            "footage_clips": len(credits), "voice_over": bool(vo_path), "notes": notes}
+            "footage_clips": len(credits), "ai_pictures": made, "voice_over": bool(vo_path), "notes": notes}

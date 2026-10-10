@@ -655,6 +655,42 @@ def simple(user, what):
     raise PhoneError("I do not know that phone switch.")
 
 
+WA_PKGS = ("com.whatsapp", "com.whatsapp.w4b")
+_WA_SKIP = re.compile(r"^(\d+ (new )?messages?( from \d+ chats?)?|checking for new messages?|backup (in progress|paused|complete).*|"
+                      r"whatsapp web is currently active|.*is active on.*|you may have new messages|tap for more info.*)$", re.I)
+
+
+def whatsapp_notifications(user):
+    """New WhatsApp messages as the phone is showing them in its notification shade. Only what is still unread there
+    can be seen: this reads notifications, not the WhatsApp chats themselves."""
+    out = sh(user, "dumpsys notification --noredact", timeout=40)
+    found = []
+    for rec in re.split(r"\n\s*NotificationRecord\(", out)[1:]:
+        m = re.search(r"\bpkg=(\S+)", rec)
+        if not m or m.group(1) not in WA_PKGS:
+            continue
+
+        def ext(name):
+            mm = re.search(r"android\.%s=[\w.$]+ \((.*)\)\s*$" % name, rec, re.M)
+            return mm.group(1).strip() if mm else ""
+        title, text = ext("title"), (ext("bigText") or ext("text"))
+        if not title or not text or title in ("WhatsApp", "WhatsApp Business") or _WA_SKIP.match(text):
+            continue
+        title = re.sub(r"\s*\(\d+ (?:new )?messages?\)\s*", "", title).strip()
+        chat, sender = title, title
+        if " @ " in title:                      # "Brandon @ Family"
+            sender, chat = [x.strip() for x in title.split(" @ ", 1)]
+        elif ": " in title:                     # "Family: Brandon"
+            chat, sender = [x.strip() for x in title.split(": ", 1)]
+        kind = "call" if re.search(r"\b(voice|video) call\b", text, re.I) else (
+            "voice note" if re.search(r"\bvoice message\b|\U0001F3A4", text, re.I) else "message")
+        when = re.search(r"\bwhen=(\d{10,13})\b", rec)
+        key = re.search(r"\bkey=(\S+)", rec)
+        found.append({"chat": chat, "sender": sender, "text": text[:2000], "kind": kind, "group": chat != sender,
+                      "when": int(when.group(1)[:10]) if when else 0, "key": key.group(1) if key else ""})
+    return found
+
+
 def screen_png(user):
     """The phone's screen right now as PNG bytes, for the dashboard's live picture. Nothing is saved."""
     serial = working_serial(user)
