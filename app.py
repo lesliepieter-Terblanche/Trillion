@@ -684,13 +684,13 @@ def phone_link(p: dict = Body(...), user=Depends(auth)):
 @app.post("/api/phone/wireless")
 def phone_wireless(p: dict = Body(...), user=Depends(auth)):
     try:
-        target = phone.go_wireless(user, str(p.get("address", "")))
+        target, via = phone.go_wireless(user, str(p.get("address", "")))
     except phone.PhoneError as e:
         raise HTTPException(400, str(e))
     s = core.settings(user)
     s["phone_serial"] = target
     core.save_settings(user["id"], s)
-    return {"ok": True, "address": target}
+    return {"ok": True, "address": target, "via": via}
 
 
 @app.post("/api/phone/unlink")

@@ -487,7 +487,7 @@ async function loadPhone(){
   else{
     h+=p.linked?`<div><b style="font-size:17px">${esc(p.model||'Phone')}</b> <span class="tag ok">LINKED</span><div class="muted" style="font-size:13px;font-family:var(--mono)">${esc(p.linked)}</div></div>
       <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="phtest">TEST</button><button class="btn" id="phun">UNLINK</button></div>
-      <label class="field"><span>Go wireless: with the phone on the cable, enter its Tailscale address (100.x.x.x) so it works without the cable</span><input id="phaddr" placeholder="100.x.x.x"></label>
+      <label class="field"><span>Go wireless: keep the phone on the cable with Tailscale switched on, then click the button. The address is found automatically; only fill it in if that fails.</span><input id="phaddr" placeholder="Leave empty, or 100.x.x.x"></label>
       <div><button class="btn" id="phwifi">SWITCH TO WIRELESS</button></div>`
      :`<div class="muted">No phone linked to ${esc(S.user.name)} yet. On the phone: Settings, About phone, tap Build number 7 times; then Developer options, switch on USB debugging. Plug it into this PC and tap Allow on the phone.</div>`;
     h+=`<div style="font-size:14px;margin-top:6px">Phones this PC can see:</div>`+(p.devices.map(d=>`<div class="row"><div>${esc(d.model||'Android phone')}<small>${esc(d.serial)} · ${d.state==='device'?'ready':(d.state==='unauthorized'?'waiting for Allow on the phone':'offline')}${d.linked_to?' · linked to '+esc(d.linked_to):''}</small></div>${d.linked_to?'':`<button class="btn pri" data-ph="${esc(d.serial)}" style="min-height:40px">LINK TO ME</button>`}</div>`).join('')||'<div class="muted">None right now.</div>');
@@ -500,7 +500,7 @@ async function loadPhone(){
   if($('phun'))$('phun').onclick=async()=>{await api('/api/phone/unlink',{method:'POST'});await tick();loadPhone();};
   if($('phtest'))$('phtest').onclick=async()=>{m.className='msg';m.textContent='Asking the phone...';const r=await (await api('/api/phone/test',{method:'POST'})).json();
     r.ok?say(`Works. ${r.status.model}, Android ${r.status.android}, battery ${r.status.battery_percent}%${r.status.charging?' (charging)':''}, screen ${r.status.screen}.`,true):say(r.error);};
-  if($('phwifi'))$('phwifi').onclick=async()=>{m.className='msg';m.textContent='Switching...';try{const r=await (await api('/api/phone/wireless',{json:{address:$('phaddr').value}})).json();await tick();await loadPhone();$('phmsg').className='msg ok';$('phmsg').textContent='Wireless is on at '+r.address+'. You can unplug the cable.';}catch(e){say(e.message);}};
+  if($('phwifi'))$('phwifi').onclick=async()=>{m.className='msg';m.textContent='Switching. This can take up to half a minute...';try{const r=await (await api('/api/phone/wireless',{json:{address:$('phaddr').value}})).json();await tick();await loadPhone();$('phmsg').className='msg ok';$('phmsg').textContent='Wireless is on at '+r.address+(r.via==='wifi'?'. This is the home Wi-Fi address, so it only works while the phone is at home. For anywhere-access, switch Tailscale on on the phone and do this again.':'. You can unplug the cable.');}catch(e){say(e.message);}};
 }
 async function loadSettings(){
   if(!S)return;loadPhone();const s=S.user.settings;SK.forEach(k=>$('s-'+k).value=s[k]??'');$('s-daily_review').checked=!!s.daily_review;

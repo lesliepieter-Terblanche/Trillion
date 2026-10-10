@@ -266,16 +266,51 @@ def screenshot(user):
     return {"saved": str(path)}
 
 
-def go_wireless(user, address):
-    """Phone must be on the USB cable for this. Afterwards it is reachable at address:5555."""
+def phone_addresses(serial):
+    """The phone's own network addresses: Tailscale (100.x) first, then Wi-Fi."""
+    _, out = _run(["-s", serial, "shell", "ip -4 -o addr show"], timeout=15)
+    ts, wifi = [], []
+    for m in re.finditer(r"^\d+:\s+(\S+)\s+inet\s+(\d+\.\d+\.\d+\.\d+)", out, re.M):
+        name, ip = m.group(1), m.group(2)
+        if ip.startswith("127."):
+            continue
+        first, second = int(ip.split(".")[0]), int(ip.split(".")[1])
+        (ts if first == 100 and 64 <= second <= 127 else wifi if name.startswith("wlan") else []).append(ip)
+    return ts, wifi
+
+
+def go_wireless(user, address=""):
+    """Phone must be on the USB cable for this. Afterwards it is reachable at <address>:5555."""
     serial = linked_serial(user)
-    address = address.strip()
-    if not re.fullmatch(r"[\w.-]+", address):
+    address = (address or "").strip()
+    if address and not re.fullmatch(r"[\w.-]+", address):
         raise PhoneError("That does not look like an address. Use the phone's Tailscale address, such as 100.x.x.x.")
-    _run(["-s", serial, "tcpip", "5555"], timeout=20)
-    time.sleep(2.5)
-    target = address + ":5555"
-    code, out = _run(["connect", target], timeout=15)
-    if "connected" not in out.lower():
-        raise PhoneError("Could not connect wirelessly: " + out.strip()[-160:])
-    return target
+    if ":" in serial:
+        raise PhoneError("This phone is already linked wirelessly. To set it up again, unlink it, plug in the cable and link it first.")
+    ts, wifi = phone_addresses(serial)
+    candidates = [a for a in dict.fromkeys(([address] if address else []) + ts + wifi)]
+    if not candidates:
+        raise PhoneError("The phone has no network address. Switch on Wi-Fi or Tailscale on the phone and try again.")
+    code, out = _run(["-s", serial, "tcpip", "5555"], timeout=25)
+    if "error" in out.lower() or code != 0:
+        raise PhoneError("The phone would not switch to wireless mode: " + out.strip()[-160:])
+    last = ""
+    for attempt in range(10):          # the phone restarts its debugging service; give it time
+        time.sleep(2.0)
+        for addr in candidates:
+            target = addr + ":5555"
+            _, res = _run(["connect", target], timeout=12)
+            low = res.lower()
+            last = res.strip()
+            if "failed to authenticate" in low or "unauthorized" in low:
+                raise PhoneError("Unlock the phone and tap Allow on the debugging prompt, then click the button again.")
+            if "connected to" in low:
+                time.sleep(1.0)
+                if any(d["serial"] == target and d["state"] == "device" for d in devices()):
+                    return target, ("tailscale" if addr in ts or addr.startswith("100.") else "wifi")
+                if any(d["serial"] == target and d["state"] == "unauthorized" for d in devices()):
+                    raise PhoneError("Unlock the phone and tap Allow on the debugging prompt, then click the button again.")
+    hint = ("The phone answered but would not accept the connection. Keep the cable plugged in, make sure Tailscale is "
+            "switched on on the phone, and try again.") if "refused" in last.lower() else \
+           "The phone could not be reached on the network. Check that Tailscale is switched on on the phone."
+    raise PhoneError(f"Could not connect wirelessly. {hint} (Last answer: {last[-140:]})")
