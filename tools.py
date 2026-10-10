@@ -115,7 +115,7 @@ def describe(name, a):
         "phone_status": "Checking the phone", "phone_open_app": f"Opening {g('app')} on the phone",
         "phone_find_contact": f"Looking up {g('name')} in contacts",
         "phone_send_whatsapp": f"Send WhatsApp to {a.get('_name') or g('contact')}"
-                               + (f" (+{a['contact']})" if a.get('_name') else "") + f": \"{str(a.get('message', ''))[:120]}\"",
+                               + (f" (+{a['contact']})" if a.get('_name') and not str(a.get('contact', '')).startswith('chat:') else "") + f": \"{str(a.get('message', ''))[:120]}\"",
         "phone_read_screen": "Reading the phone screen", "phone_tap": f"Tapping {g('target') or 'the screen'}",
         "phone_type": "Typing on the phone", "phone_press": f"Pressing {g('key')}", "phone_swipe": f"Swiping {g('direction')}",
         "phone_shell": f"Run on the phone: {g('command')}",
@@ -151,7 +151,7 @@ def execute(user, name, args, task_id=None, approved=False, direct=False):
                     return {"error": "There is no message to send."}
                 st = core.settings(user)
                 own = phone.normalise(st["phone_own_number"], str(st.get("phone_country_code", "27"))) if st.get("phone_own_number") else None
-                in_contacts = who != number and not re.fullmatch(r"[\d\s+()-]{7,}", who)   # found by name in the phone's contact list
+                in_contacts = who != number and not re.fullmatch(r"[\d\s+()-]{7,}", who)   # a saved name, not a typed number
                 # the user's standing choice: saved contacts get the message at once, however the request was worded
                 if st.get("whatsapp_auto_contacts") and (in_contacts or number == own):
                     out = t_phone_send_whatsapp(user, **args)
@@ -516,13 +516,14 @@ def t_phone_find_contact(user, name):
     import phone
     found = phone.contacts(user, name)
     return {"contacts": [{"name": k, "numbers": v} for k, v in list(found.items())[:10]]} if found \
-        else {"contacts": [], "note": f"Nobody called {name} in the phone's contacts."}
+        else {"contacts": [], "note": f"Nobody called {name} in the contact list I can read. phone_send_whatsapp can still be "
+                                      "called with the name: it looks the person up inside WhatsApp itself."}
 
 
 def t_phone_send_whatsapp(user, contact, message, _name=None):
     import phone
     res = phone.send_whatsapp(user, contact, message)
-    if _name:
+    if _name and not str(contact).startswith("chat:"):
         res["to"] = _name
     return res
 

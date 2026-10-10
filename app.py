@@ -545,7 +545,12 @@ def run_agent(user, text):
                 except Exception:
                     args = {}
                 core.set_task(tid, detail=tools.describe(name, args))
-                result = tools.execute(user, name, args, task_id=tid)
+                if name == "phone_send_whatsapp" and re.fullmatch(r"[\d\s+()-]{7,}", str(args.get("contact", "")).strip()) \
+                        and re.sub(r"\D", "", str(args["contact"]))[-7:] not in re.sub(r"\D", "", text):
+                    # the model made a number up: only the person's name, or a number the user gave, is acceptable
+                    result = {"error": "Do not invent a phone number. Call phone_send_whatsapp again with the person's name as contact."}
+                else:
+                    result = tools.execute(user, name, args, task_id=tid)
                 waiting = waiting or result.get("status") == "waiting_for_approval"
                 msgs.append({"role": "tool", "tool_call_id": c.get("id", name),
                              "content": json.dumps(result, default=str)[:6000]})

@@ -187,20 +187,46 @@ def open_app(user, name):
     return {"opened": name, "package": pkg}
 
 
+CONTACT_QUERIES = (
+    "content query --uri content://com.android.contacts/data/phones --projection display_name:data1",
+    "content query --uri content://com.android.contacts/data --projection display_name:data1:mimetype "
+    "--where \"mimetype='vnd.android.cursor.item/phone_v2'\"",
+    "content query --uri content://com.android.contacts/data/phones",
+)
+LAST_CONTACTS = {"rows": 0, "raw": ""}
+
+
+def all_contacts(user):
+    """Every saved contact with its numbers. Phones differ in how they answer, so a few ways of asking are tried."""
+    raw = ""
+    for cmd in CONTACT_QUERIES:
+        try:
+            out = sh(user, cmd, timeout=60)
+        except PhoneError:
+            continue
+        raw = raw or out
+        found = {}
+        for ln in out.splitlines():
+            n = re.search(r"\bdisplay_name=(.*?)(?:, \w+=|$)", ln)
+            d = re.search(r"\bdata1=(.*?)(?:, \w+=|$)", ln)
+            if not n or not d:
+                continue
+            name, num = n.group(1).strip(), d.group(1).strip()
+            if not name or name == "NULL" or not re.search(r"\d{5}", re.sub(r"\D", "", num)):
+                continue
+            found.setdefault(name, [])
+            if num not in found[name]:
+                found[name].append(num)
+        if found:
+            LAST_CONTACTS.update(rows=len(found), raw="")
+            return found
+    LAST_CONTACTS.update(rows=0, raw=" ".join(raw.split())[:220])
+    return {}
+
+
 def contacts(user, name):
-    out = sh(user, "content query --uri content://com.android.contacts/data/phones --projection display_name:data1", timeout=40)
     want = name.lower().strip()
-    found = {}
-    for ln in out.splitlines():
-        m = re.search(r"display_name=(.*?), data1=(.*)$", ln)
-        if m and want in m.group(1).lower():
-            found.setdefault(m.group(1).strip(), [])
-            num = m.group(2).strip()
-            if num not in found[m.group(1).strip()]:
-                found[m.group(1).strip()].append(num)
-    if not found and "Permission" in out:
-        raise PhoneError("The phone would not let me read contacts. Give me the number instead.")
-    return found
+    return {k: v for k, v in all_contacts(user).items() if want in k.lower()}
 
 
 def normalise(number, country="27"):
@@ -211,7 +237,24 @@ def normalise(number, country="27"):
         return n[2:]
     if n.startswith("0"):
         return country + n[1:]
+    if len(n) == 9:                      # saved without the leading 0
+        return country + n
     return n
+
+
+ALTERNATES = {}   # first-choice number -> the contact's other numbers, tried if WhatsApp does not know the first
+
+
+def _best_first(nums, country):
+    """Cell numbers before landlines: WhatsApp lives on the cell number."""
+    seen, out = set(), []
+    for x in nums:
+        n = normalise(x, country)
+        if n and n not in seen:
+            seen.add(n)
+            out.append(n)
+    cell = re.compile(r"^%s[678]" % re.escape(country)) if country == "27" else re.compile(r"^")
+    return sorted(out, key=lambda n: not cell.match(n))
 
 
 def resolve_contact(user, contact):
@@ -219,32 +262,41 @@ def resolve_contact(user, contact):
     country = str(core.settings(user).get("phone_country_code", "27"))
     if re.fullmatch(r"[\d\s+()-]{7,}", contact.strip()):
         return contact.strip(), normalise(contact, country)
-    found = contacts(user, contact)
-    exact = {k: v for k, v in found.items() if k.lower() == contact.lower().strip()}
+    if contact.startswith("chat:"):
+        return contact[5:], contact
+    import difflib
+    everyone = all_contacts(user)
+    want = re.sub(r"\s+", " ", contact.lower().strip())
+    found = {k: v for k, v in everyone.items() if want in k.lower()}
+    exact = {k: v for k, v in found.items() if k.lower() == want}
     if exact:
         found = exact
     if not found:
         # spoken and typed names are often spelled a little differently from the contact (Llewellen / Llewellyn)
-        import difflib
-        everyone = contacts(user, "")
-        want = contact.lower().strip()
         scored = sorted(((difflib.SequenceMatcher(None, want, k.lower()).ratio(), k) for k in everyone), reverse=True)
         close = [k for r, k in scored if r >= 0.8]
         if not close and " " not in want:      # one name given: compare with each word of the contact names
             close = [k for k in everyone if any(difflib.SequenceMatcher(None, want, w).ratio() >= 0.8 for w in k.lower().split())]
-        if close and (len(close) == 1 or scored[0][0] - scored[1][0] >= 0.1 and scored[0][1] == close[0]):
+        if close and (len(close) == 1 or scored[0][1] == close[0] and scored[0][0] - scored[1][0] >= 0.1):
             found = {close[0]: everyone[close[0]]}
         elif len(close) > 1:
             raise PhoneError("I am not sure which contact you mean: " + "; ".join(close[:8]) + ". Say exactly which one.")
     if not found:
-        raise PhoneError(f"No contact called '{contact}' on the phone.")
+        # not in the contact list I can read: look the name up inside WhatsApp itself when it is time to send
+        return contact.strip(), "chat:" + contact.strip()
     if len(found) > 1:
         raise PhoneError("More than one contact matches: " + "; ".join(list(found)[:8]) + ". Say exactly which one.")
     name, nums = next(iter(found.items()))
-    return name, normalise(nums[0], country)
+    order = _best_first(nums, country)
+    ALTERNATES[order[0]] = (name, order[1:])
+    return name, order[0]
+
+
+NOT_ON_WA = re.compile(r"(isn\'t|is not|isn&apos;t|isn’t) on WhatsApp|Invite to WhatsApp|text=\"Invite\"|SMS invite|not on WhatsApp", re.I)
 
 
 def _tap_send(user, pkg):
+    """True when Send was pressed, "invite" when WhatsApp says the number has no WhatsApp, False otherwise."""
     for _ in range(5):
         time.sleep(1.6)
         xml = sh(user, "uiautomator dump /sdcard/trillion_ui.xml >/dev/null 2>&1; cat /sdcard/trillion_ui.xml", timeout=30)
@@ -254,7 +306,86 @@ def _tap_send(user, pkg):
             x1, y1, x2, y2 = map(int, m.groups())
             sh(user, f"input tap {(x1 + x2) // 2} {(y1 + y2) // 2}")
             return True
+        if NOT_ON_WA.search(xml):
+            sh(user, "input keyevent KEYCODE_BACK")
+            return "invite"
     return False
+
+
+def _find(nodes, ids=(), label=None):
+    for n in nodes:
+        if n["id"] in ids or (label and re.search(label, n["label"], re.I)):
+            return n
+    return None
+
+
+def _open_chat_by_search(user, pkg, name):
+    """Open a WhatsApp chat by looking the name up in WhatsApp's own search. Returns the chat's real name."""
+    import difflib
+    want = re.sub(r"\s+", " ", name.lower().strip())
+    if any(ord(c) > 126 for c in want):
+        raise PhoneError("I can only search WhatsApp for names in plain letters.")
+    sh(user, f"monkey -p {pkg} -c android.intent.category.LAUNCHER 1")
+    box = None
+    for _ in range(4):
+        time.sleep(1.5)
+        nodes = _nodes(user)
+        box = _find(nodes, ("my_search_bar", "search_bar", "menuitem_search", "search_fragment", "search_src_text", "search_input"),
+                    r"^(search|ask meta ai or search)\b")
+        if box:
+            break
+        sh(user, "input keyevent KEYCODE_BACK")     # WhatsApp was left inside a chat: step back to the list
+    if not box:
+        raise PhoneError("I opened WhatsApp but could not find its search box.")
+    sh(user, f"input tap {box['x']} {box['y']}")
+    time.sleep(1.0)
+    typed = want.split()[0][:4]                    # a few letters, so a spelling slip later in the name still finds it
+    sh(user, f"input text '{typed}'")
+    best = []
+    for _ in range(3):
+        time.sleep(1.6)
+        rows = [n for n in _nodes(user) if n["label"] and not n["field"]
+                and n["id"] in ("conversations_row_contact_name", "contactpicker_row_name", "chat_able_contacts_row_name", "name")]
+        scored = {}
+        for n in rows:
+            lab = n["label"].lower()
+            r = difflib.SequenceMatcher(None, want, lab).ratio()
+            if " " not in want:
+                r = max([r] + [difflib.SequenceMatcher(None, want, w).ratio() for w in lab.split()])
+            if r >= 0.8:
+                scored.setdefault(n["label"], (r, n))
+        best = sorted(scored.values(), key=lambda t: -t[0])
+        if best:
+            break
+    if not best:
+        hint = (" I also could not read the phone's contact list (it answered: " + LAST_CONTACTS["raw"][:120] + ")."
+                if not LAST_CONTACTS["rows"] and LAST_CONTACTS["raw"] else "")
+        raise PhoneError(f"I could not find '{name}' in your contacts or in WhatsApp." + hint)
+    if len(best) > 1 and best[0][0] - best[1][0] < 0.1:
+        raise PhoneError("More than one WhatsApp chat matches: " + "; ".join(t[1]["label"] for t in best[:6]) + ". Say exactly which one.")
+    n = best[0][1]
+    sh(user, f"input tap {n['x']} {n['y']}")
+    return n["label"]
+
+
+def _send_in_chat(user, pkg, name, message):
+    """Find the person in WhatsApp's own search, type the message there and press Send."""
+    if any(ord(c) > 126 for c in message):
+        raise PhoneError("For this contact I can only type plain letters, numbers and common symbols. Leave out emoji and accents.")
+    name = _open_chat_by_search(user, pkg, name)
+    entry = None
+    for _ in range(4):
+        time.sleep(1.5)
+        entry = _find(_nodes(user), ("entry",))
+        if entry:
+            break
+    if not entry:
+        raise PhoneError(f"I opened WhatsApp for {name} but could not find the message box.")
+    sh(user, f"input tap {entry['x']} {entry['y']}")
+    time.sleep(0.6)
+    quoted = message.replace("'", "'\\''").replace(" ", "%s")
+    sh(user, f"input text '{quoted}'")
+    return name, _tap_send(user, pkg)
 
 
 def send_whatsapp(user, contact, message):
@@ -264,14 +395,32 @@ def send_whatsapp(user, contact, message):
     if not pkg:
         raise PhoneError("WhatsApp is not installed on the phone.")
     _awake_and_unlocked(user)
-    url = f"https://wa.me/{number}?text={quote(message, safe='')}"
-    out = sh(user, f"am start -a android.intent.action.VIEW -d '{url}' {pkg}")
-    if "Error" in out:
-        raise PhoneError("WhatsApp would not open that chat: " + out.strip()[-160:])
-    if not _tap_send(user, pkg):
-        return {"status": "typed_not_sent", "to": name, "number": "+" + number,
+    if number.startswith("chat:"):
+        name, pressed = _send_in_chat(user, pkg, name, message)
+        shown = "found in WhatsApp"
+    else:
+        saved_name, others = ALTERNATES.get(number, (None, []))
+        pressed, shown = False, "+" + number
+        for num in [number] + list(others):
+            url = f"https://wa.me/{num}?text={quote(message, safe='')}"
+            out = sh(user, f"am start -a android.intent.action.VIEW -d '{url}' {pkg}")
+            if "Error" in out:
+                raise PhoneError("WhatsApp would not open that chat: " + out.strip()[-160:])
+            pressed, shown = _tap_send(user, pkg), "+" + num
+            if pressed != "invite":
+                break
+        if pressed == "invite":
+            # WhatsApp does not know the saved number(s) in that form: open the existing chat by name instead
+            if not saved_name:
+                raise PhoneError(f"WhatsApp says {shown} is not on WhatsApp. Nothing was sent.")
+            name, pressed = _send_in_chat(user, pkg, saved_name, message)
+            shown = "found in WhatsApp"
+    if pressed == "invite":
+        raise PhoneError(f"WhatsApp says {name} is not on WhatsApp. Nothing was sent.")
+    if not pressed:
+        return {"status": "typed_not_sent", "to": name, "number": shown,
                 "note": "The chat is open with the message typed, but I could not press Send. Press it on the phone."}
-    return {"status": "send_pressed", "to": name, "number": "+" + number,
+    return {"status": "send_pressed", "to": name, "number": shown,
             "note": "I pressed Send. I cannot confirm delivery from here."}
 
 
