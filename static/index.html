@@ -106,6 +106,22 @@ footer.status{background:var(--bar);border-top:1px solid var(--line);padding:10p
 .talk form{max-width:1100px;margin:0 auto;display:flex;gap:10px}
 .talk input{flex:1;min-width:0;min-height:50px;background:var(--panel);border:1px solid var(--edge);padding:0 16px;font-size:16px}
 .talk button{min-height:50px;min-width:50px;border:1px solid var(--edge);background:var(--panel);font-weight:700;padding:0 16px}
+.talk button.addf{font-size:26px;line-height:1;padding:0;font-weight:400}
+body{padding-bottom:var(--attpad,0px)}
+.talk.drop{outline:2px dashed var(--a);outline-offset:-4px}
+.atts{max-width:1100px;margin:0 auto 10px;display:flex;gap:8px;flex-wrap:wrap}
+.att{display:flex;align-items:center;gap:8px;border:1px solid var(--edge);background:var(--panel);padding:4px 6px 4px 4px;font-size:13px;max-width:240px;position:relative;overflow:hidden}
+.att img,.att .ic{width:38px;height:38px;object-fit:cover;flex:none;display:flex;align-items:center;justify-content:center;background:rgba(127,127,127,.18);font-size:10px;font-weight:700;letter-spacing:.04em}
+.att .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.att .nm small{display:block;opacity:.65}
+.att button{min-height:32px!important;min-width:32px!important;padding:0!important;border:0!important;background:none!important;font-size:18px;flex:none}
+.att .bar{position:absolute;left:0;bottom:0;height:3px;background:var(--green);transition:width .2s}
+.att.bad{border-color:var(--red)}
+.cfiles{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.cfiles a{display:flex;align-items:center;gap:8px;border:1px solid var(--edge);padding:4px 8px 4px 4px;font-size:13px;text-decoration:none;color:inherit;max-width:100%}
+.cfiles a.pic{padding:0;border:0}
+.cfiles img{width:120px;height:120px;object-fit:cover;display:block;border-radius:4px}
+.cfiles .ic{width:34px;height:34px;display:flex;align-items:center;justify-content:center;background:rgba(127,127,127,.18);font-size:10px;font-weight:700}
 .talk button.mic{touch-action:manipulation;user-select:none;-webkit-user-select:none}
 .talk button.mic{display:flex;align-items:center;gap:10px;white-space:nowrap}
 .talk button.mic .tick{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border:2px solid currentColor;font-size:16px;line-height:1;font-weight:900}
@@ -140,7 +156,12 @@ footer.status{background:var(--bar);border-top:1px solid var(--line);padding:10p
   .sub{font-size:14px}
   .chat div{font-size:16px}
   .talk{padding:8px 10px}
-  .talk form{gap:8px}
+  .talk form{gap:6px}
+  .talk button{padding:0 10px;min-width:46px}
+  .talk button.mic{gap:6px;font-size:12px;padding:0 8px}
+  .talk button.mic .tick{width:18px;height:18px;font-size:13px}
+  .talk input{padding:0 10px}
+  .atts{margin-bottom:8px}.att{max-width:47%}
   .talk input{min-width:0}
 }
 .panel{background:var(--panel);border:1px solid var(--line);padding:20px;display:flex;flex-direction:column;gap:14px}
@@ -571,7 +592,9 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
   <div class="btns" id="popfoot" style="justify-content:flex-end"></div>
 </div></div>
 <div class="bnav" id="bnav"><button data-v="control" class="on"><i>&#9679;</i>Home</button><button data-v="projects"><i>&#9638;</i>Projects</button><button data-v="phone"><i>&#9647;</i>Phone</button><button data-v="more"><i>&#8801;</i>More</button></div>
-<div class="talk"><form id="talk">
+<div class="talk"><div class="atts" id="atts" hidden></div><form id="talk">
+  <button type="button" class="addf" id="addf" aria-label="Add files, photos or videos" title="Add files, photos or videos">+</button>
+  <input type="file" id="filein" multiple hidden>
   <button type="button" class="mic" id="mic" aria-pressed="false" aria-label="Voice mode: when ticked she listens and answers aloud until you untick it">VOICE</button>
   <input id="say" placeholder="Tell Trillion what to do" aria-label="Message" autocomplete="off">
   <button class="send">SEND</button>
@@ -748,18 +771,58 @@ function showMap(m){
 }
 let SEENV=null;
 async function tick(){try{S=await (await api('/api/state')).json();if(SEENV&&S.version!==SEENV){location.reload();return;}SEENV=S.version;render();statRefresh();if(S.wa_unseen!==waSeenCount){waSeenCount=S.wa_unseen;loadWA();}}catch(e){}}
-async function loadChat(){const ms=await (await api('/api/messages')).json();$('chat').innerHTML=ms.slice(-14).map(m=>`<div class="${esc(m.role)}">${m.role==='assistant'?linkify(m.content):esc(m.content)}</div>`).join('');$('chat').scrollTop=1e9;}
+const FMARK=/\n?\[\[file:(\d+):([^\]\n]*?):(image|video|audio|document|file)\]\]/g;
+const KLBL={image:'PIC',video:'VID',audio:'SND',document:'DOC',file:'FILE'};
+function withFiles(raw){   // a person's message: the words, then what was attached to it
+  const fs=[];const words=String(raw).replace(FMARK,(m,id,name,kind)=>{fs.push({id,name,kind});return '';});
+  return esc(words)+(fs.length?'<div class="cfiles">'+fs.map(f=>f.kind==='image'
+    ?`<a class="pic" href="/api/uploads/${f.id}/file" target="_blank" rel="noopener" title="${esc(f.name)}"><img loading="lazy" src="/api/uploads/${f.id}/file" alt="${esc(f.name)}"></a>`
+    :`<a href="/api/uploads/${f.id}/file" target="_blank" rel="noopener"><span class="ic">${KLBL[f.kind]}</span><span>${esc(f.name)}</span></a>`).join('')+'</div>':'');}
+async function loadChat(){const ms=await (await api('/api/messages')).json();$('chat').innerHTML=ms.slice(-14).map(m=>`<div class="${esc(m.role)}">${m.role==='assistant'?linkify(m.content):withFiles(m.content)}</div>`).join('');$('chat').scrollTop=1e9;}
 
-async function send(text,speak){
-  if(!text||sending)return;sending=true;$('say').value='';
-  $('chat').insertAdjacentHTML('beforeend',`<div class="user">${esc(text)}</div>`);$('chat').scrollTop=1e9;
+// ---- adding files, photos and videos to a message (PC and phone) ----
+let PEND=[];   // {key,name,kind,size,id,pct,err,url}
+const fsize=n=>n>1048576?(n/1048576).toFixed(n>10485760?0:1)+' MB':Math.max(1,Math.round(n/1024))+' KB';
+const kindOf=n=>{const e=(n.split('.').pop()||'').toLowerCase();return ['jpg','jpeg','png','webp','bmp','gif'].includes(e)?'image':['mp4','mov','m4v','webm','mkv','avi','3gp'].includes(e)?'video':['mp3','wav','m4a','ogg','opus','aac','flac','amr'].includes(e)?'audio':'file';};
+function drawAtts(){const b=$('atts');b.hidden=!PEND.length;
+  b.innerHTML=PEND.map(a=>`<div class="att${a.err?' bad':''}">${a.url?`<img src="${a.url}" alt="">`:`<span class="ic">${KLBL[a.kind]||'FILE'}</span>`}<span class="nm">${esc(a.name)}<small>${a.err?esc(a.err):a.id?fsize(a.size):'Sending '+a.pct+'%'}</small></span><button type="button" data-ax="${a.key}" aria-label="Remove ${esc(a.name)}">&times;</button>${a.id||a.err?'':`<span class="bar" style="width:${a.pct}%"></span>`}</div>`).join('');
+  b.querySelectorAll('[data-ax]').forEach(x=>x.onclick=()=>{const a=PEND.find(p=>p.key==x.dataset.ax);if(a&&a.xhr&&!a.id)a.xhr.abort();if(a&&a.url)URL.revokeObjectURL(a.url);PEND=PEND.filter(p=>p.key!=x.dataset.ax);drawAtts();});
+  document.body.style.setProperty('--attpad',PEND.length?b.offsetHeight+10+'px':'0px');}
+function addFiles(list){for(const f of [...list].slice(0,12-PEND.length)){
+    const a={key:Date.now()+'-'+Math.random().toString(36).slice(2),name:f.name||'file',kind:kindOf(f.name||''),size:f.size,pct:0,id:null,err:''};
+    if(a.kind==='image')a.url=URL.createObjectURL(f);
+    PEND.push(a);
+    const x=new XMLHttpRequest();a.xhr=x;x.open('POST','/api/upload?name='+encodeURIComponent(a.name));
+    x.upload.onprogress=e=>{if(e.lengthComputable){a.pct=Math.round(e.loaded/e.total*100);drawAtts();}};
+    x.onload=()=>{if(x.status===200){try{const r=JSON.parse(x.responseText);a.id=r.id;a.kind=r.kind;}catch(e){a.err='Did not arrive';}}else{let d='';try{d=JSON.parse(x.responseText).detail;}catch(e){}a.err=d||'Did not arrive';}drawAtts();};
+    x.onerror=()=>{a.err='Connection lost';drawAtts();};
+    x.setRequestHeader('Content-Type','application/octet-stream');x.send(f);}
+  drawAtts();$('say').focus();}
+$('addf').onclick=()=>$('filein').click();
+$('filein').onchange=e=>{addFiles(e.target.files);e.target.value='';};
+(()=>{const t=document.querySelector('.talk');let n=0;
+  addEventListener('dragenter',e=>{if(e.dataTransfer&&[...e.dataTransfer.types].includes('Files')){n++;t.classList.add('drop');}});
+  addEventListener('dragleave',()=>{if(--n<=0){n=0;t.classList.remove('drop');}});
+  addEventListener('dragover',e=>{if(e.dataTransfer&&[...e.dataTransfer.types].includes('Files'))e.preventDefault();});
+  addEventListener('drop',e=>{if(e.dataTransfer&&e.dataTransfer.files.length){e.preventDefault();n=0;t.classList.remove('drop');addFiles(e.dataTransfer.files);}});
+  $('say').addEventListener('paste',e=>{const fs=[...(e.clipboardData?.files||[])];if(fs.length){e.preventDefault();addFiles(fs);}});})();
+
+async function send(text,speak,atts){
+  atts=atts||[];
+  if((!text&&!atts.length)||sending)return;sending=true;$('say').value='';
+  if(!text)text=atts.length===1?'Here is a file.':`Here are ${atts.length} files.`;
+  $('chat').insertAdjacentHTML('beforeend',`<div class="user">${withFiles(text+atts.map(a=>`\n[[file:${a.id}:${a.name.replace(/[\]:]/g,'-')}:${a.kind}]]`).join(''))}</div>`);$('chat').scrollTop=1e9;
   $('kicker').textContent='NOW WORKING';$('big').textContent='Thinking';$('sub').textContent=text;
   const liveT=setInterval(async()=>{try{const l=await (await fetch('/api/live')).json();if(l.text){let b=$('livebub');if(!b){$('chat').insertAdjacentHTML('beforeend','<div class="assistant" id="livebub"></div>');b=$('livebub');}b.textContent=l.text+' ▍';$('chat').scrollTop=1e9;$('big').textContent='Answering';}}catch(e){}},350);
-  try{const r=await (await api('/api/chat',{json:{message:text}})).json();clearInterval(liveT);await loadChat();await tick();if(S&&S.approvals.length)$('chatwait').scrollIntoView({block:'nearest'});if(r.brief)showBrief(r.brief,true);if(r.map)showMap(r.map);if(r.image)showImage(r.image);replyPop(text,r);if(r.show)go(r.show);if(speak||voiceOn){talking=true;if(S)render();await say(r.reply);await new Promise(r=>setTimeout(r,350));talking=false;}}
+  try{const r=await (await api('/api/chat',{json:{message:text,attachments:atts.map(a=>a.id)}})).json();clearInterval(liveT);await loadChat();await tick();if(S&&S.approvals.length)$('chatwait').scrollIntoView({block:'nearest'});if(r.brief)showBrief(r.brief,true);if(r.map)showMap(r.map);if(r.image)showImage(r.image);replyPop(text,r);if(r.show)go(r.show);if(speak||voiceOn){talking=true;if(S)render();await say(r.reply);await new Promise(r=>setTimeout(r,350));talking=false;}}
   catch(e){$('chat').insertAdjacentHTML('beforeend',`<div class="assistant">${esc(e.message)}</div>`);}
   clearInterval(liveT);sending=false;tick();
 }
-$('talk').onsubmit=e=>{e.preventDefault();send($('say').value.trim(),false);};
+$('talk').onsubmit=e=>{e.preventDefault();
+  if(PEND.some(a=>!a.id&&!a.err)){$('say').placeholder='Still sending the file, one moment...';setTimeout(()=>$('say').placeholder='Tell Trillion what to do',2500);return;}
+  if(sending)return;
+  const ok=PEND.filter(a=>a.id);PEND.forEach(a=>a.url&&URL.revokeObjectURL(a.url));PEND=[];drawAtts();
+  send($('say').value.trim(),false,ok);};
 $('stop').onclick=()=>api('/api/stop',{method:'POST'});
 $('clear').onclick=async()=>{await api('/api/messages/clear',{method:'POST'});loadChat();};
 

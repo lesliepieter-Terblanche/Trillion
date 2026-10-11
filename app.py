@@ -12,6 +12,7 @@ import phone
 import routines
 import tools
 import video
+import attach
 
 core.init()
 for _u in core.q("SELECT * FROM users WHERE is_admin=1"):   # the owner asked for this; the other logins choose for themselves
@@ -24,6 +25,7 @@ for _u in core.q("SELECT * FROM users WHERE is_admin=1"):   # the owner asked fo
         core.save_settings(_u["id"], _raw)
 extend.init()
 video.init()
+attach.init()
 routines.init()
 app = FastAPI(title="Trillion")
 COOKIE = "trillion"
@@ -528,12 +530,14 @@ def update_reply(res):
             "I am restarting now and will be back in a few seconds.")
 
 
-def run_agent(user, text):
+def run_agent(user, text, files=None):
     uid = user["id"]
+    files = files or []
     BUSY[uid] = True
     STOP.discard(uid)
     tid = core.add_task(uid, text)
-    core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "user", text, time.time()))
+    core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)",
+           (uid, "user", text + "".join(attach.marker(f) for f in files), time.time()))
     core.log(uid, f'Heard: "{text[:140]}"', "voice")
     wm = WAKE_RE.search(text) if len(text) < 80 else None
     if wm:
@@ -697,16 +701,26 @@ def run_agent(user, text):
         return {"reply": reply, "task_id": tid, "provider": "FreeVideo", "show": "" if "error" in res else "videos"}
     if VIDEO_RE.search(text) and not asking:  # a long job with fixed steps: run it directly
         try:
-            res = tools.execute(user, "create_video", video_request(text), task_id=tid)
+            media = [f["path"] for f in files if f["kind"] in ("image", "video")]
+            res = tools.execute(user, "create_video", dict(video_request(text), media=media), task_id=tid)
         finally:
             BUSY[uid] = False
         reply = video_reply(res)
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="failed" if "error" in res else "completed", detail=reply[:200])
         return {"reply": reply, "task_id": tid, "provider": LAST_PROVIDER.get(uid, "local")}
-    hist = core.q("SELECT role, content FROM messages WHERE user_id=? ORDER BY id DESC LIMIT 12", (uid,))[::-1]
+    hist = [{"role": h["role"], "content": attach.for_brain(h["content"])} for h in
+            core.q("SELECT role, content FROM messages WHERE user_id=? ORDER BY id DESC LIMIT 12", (uid,))[::-1]]
+    file_notes = []
+    if files:                                   # read, listen to or look at what was attached, for this turn only
+        try:
+            seen, file_notes = attach.digest(files, hear=transcribe, say=lambda t_: core.set_task(tid, detail=t_))
+        except Exception:
+            seen, file_notes = "The user attached files, but they could not be opened.", ["I could not open the attached files."]
+        if hist and hist[-1]["role"] == "user":
+            hist[-1]["content"] = text + "\n\n" + seen
     specs = tools_for(user, text)
-    fast = bool(core.settings(user).get("fast_answers", True)) and not NEEDS_TOOLS.search(text) and len(text) < 400
+    fast = bool(core.settings(user).get("fast_answers", True)) and not NEEDS_TOOLS.search(text) and len(text) < 400 and not files
     if fast:
         specs = None
     LIVE.pop(uid, None)
@@ -755,6 +769,8 @@ def run_agent(user, text):
                  "send a WhatsApp to Sarie saying I am running late." if PHONE_WORDS.search(text) else
                  "I did not do that: nothing is waiting for approval. Tell me again in other words and I will try properly.")
         status = "failed"
+    if file_notes:
+        reply = (reply + "\n\n" + " ".join(file_notes)).strip()
     core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
     core.set_task(tid, status="waiting" if waiting and status == "completed" else status, detail=reply[:200])
     core.log(uid, f"Answered by {LAST_PROVIDER.get(uid, 'local')}", "info")
@@ -764,11 +780,49 @@ def run_agent(user, text):
 @app.post("/api/chat")
 def chat(p: dict = Body(...), user=Depends(auth)):
     text = (p.get("message") or "").strip()
+    files = [f for f in (attach.get(user, i) for i in (p.get("attachments") or [])[:12] if str(i).isdigit()) if f]
+    if not text and files:
+        text = "Here " + ("is a file." if len(files) == 1 else f"are {len(files)} files.")
     if not text:
         raise HTTPException(400, "Nothing to do")
     if BUSY.get(user["id"]):
         raise HTTPException(409, "Still busy with the previous job")
-    return run_agent(user, text[:4000])
+    return run_agent(user, text[:4000], files)
+
+
+# ---------- files and media handed over in the conversation ----------
+@app.post("/api/upload")
+async def upload(request: Request, name: str = "file", user=Depends(auth)):
+    """The file itself is the body of the request, so big videos are written straight to disk as they arrive."""
+    path = attach.new_path(user, name)
+    size = 0
+    try:
+        with open(path, "wb") as f:
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > attach.MAX_BYTES:
+                    raise HTTPException(413, f"That file is larger than {attach.MAX_BYTES // 1024 ** 3} GB.")
+                f.write(chunk)
+        if not size:
+            raise HTTPException(400, "The file arrived empty.")
+    except BaseException:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+        raise
+    f = attach.record(user, path)
+    core.log(user["id"], f"Received {f['name']}", "done")
+    return {k: f[k] for k in ("id", "name", "kind", "size")}
+
+
+@app.get("/api/uploads/{fid}/file")
+def upload_file(fid: int, user=Depends(auth)):
+    import os, mimetypes
+    f = attach.get(user, fid)
+    if not f or not os.path.exists(f["path"]):
+        raise HTTPException(404, "That file is no longer there")
+    return FileResponse(f["path"], media_type=mimetypes.guess_type(f["name"])[0] or "application/octet-stream", filename=f["name"])
 
 
 @app.post("/api/stop")

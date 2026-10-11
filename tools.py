@@ -612,12 +612,12 @@ def t_create_image(user, prompt, shape="square"):
 
 
 # ---------- video ----------
-def t_create_video(user, prompt, seconds=20, format="vertical", voiceover=True, _task=None):
+def t_create_video(user, prompt, seconds=20, format="vertical", voiceover=True, _task=None, media=None):
     import video
     fmt = str(format or "vertical").lower()
     fmt = "landscape" if fmt in ("landscape", "horizontal", "wide", "youtube") else ("square" if fmt == "square" else "vertical")
     say = (lambda text: core.set_task(_task, detail=text)) if _task else None
-    return video.create(core.LLM, user, prompt, seconds, fmt, bool(voiceover), progress=say)
+    return video.create(core.LLM, user, prompt, seconds, fmt, bool(voiceover), progress=say, media=media)
 
 
 def t_create_ai_clip(user, prompt, seconds=5, format="vertical", _task=None):

@@ -14,7 +14,7 @@ import core
 import glob, math, os, random, shutil, subprocess
 from pathlib import Path
 
-from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 SIZES = {"vertical": (1080, 1920), "square": (1080, 1080), "landscape": (1920, 1080)}
 FPS = 30
@@ -621,7 +621,7 @@ def render(out_path, brand, scenes, website="", accent="#ffb454", fmt="vertical"
 
 
 # ---------- 5. the whole job ----------
-def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progress=None):
+def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progress=None, media=None):
     init()
     s = core.settings(user)
     uid = user["id"]
@@ -630,6 +630,9 @@ def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progre
     w, h = SIZES[fmt]
     say = progress or (lambda text: None)
     n_scenes = max(2, min(8, round((seconds - END_LEN) / 4.2)))
+    # the person's own photos and clips, handed over in the conversation: one scene each, in the order given
+    own = [m for m in (media or []) if os.path.exists(m) and m.lower().endswith(IMAGE_EXT + (".gif", ".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi", ".3gp"))][:8]
+    n_scenes = max(n_scenes, len(own))
     el_key = core.get_secret(uid, "elevenlabs") if voiceover else None
     px_key = core.get_secret(uid, "pexels")
     pb_key = core.get_secret(uid, "pixabay")
@@ -664,8 +667,28 @@ def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progre
 
     credits, used = [], set()
     per = (seconds - END_LEN) / len(p["scenes"])
+    mine = 0
+    for sc, m in zip(p["scenes"], own):
+        if m.lower().endswith(IMAGE_EXT + (".gif",)):
+            try:
+                with Image.open(m) as im:               # phone photos are often stored sideways with a note saying which way is up
+                    fixed = CACHE / f"own-{uid}-{abs(hash(m)) % 10 ** 10}.jpg"
+                    ImageOps.exif_transpose(im).convert("RGB").save(fixed, "JPEG", quality=92)
+                sc["image"] = str(fixed)
+                mine += 1
+            except Exception:
+                notes.append(f"I could not open {os.path.basename(m)}, so that scene uses other footage.")
+        elif media_seconds(m):
+            sc["clip"] = m
+            mine += 1
+        else:
+            notes.append(f"I could not play {os.path.basename(m)}, so that scene uses other footage.")
+    if mine:
+        notes.append(f"{mine} scene{'s' if mine != 1 else ''} use{'s' if mine == 1 else ''} your own photo{'s' if mine != 1 else ''} or clip{'s' if mine != 1 else ''}.")
     if stock_key:
         for i, sc in enumerate(p["scenes"]):
+            if sc.get("clip") or sc.get("image"):
+                continue
             say(f"Finding footage {i + 1} of {len(p['scenes'])}")
             clip, who = find_clip(stock_key, sc["search"], w, h, per, used)
             if clip:
@@ -676,7 +699,7 @@ def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progre
                     if clip2:
                         sc["clip2"] = clip2
                         credits.append(who2)
-    bare = [sc for sc in p["scenes"] if not sc.get("clip")]
+    bare = [sc for sc in p["scenes"] if not sc.get("clip") and not sc.get("image")]
     made = 0
     if bare and s.get("video_ai_images", True):
         for i, sc in enumerate(bare):
