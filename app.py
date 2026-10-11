@@ -23,6 +23,18 @@ for _u in core.q("SELECT * FROM users WHERE is_admin=1"):   # the owner asked fo
     if not _raw.get("wa_auto_set"):
         _raw["whatsapp_auto_contacts"] = _raw["wa_auto_set"] = True
         core.save_settings(_u["id"], _raw)
+# 0.7.18: Brandon's own health tracker sits on his home screen. Only the address is set here; its login code is typed
+# once into his own login and kept encrypted on this PC, never in the program's files.
+for _u in core.q("SELECT * FROM users WHERE lower(name)='brandon'"):
+    try:
+        _raw = json.loads(_u["settings"] or "{}")
+    except Exception:
+        _raw = {}
+    if not _raw.get("links_health_set"):
+        _raw["links"] = [l for l in (_raw.get("links") or []) if l.get("id") != "health"] + [
+            {"id": "health", "name": "Health tracker", "url": "https://vapeessence.co.za/health-tracker"}]
+        _raw["links_health_set"] = True
+        core.save_settings(_u["id"], _raw)
 extend.init()
 video.init()
 attach.init()
@@ -499,6 +511,22 @@ def aiclip_reply(res):
             f"It is on the Videos page and saved at {res['saved']}. " + " ".join(res.get("notes", []))).strip()
 
 
+def my_links(user):
+    return [l for l in (core.settings(user).get("links") or []) if isinstance(l, dict) and l.get("id") and l.get("url")]
+
+
+def my_link(user, text):
+    """'open my health tracker': one of this login's own saved links, asked for by name."""
+    if len(text) > 120 or not re.search(r"\b(open|show|launch|go to|take me to|bring up|start)\b", text, re.I):
+        return None
+    low = re.sub(r"[^a-z0-9 ]", " ", text.lower())
+    for l in my_links(user):
+        name = re.sub(r"[^a-z0-9 ]", " ", str(l.get("name", "")).lower()).strip()
+        if name and re.search(r"\b" + re.escape(name) + r"\b", low):
+            return l
+    return None
+
+
 def video_request(text):
     m = re.search(r"(\d{1,2})[\s-]*(seconds?|secs?|s)\b", text, re.I)
     low = text.lower()
@@ -669,6 +697,13 @@ def run_agent(user, text, files=None):
         if ok:
             out["image"] = {"url": "/api/images/" + res["file"], "title": want[:80], "saved": res["saved"]}
         return out
+    lk = my_link(user, text)
+    if lk:
+        reply = f"Here is your {lk['name']}. Press the button to open it."
+        BUSY[uid] = False
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="completed", detail=reply[:200])
+        return {"reply": reply, "task_id": tid, "provider": "built-in", "link": lk["id"]}
     if OPEN_VIDEO_RE.search(text) and not VIDEO_RE.search(text):
         import os
         v = core.q("SELECT * FROM videos WHERE user_id=? ORDER BY id DESC LIMIT 1", (uid,), one=True)
@@ -788,6 +823,63 @@ def chat(p: dict = Body(...), user=Depends(auth)):
     if BUSY.get(user["id"]):
         raise HTTPException(409, "Still busy with the previous job")
     return run_agent(user, text[:4000], files)
+
+
+# ---------- this login's own links (a tracker, a portal), each with an optional login code kept encrypted ----------
+def _link_view(user, l):
+    return {"id": l["id"], "name": l.get("name", ""), "url": l["url"],
+            "has_code": bool(core.get_secret(user["id"], "link:" + l["id"]))}
+
+
+@app.get("/api/links")
+def links_list(user=Depends(auth)):
+    return [_link_view(user, l) for l in my_links(user)]
+
+
+@app.post("/api/links")
+def links_save(p: dict = Body(...), user=Depends(auth)):
+    s = core.settings(user)
+    links = [l for l in (s.get("links") or []) if isinstance(l, dict) and l.get("id")]
+    lid = str(p.get("id") or "")
+    cur = next((l for l in links if l["id"] == lid), None)
+    name = str(p.get("name") or (cur or {}).get("name") or "").strip()[:40]
+    url = str(p.get("url") or (cur or {}).get("url") or "").strip()[:500]
+    if not name:
+        raise HTTPException(400, "Give the link a name.")
+    if not re.match(r"https?://[\w.-]+", url, re.I):
+        raise HTTPException(400, "The address must start with https://")
+    if not cur:
+        if len(links) >= 12:
+            raise HTTPException(400, "That is the most links one login can have. Remove one first.")
+        lid = "l" + format(int(time.time() * 1000), "x")
+        cur = {"id": lid}
+        links.append(cur)
+    cur["name"], cur["url"] = name, url
+    s["links"] = links
+    core.save_settings(user["id"], s)
+    if "code" in p:
+        code = str(p.get("code") or "").strip()[:200]
+        if code:
+            core.set_secret(user["id"], "link:" + lid, code)
+        else:
+            core.x("DELETE FROM secrets WHERE user_id=? AND name=?", (user["id"], "link:" + lid))
+    return _link_view(user, cur)
+
+
+@app.get("/api/links/{lid}/code")
+def links_code(lid: str, user=Depends(auth)):
+    if not any(l["id"] == lid for l in my_links(user)):
+        raise HTTPException(404, "No such link")
+    return {"code": core.get_secret(user["id"], "link:" + lid) or ""}
+
+
+@app.delete("/api/links/{lid}")
+def links_delete(lid: str, user=Depends(auth)):
+    s = core.settings(user)
+    s["links"] = [l for l in (s.get("links") or []) if isinstance(l, dict) and l.get("id") != lid]
+    core.save_settings(user["id"], s)
+    core.x("DELETE FROM secrets WHERE user_id=? AND name=?", (user["id"], "link:" + lid))
+    return {"ok": True}
 
 
 # ---------- files and media handed over in the conversation ----------

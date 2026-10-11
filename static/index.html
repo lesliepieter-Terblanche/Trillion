@@ -106,6 +106,7 @@ footer.status{background:var(--bar);border-top:1px solid var(--line);padding:10p
 .talk form{max-width:1100px;margin:0 auto;display:flex;gap:10px}
 .talk input{flex:1;min-width:0;min-height:50px;background:var(--panel);border:1px solid var(--edge);padding:0 16px;font-size:16px}
 .talk button{min-height:50px;min-width:50px;border:1px solid var(--edge);background:var(--panel);font-weight:700;padding:0 16px}
+.qa button.lk{border-color:var(--a);color:var(--a);font-weight:700}
 .talk button.addf{font-size:26px;line-height:1;padding:0;font-weight:400}
 body{padding-bottom:var(--attpad,0px)}
 .talk.drop{outline:2px dashed var(--a);outline-offset:-4px}
@@ -568,6 +569,16 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
       <div id="qapick" class="grid2" style="gap:4px 16px"></div>
       <div><button class="btn pri" id="qasave">SAVE HOME BUTTONS</button> <span class="msg" id="smsg-home"></span></div>
   </div></div>
+  <div class="setsec" data-sec="home"><div class="panel"><b>My links</b>
+      <div class="muted">Your own pages, such as a tracker or a portal. Each becomes a button on your home screen, here and on your phone. A login code is kept encrypted on this PC and only this login can see it.</div>
+      <div id="lklist"></div>
+      <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
+        <label class="field" style="flex:1;min-width:150px"><span>Name</span><input id="lkname" placeholder="Health tracker"></label>
+        <label class="field" style="flex:2;min-width:200px"><span>Address</span><input id="lkurl" placeholder="https://"></label>
+        <label class="field" style="width:140px"><span>Login code (optional)</span><input id="lkcodein" type="password" autocomplete="off"></label>
+        <button class="btn pri" id="lkadd">ADD LINK</button></div>
+      <span class="msg" id="lkmsg2"></span>
+  </div></div>
   <div class="setsec" data-sec="keys">
     <div class="muted">Keys are encrypted on this PC and only this login can use them. Each key has its own SAVE button.</div>
     <div class="grid2" id="keys"></div>
@@ -814,7 +825,7 @@ async function send(text,speak,atts){
   $('chat').insertAdjacentHTML('beforeend',`<div class="user">${withFiles(text+atts.map(a=>`\n[[file:${a.id}:${a.name.replace(/[\]:]/g,'-')}:${a.kind}]]`).join(''))}</div>`);$('chat').scrollTop=1e9;
   $('kicker').textContent='NOW WORKING';$('big').textContent='Thinking';$('sub').textContent=text;
   const liveT=setInterval(async()=>{try{const l=await (await fetch('/api/live')).json();if(l.text){let b=$('livebub');if(!b){$('chat').insertAdjacentHTML('beforeend','<div class="assistant" id="livebub"></div>');b=$('livebub');}b.textContent=l.text+' ▍';$('chat').scrollTop=1e9;$('big').textContent='Answering';}}catch(e){}},350);
-  try{const r=await (await api('/api/chat',{json:{message:text,attachments:atts.map(a=>a.id)}})).json();clearInterval(liveT);await loadChat();await tick();if(S&&S.approvals.length)$('chatwait').scrollIntoView({block:'nearest'});if(r.brief)showBrief(r.brief,true);if(r.map)showMap(r.map);if(r.image)showImage(r.image);replyPop(text,r);if(r.show)go(r.show);if(speak||voiceOn){talking=true;if(S)render();await say(r.reply);await new Promise(r=>setTimeout(r,350));talking=false;}}
+  try{const r=await (await api('/api/chat',{json:{message:text,attachments:atts.map(a=>a.id)}})).json();clearInterval(liveT);await loadChat();await tick();if(S&&S.approvals.length)$('chatwait').scrollIntoView({block:'nearest'});if(r.brief)showBrief(r.brief,true);if(r.map)showMap(r.map);if(r.image)showImage(r.image);if(r.link)showLink(r.link);else replyPop(text,r);if(r.show)go(r.show);if(speak||voiceOn){talking=true;if(S)render();await say(r.reply);await new Promise(r=>setTimeout(r,350));talking=false;}}
   catch(e){$('chat').insertAdjacentHTML('beforeend',`<div class="assistant">${esc(e.message)}</div>`);}
   clearInterval(liveT);sending=false;tick();
 }
@@ -1095,6 +1106,7 @@ function drawThemes(){const cur=(S.user.settings.theme||'night');
 const SECF={look:['assistant_name','personality','brand','site','accent'],brain:['brain','local_model','cloud_model','voice','eleven_voice_id']};
 async function loadSettings(){
   if(!S)return;const s=S.user.settings;$('setver').textContent='Trillion version '+S.version;SK.forEach(k=>$('s-'+k).value=s[k]??'');$('s-daily_review').checked=!!s.daily_review;$('s-fast_answers').checked=s.fast_answers!==false;$('s-wake_word').checked=!!s.wake_word;$('wakeex').textContent=s.assistant_name||'Trillion';drawThemes();
+  drawLinks();
   const on=s.quick_actions||[];$('qapick').innerHTML=Object.keys(QA).map(k=>`<label class="tickrow" style="align-items:center"><input type="checkbox" data-qa="${k}" ${on.includes(k)?'checked':''}><span>${esc(QA[k].label)}</span></label>`).join('');
   const ks=await (await api('/api/secrets')).json();
   $('keys').innerHTML=ks.map(k=>`<div class="panel"><b>${LABEL[k.name]}</b><div class="${k.set?(k.enabled?'ok':'muted'):'muted'}">${k.set?(k.enabled?'Saved and on '+esc(k.hint):'Saved, switched off '+esc(k.hint)):'Not added'}</div>
@@ -1116,7 +1128,7 @@ $('phsave').onclick=async()=>{const m=$('phsmsg');try{await api('/api/settings',
 async function runHere(text,m){
   if(sending){m.className='msg';m.textContent='She is busy with something else. Try again in a moment.';return;}
   sending=true;m.className='msg';m.textContent='Working...';
-  try{const r=await (await api('/api/chat',{json:{message:text}})).json();m.innerHTML=linkify(r.reply);if(r.map)showMap(r.map);if(r.brief)showBrief(r.brief,true);await tick();replyPop(text,r);m.className='msg '+(/^(i could not|i did not|there is no|the phone is|full phone control is switched off)/i.test(r.reply)?'bad':'ok');if(r.show)go(r.show);if(voiceOn){talking=true;await say(r.reply);talking=false;}}
+  try{const r=await (await api('/api/chat',{json:{message:text}})).json();m.innerHTML=linkify(r.reply);if(r.map)showMap(r.map);if(r.brief)showBrief(r.brief,true);await tick();if(r.link)showLink(r.link);else replyPop(text,r);m.className='msg '+(/^(i could not|i did not|there is no|the phone is|full phone control is switched off)/i.test(r.reply)?'bad':'ok');if(r.show)go(r.show);if(voiceOn){talking=true;await say(r.reply);talking=false;}}
   catch(e){m.className='msg bad';m.textContent=e.message;}
   sending=false;loadChat();tick();
 }
@@ -1153,8 +1165,35 @@ async function loadContacts(m,fresh){
 }
 function drawQA(){
   if(!S)return;const on=(S.user.settings.quick_actions||[]).filter(k=>QA[k]);
-  $('qa').innerHTML=on.map(k=>`<button type="button" data-q="${k}">${esc(QA[k].label)}</button>`).join('')+`<button type="button" data-go="commands" style="color:var(--dim)">All commands</button>`;
+  $('qa').innerHTML=(S.user.settings.links||[]).filter(l=>l&&l.id&&l.url).map(l=>`<button type="button" class="lk" data-lk="${esc(l.id)}">${esc(l.name)}</button>`).join('')+on.map(k=>`<button type="button" data-q="${k}">${esc(QA[k].label)}</button>`).join('')+`<button type="button" data-go="commands" style="color:var(--dim)">All commands</button>`;
   $('qa').querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>qaClick(b.dataset.q,b));
+  $('qa').querySelectorAll('[data-lk]').forEach(b=>b.onclick=()=>showLink(b.dataset.lk));
+}
+// ---- this login's own links: a big button to open it, and its login code if one is saved ----
+async function showLink(id){
+  let l;try{l=(await (await api('/api/links')).json()).find(x=>x.id===id);}catch(e){}
+  if(!l)return;
+  popup({kicker:'YOUR LINK',title:l.name,sub:l.url.replace(/^https?:\/\//,''),narrow:true,
+    html:`<div style="display:flex;flex-direction:column;gap:16px;align-items:flex-start">
+      <a class="btn pri" href="${esc(l.url)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;text-decoration:none;min-height:54px;font-size:16px;padding:0 22px">OPEN ${esc(l.name.toUpperCase())}</a>
+      <div class="muted">It opens in its own tab.</div>
+      ${l.has_code?`<div class="panel" style="width:100%"><b>Login code</b><div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span id="lkcode" style="font-family:var(--mono);font-size:26px;letter-spacing:.3em">&bull;&bull;&bull;&bull;</span><button class="btn" id="lkshow">SHOW</button><button class="btn" id="lkcopy">COPY</button><span class="msg" id="lkmsg"></span></div><div class="muted" style="font-size:13px">Kept encrypted on the Trillion PC. Only this login can see it.</div></div>`
+        :`<div class="muted">No login code saved for this link. Add one under Settings, Home, My links.</div>`}</div>`});
+  if(!l.has_code)return;
+  const code=async()=>(await (await api('/api/links/'+id+'/code')).json()).code;
+  $('lkshow').onclick=async()=>{const el=$('lkcode');if(el.dataset.on){el.innerHTML='&bull;&bull;&bull;&bull;';delete el.dataset.on;$('lkshow').textContent='SHOW';}else{el.textContent=await code();el.dataset.on='1';$('lkshow').textContent='HIDE';}};
+  $('lkcopy').onclick=async()=>{try{await navigator.clipboard.writeText(await code());$('lkmsg').textContent='Copied.';}catch(e){$('lkmsg').textContent='Could not copy here: press SHOW and type it.';}};
+}
+async function drawLinks(){
+  let ls=[];try{ls=await (await api('/api/links')).json();}catch(e){}
+  $('lklist').innerHTML=ls.map(l=>`<div class="row" style="flex-wrap:wrap;gap:10px"><div style="min-width:160px;flex:1">${esc(l.name)}<small>${esc(l.url)} &middot; ${l.has_code?'login code saved':'no login code'}</small></div>
+    <input data-lc="${esc(l.id)}" type="password" inputmode="numeric" autocomplete="off" placeholder="${l.has_code?'New code':'Login code'}" style="width:130px;min-height:40px;background:var(--panel);border:1px solid var(--edge);padding:0 10px">
+    <button class="btn" data-ls="${esc(l.id)}" style="min-height:40px">SAVE CODE</button><button class="btn" data-ld="${esc(l.id)}" style="min-height:40px">REMOVE</button></div>`).join('')||'<div class="muted">No links yet.</div>';
+  const done=async m=>{$('lkmsg2').className='msg ok';$('lkmsg2').textContent=m;await tick();drawQA();drawLinks();};
+  const bad=e=>{$('lkmsg2').className='msg bad';$('lkmsg2').textContent=e.message;};
+  document.querySelectorAll('[data-ls]').forEach(b=>b.onclick=async()=>{try{await api('/api/links',{json:{id:b.dataset.ls,code:document.querySelector(`[data-lc="${b.dataset.ls}"]`).value}});done('Saved.');}catch(e){bad(e);}});
+  document.querySelectorAll('[data-ld]').forEach(b=>b.onclick=async()=>{try{await api('/api/links/'+b.dataset.ld,{method:'DELETE'});done('Removed.');}catch(e){bad(e);}});
+  $('lkadd').onclick=async()=>{try{await api('/api/links',{json:{name:$('lkname').value,url:$('lkurl').value,code:$('lkcodein').value}});$('lkname').value=$('lkurl').value=$('lkcodein').value='';done('Added. It is now a button on your home screen.');}catch(e){bad(e);}};
 }
 function qaClick(k,b){
   const q=QA[k],f=$('qaform');$('qa').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b&&!!q.fields));
