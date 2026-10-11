@@ -106,6 +106,12 @@ footer.status{background:var(--bar);border-top:1px solid var(--line);padding:10p
 .talk form{max-width:1100px;margin:0 auto;display:flex;gap:10px}
 .talk input{flex:1;min-width:0;min-height:50px;background:var(--panel);border:1px solid var(--edge);padding:0 16px;font-size:16px}
 .talk button{min-height:50px;min-width:50px;border:1px solid var(--edge);background:var(--panel);font-weight:700;padding:0 16px}
+.wv{display:flex;flex-direction:column;gap:12px}
+.wvpic{background:#000;border:1px solid var(--edge);border-radius:8px;overflow:hidden;align-self:flex-start;max-width:100%;line-height:0}
+.wvpic img{max-width:100%;height:auto;cursor:pointer;display:block;touch-action:manipulation;-webkit-user-select:none;user-select:none}
+.wvbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.wvbar .btn{min-height:44px;min-width:44px;padding:0 12px}
+.wvbar input{flex:1;min-width:140px;min-height:44px;background:var(--panel);border:1px solid var(--edge);padding:0 12px;font-size:16px;border-radius:6px}
 .qa button.lk{border-color:var(--a);color:var(--a);font-weight:700}
 .talk button.addf{font-size:26px;line-height:1;padding:0;font-weight:400}
 body{padding-bottom:var(--attpad,0px)}
@@ -1170,19 +1176,39 @@ function drawQA(){
   $('qa').querySelectorAll('[data-lk]').forEach(b=>b.onclick=()=>showLink(b.dataset.lk));
 }
 // ---- this login's own links: a big button to open it, and its login code if one is saved ----
+let WV=null;   // the link being shown: {id,timer,busy}
 async function showLink(id){
   let l;try{l=(await (await api('/api/links')).json()).find(x=>x.id===id);}catch(e){}
   if(!l)return;
-  popup({kicker:'YOUR LINK',title:l.name,sub:l.url.replace(/^https?:\/\//,''),narrow:true,
-    html:`<div style="display:flex;flex-direction:column;gap:16px;align-items:flex-start">
-      <a class="btn pri" href="${esc(l.url)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;text-decoration:none;min-height:54px;font-size:16px;padding:0 22px">OPEN ${esc(l.name.toUpperCase())}</a>
-      <div class="muted">It opens in its own tab.</div>
-      ${l.has_code?`<div class="panel" style="width:100%"><b>Login code</b><div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span id="lkcode" style="font-family:var(--mono);font-size:26px;letter-spacing:.3em">&bull;&bull;&bull;&bull;</span><button class="btn" id="lkshow">SHOW</button><button class="btn" id="lkcopy">COPY</button><span class="msg" id="lkmsg"></span></div><div class="muted" style="font-size:13px">Kept encrypted on the Trillion PC. Only this login can see it.</div></div>`
-        :`<div class="muted">No login code saved for this link. Add one under Settings, Home, My links.</div>`}</div>`});
-  if(!l.has_code)return;
-  const code=async()=>(await (await api('/api/links/'+id+'/code')).json()).code;
-  $('lkshow').onclick=async()=>{const el=$('lkcode');if(el.dataset.on){el.innerHTML='&bull;&bull;&bull;&bull;';delete el.dataset.on;$('lkshow').textContent='SHOW';}else{el.textContent=await code();el.dataset.on='1';$('lkshow').textContent='HIDE';}};
-  $('lkcopy').onclick=async()=>{try{await navigator.clipboard.writeText(await code());$('lkmsg').textContent='Copied.';}catch(e){$('lkmsg').textContent='Could not copy here: press SHOW and type it.';}};
+  const ph=!wide(),w=ph?Math.min(430,innerWidth-36):Math.min(1040,innerWidth-120),h=ph?Math.round(Math.min(760,innerHeight*0.62)):Math.round(Math.min(700,innerHeight-330));
+  popup({kicker:'YOUR LINK',title:l.name,sub:'Opened for you on the Trillion PC. Click or tap the picture to use the page.',
+    onclose:()=>{if(WV){clearInterval(WV.timer);WV=null;}},
+    html:`<div class="wv">
+      <div class="msg" id="wvmsg">Opening the page on the PC...</div>
+      <div id="wvcode" hidden class="panel"><b>Login code</b><div class="muted" style="font-size:13px">Type it once. It is kept encrypted on the Trillion PC, only for this login, and I enter it for you from then on.</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap"><input id="wvpin" type="password" inputmode="numeric" autocomplete="off" placeholder="Login code" style="width:160px;min-height:46px;background:var(--panel);border:1px solid var(--edge);padding:0 12px;font-size:18px"><button class="btn pri" id="wvsave">SAVE AND UNLOCK</button></div></div>
+      <div class="wvpic"><img id="wvimg" alt="${esc(l.name)}" width="${w}" height="${h}" draggable="false"></div>
+      <div class="wvbar"><button class="btn" data-wv="scroll" data-dy="-500" aria-label="Scroll up">&#9650;</button><button class="btn" data-wv="scroll" data-dy="500" aria-label="Scroll down">&#9660;</button><button class="btn" data-wv="back">BACK</button><button class="btn" data-wv="reload">RELOAD</button>
+        <input id="wvtype" placeholder="Type into the page" autocomplete="off" aria-label="Words to type into the page"><button class="btn" id="wvsend">TYPE</button><button class="btn" data-wv="key" data-key="Backspace" aria-label="Delete a letter">&#9003;</button><button class="btn" data-wv="key" data-key="Enter">ENTER</button></div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center"><button class="btn" id="wvtextb">SHOW THE WORDS ON THIS PAGE</button><a href="${esc(l.url)}" target="_blank" rel="noopener" class="muted">Open in its own tab instead</a></div>
+      <pre id="wvtext" hidden style="white-space:pre-wrap;font-family:inherit;font-size:15px;line-height:1.5;margin:0;padding:14px;border:1px solid var(--edge);max-height:50vh;overflow:auto"></pre></div>`});
+  const me=WV={id,timer:0,busy:false},msg=m=>{if($('wvmsg'))$('wvmsg').textContent=m;};
+  const state=s=>{if(WV!==me||!$('wvmsg'))return;$('wvcode').hidden=!(s.state==='locked'&&!s.has_code)&&s.state!=='refused';
+    $('wvmsg').className='msg '+(s.state==='unlocked'?'ok':s.state==='refused'?'bad':'');msg(s.note||'');};
+  const shot=async()=>{if(WV!==me||me.busy||!$('wvimg'))return;me.busy=true;
+    try{const r=await fetch('/api/web/'+id+'/shot');if(r.status===409){await open();}else if(r.ok){const u=URL.createObjectURL(await r.blob()),im=$('wvimg');if(im){const old=im.src;im.src=u;if(old.startsWith('blob:'))setTimeout(()=>URL.revokeObjectURL(old),500);}
+        const st=r.headers.get('X-State');if(st!==me.st){me.st=st;state(await (await api('/api/web/'+id+'/state')).json());}}
+      else{let d='';try{d=(await r.json()).detail;}catch(e){}msg(d||'The page is not answering.');}}catch(e){}me.busy=false;};
+  const open=async()=>{try{const s=await (await api('/api/web/'+id+'/open',{json:{w,h}})).json();me.st=s.state;state(s);return true;}catch(e){msg(e.message);if($('wvmsg'))$('wvmsg').className='msg bad';return false;}};
+  const act=async o=>{try{state(await (await api('/api/web/'+id+'/do',{json:o})).json());}catch(e){msg(e.message);}me.busy=false;shot();};
+  $('wvimg').onclick=e=>{const r=e.target.getBoundingClientRect();act({kind:'tap',x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height});};
+  document.querySelectorAll('[data-wv]').forEach(b=>b.onclick=()=>act({kind:b.dataset.wv,dy:+b.dataset.dy||0,key:b.dataset.key}));
+  const typeIt=()=>{const v=$('wvtype').value;if(v){$('wvtype').value='';act({kind:'type',text:v});}};
+  $('wvsend').onclick=typeIt;$('wvtype').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();typeIt();}};
+  $('wvsave').onclick=async()=>{const c=$('wvpin').value.trim();if(!c)return;try{await api('/api/links',{json:{id,code:c}});$('wvpin').value='';msg('Saved. Unlocking...');me.st='';shot();}catch(e){msg(e.message);}};
+  $('wvtextb').onclick=async()=>{const p=$('wvtext');if(!p.hidden){p.hidden=true;$('wvtextb').textContent='SHOW THE WORDS ON THIS PAGE';return;}
+    try{p.textContent=(await (await api('/api/web/'+id+'/text')).json()).text.trim()||'(no words on this page)';p.hidden=false;$('wvtextb').textContent='HIDE THE WORDS';}catch(e){msg(e.message);}};
+  if(await open()){await shot();me.timer=setInterval(shot,1500);}
 }
 async function drawLinks(){
   let ls=[];try{ls=await (await api('/api/links')).json();}catch(e){}

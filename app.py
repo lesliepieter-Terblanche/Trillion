@@ -882,6 +882,96 @@ def links_delete(lid: str, user=Depends(auth)):
     return {"ok": True}
 
 
+# ---------- a link opened by Trillion herself on this PC and shown in the dashboard (so she can type its login code) ----------
+def _web(user, lid, start=False, size=None):
+    import webview
+    l = next((x for x in my_links(user) if x["id"] == lid), None)
+    if not l:
+        raise HTTPException(404, "No such link")
+    s = webview.session(user, l, core.get_secret(user["id"], "link:" + lid) or "", start=start)
+    if not s:
+        raise HTTPException(409, "That page is not open. Open it again.")
+    if s.error and not s.alive:
+        raise HTTPException(503, s.error)
+    try:
+        if size:
+            s.call(lambda z: z.resize(*size))
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
+    return s
+
+
+def _web_do(s, fn):
+    try:
+        return s.call(fn)
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
+
+
+def _web_state(s):
+    return {"state": s.state, "error": s.error, "has_code": bool(s.code),
+            "note": {"unlocked": "Unlocked for you.", "locked": "This page is asking for its login code." if not s.code else
+                     "The page is locked and I could not find where to type the code.",
+                     "refused": "The page did not accept the saved login code. Check the code, then save it again."}.get(s.state, "")}
+
+
+@app.post("/api/web/{lid}/open")
+def web_open(lid: str, p: dict = Body(default={}), user=Depends(auth)):
+    s = _web(user, lid, start=True, size=(p.get("w") or 1100, p.get("h") or 720))
+    if s.error:
+        raise HTTPException(503, s.error)
+    return _web_state(s)
+
+
+@app.get("/api/web/{lid}/shot")
+def web_shot(lid: str, user=Depends(auth)):
+    s = _web(user, lid)
+    img = _web_do(s, lambda z: z.shot())
+    return Response(img, media_type="image/jpeg", headers={"Cache-Control": "no-store", "X-State": s.state})
+
+
+@app.get("/api/web/{lid}/state")
+def web_state(lid: str, user=Depends(auth)):
+    return _web_state(_web(user, lid))
+
+
+@app.post("/api/web/{lid}/do")
+def web_do(lid: str, p: dict = Body(...), user=Depends(auth)):
+    """One thing done to the page: a tap at a spot (0..1 across and down), typed words, a key, a scroll, back or reload."""
+    s = _web(user, lid)
+    kind = p.get("kind")
+    if kind == "tap":
+        x, y = max(0.0, min(1.0, float(p.get("x", 0)))), max(0.0, min(1.0, float(p.get("y", 0))))
+        _web_do(s, lambda z: (z.page.mouse.click(x * z.size[0], y * z.size[1]), z.page.wait_for_timeout(350)))
+    elif kind == "type":
+        words = str(p.get("text") or "")[:500]
+        _web_do(s, lambda z: z.page.keyboard.type(words, delay=20))
+    elif kind == "key" and p.get("key") in ("Enter", "Backspace", "Tab", "Escape"):
+        _web_do(s, lambda z: z.page.keyboard.press(p["key"]))
+    elif kind == "scroll":
+        dy = max(-2000, min(2000, int(p.get("dy", 400))))
+        _web_do(s, lambda z: (z.page.mouse.move(z.size[0] / 2, z.size[1] / 2), z.page.mouse.wheel(0, dy), z.page.wait_for_timeout(250)))
+    elif kind == "back":
+        _web_do(s, lambda z: z.page.go_back(timeout=15000))
+    elif kind == "reload":
+        _web_do(s, lambda z: (z.page.reload(timeout=30000), z.page.wait_for_timeout(1200)))
+    else:
+        raise HTTPException(400, "I do not know that action")
+    return _web_state(s)
+
+
+@app.get("/api/web/{lid}/text")
+def web_text(lid: str, user=Depends(auth)):
+    return {"text": _web_do(_web(user, lid), lambda z: z.text())}
+
+
+@app.post("/api/web/{lid}/close")
+def web_close(lid: str, user=Depends(auth)):
+    import webview
+    webview.close(user, lid)
+    return {"ok": True}
+
+
 # ---------- files and media handed over in the conversation ----------
 @app.post("/api/upload")
 async def upload(request: Request, name: str = "file", user=Depends(auth)):
