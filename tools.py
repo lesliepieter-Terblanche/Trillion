@@ -583,7 +583,7 @@ def t_phone_send_whatsapp(user, contact, message="", _name=None, files=None):
     return res
 
 
-def _gum(fn):
+def _gum(fn, user=None):
     import gumroad
     try:
         return fn(gumroad)
@@ -592,6 +592,8 @@ def _gum(fn):
 
 
 def t_gumroad_sales(user, period="today"):
+    if not core.settings(user).get("store_on"):
+        return {"error": "The Gumroad store is not switched on for this login."}
     period = {"7": "week", "30": "days30", "total": "all"}.get(str(period).lower(), str(period).lower())
     def go(g):
         try:
@@ -603,6 +605,8 @@ def t_gumroad_sales(user, period="today"):
 
 
 def t_gumroad_publish(user, product, published=True):
+    if not core.settings(user).get("store_on"):
+        return {"error": "The Gumroad store is not switched on for this login."}
     def go(g):
         p = g.find_product(user, product)
         g.set_published(user, p["id"], bool(published))
@@ -611,6 +615,8 @@ def t_gumroad_publish(user, product, published=True):
 
 
 def t_gumroad_discount_code(user, product, code="", percent=10):
+    if not core.settings(user).get("store_on"):
+        return {"error": "The Gumroad store is not switched on for this login."}
     def go(g):
         p = g.find_product(user, product)
         return {"ok": True, "product": p["name"], "code": g.create_code(user, p["id"], code or f"SAVE{int(percent)}", percent), "percent": percent}
@@ -618,6 +624,8 @@ def t_gumroad_discount_code(user, product, code="", percent=10):
 
 
 def t_gumroad_set_price(user, product, price, _name=None):
+    if not core.settings(user).get("store_on"):
+        return {"error": "The Gumroad store is not switched on for this login."}
     def go(g):
         p = g.find_product(user, product)
         g.update_product(user, p["id"], price_cents=int(round(float(price) * (1 if p["currency"] == "jpy" else 100))))
@@ -626,6 +634,8 @@ def t_gumroad_set_price(user, product, price, _name=None):
 
 
 def t_gumroad_refund(user, sale, _name=None):
+    if not core.settings(user).get("store_on"):
+        return {"error": "The Gumroad store is not switched on for this login."}
     def go(g):
         s_ = g.find_sale(user, sale)
         g.refund(user, s_["id"])

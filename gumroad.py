@@ -15,8 +15,17 @@ import httpx
 import core
 
 BASE = os.environ.get("TRILLION_GUMROAD", "https://api.gumroad.com/v2").rstrip("/")
+INFO = os.environ.get("TRILLION_GUMROAD_INFO", "https://gumroad.com/oauth/token/info")    # tells which permissions a token has
 SECRET = "gumroad_token"
-EVERY = int(os.environ.get("TRILLION_GUMROAD_EVERY", 5 * 60))        # seconds between checks in the background
+PART = 100 * 1024 * 1024                         # Gumroad takes a file in pieces of 100 MB
+# what each Gumroad permission lets Trillion do, in the order the Store page shows them
+PERMS = [("view_profile", "See your products", ("view_profile", "edit_products", "view_sales")),
+         ("view_sales", "See sales and buyers", ("view_sales",)),
+         ("view_payouts", "See payouts", ("view_payouts",)),
+         ("edit_products", "Create, change, publish and delete products, files and discount codes", ("edit_products",)),
+         ("edit_sales", "Refund sales and resend receipts", ("edit_sales", "refund_sales"))]
+CHOICES = {900: "every 15 minutes", 3600: "every hour", 86400: "once a day", 604800: "once a week"}   # how often to check for sales
+EVERY = 900
 LOOK_BACK = 45                                                       # days re-read on every check, so refunds show up
 MAX_PAGES = 400
 
@@ -51,10 +60,17 @@ def call(user, method, path, tok=None, **params):
     tok = tok or token(user)
     if not tok:
         raise GumroadError("Your Gumroad store is not connected yet. Connect it on the Store page.")
+    pairs = params.pop("_pairs", None)             # a list of (name, value) in order, for Gumroad's array parameters
     params = {k: ("true" if v is True else "false" if v is False else v) for k, v in params.items() if v is not None}
-    kw = {"params": params} if method == "GET" else {"data": params}
+    head = {"Authorization": "Bearer " + tok}
+    if pairs is not None:
+        from urllib.parse import urlencode
+        head["Content-Type"] = "application/x-www-form-urlencoded"
+        kw = {"content": urlencode(list(params.items()) + list(pairs))}
+    else:
+        kw = {"params": params} if method == "GET" else {"data": params}
     try:
-        r = httpx.request(method, BASE + path, headers={"Authorization": "Bearer " + tok}, timeout=40, **kw)
+        r = httpx.request(method, BASE + path, headers=head, timeout=60, **kw)
     except httpx.HTTPError as e:
         raise GumroadError("I could not reach Gumroad (" + type(e).__name__ + "). Check the internet connection.")
     try:
@@ -119,13 +135,57 @@ def connect(user, tok):
     core.x("DELETE FROM gumroad_sales WHERE user_id=?", (user["id"],))
     core.x("DELETE FROM gumroad_store WHERE user_id=?", (user["id"],))
     _save(user["id"], account={"name": me.get("name") or "", "email": me.get("email") or "", "url": me.get("url") or ""})
-    return sync(user)
+    new = sync(user)
+    try:
+        permissions(user)
+    except Exception:
+        pass
+    return new
 
 
 def disconnect(user):
     core.x("DELETE FROM secrets WHERE user_id=? AND name=?", (user["id"], SECRET))
     core.x("DELETE FROM gumroad_sales WHERE user_id=?", (user["id"],))
     core.x("DELETE FROM gumroad_store WHERE user_id=?", (user["id"],))
+
+
+# ---------- what the token may do ----------
+def permissions(user):
+    """Which of the things Trillion does this token is allowed to do. Asks Gumroad for the token's own list; if Gumroad
+    will not say, the reading permissions are found by trying them and the changing ones are marked as not known."""
+    tok = token(user)
+    if not tok:
+        raise GumroadError("Your Gumroad store is not connected yet.")
+    scopes, how = None, "tried"
+    try:
+        r = httpx.get(INFO, headers={"Authorization": "Bearer " + tok}, timeout=25)
+        j = r.json() if r.status_code == 200 else {}
+        got = j.get("scope") if "scope" in j else j.get("scopes")
+        if isinstance(got, str):
+            got = got.split()
+        if isinstance(got, list):
+            scopes, how = [str(x) for x in got], "gumroad"
+    except Exception:
+        pass
+    out = []
+    if scopes is not None:
+        for key, label, any_of in PERMS:
+            out.append({"key": key, "label": label, "ok": "account" in scopes or any(x in scopes for x in any_of)})
+    else:
+        def can(path):
+            try:
+                call(user, "GET", path)
+                return True
+            except GumroadError as e:
+                return False if "not allowed" in str(e) else None
+        tried = {"view_profile": can("/products"), "view_sales": can("/sales"), "view_payouts": can("/payouts")}
+        for key, label, _ in PERMS:
+            out.append({"key": key, "label": label, "ok": tried.get(key)})
+    res = {"list": out, "how": how, "when": time.time(), "scopes": scopes or []}
+    notes = _load(_store(user["id"])["notes"], {})
+    notes["perms"] = res
+    _save(user["id"], notes=notes)
+    return res
 
 
 # ---------- copying the store to this PC ----------
@@ -189,6 +249,9 @@ def sync(user, everything=False):
             if "not allowed" not in str(e):
                 raise
             notes["payouts"] = "The access token may not read payouts. Give the application the view_payouts permission on Gumroad."
+        old = _load(st["notes"], {})
+        if old.get("perms"):
+            notes["perms"] = old["perms"]
         _save(uid, synced=time.time(), error="", complete=1, notes=notes)
         if new and not first:
             for name, amount in names[:5]:
@@ -254,7 +317,8 @@ def overview(user, mark_seen=False):
     if mark_seen and new:
         core.x("UPDATE gumroad_sales SET seen=1 WHERE user_id=?", (uid,))
     return {"connected": True, "account": _load(st["account"], {}), "synced": st["synced"], "error": st["error"] or "",
-            "notes": _load(st["notes"], {}), "currency": main,
+            "every": every(user), "every_words": CHOICES[every(user)],
+            "notes": {k: v for k, v in _load(st["notes"], {}).items() if k != "perms"}, "perms": _load(st["notes"], {}).get("perms"), "currency": main,
             "periods": [dict(_totals(rs), key=k, label=lab) for k, lab, rs in periods],
             "days": days,
             "top": [{"product": k[0], "count": v[0], "money": _money(v[1], k[1])} for k, v in sorted(top.items(), key=lambda kv: -kv[1][1])[:8]],
@@ -324,6 +388,75 @@ def update_product(user, pid, name=None, price_cents=None):
     _refresh_products(user)
 
 
+def upload_file(user, path, name=None, progress=None):
+    """Send one file from this PC to Gumroad's storage and return the address to attach to a product."""
+    size = os.path.getsize(path)
+    if size <= 0:
+        raise GumroadError(f"{os.path.basename(path)} is empty.")
+    name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", name or os.path.basename(path))[:150]
+    start = call(user, "POST", "/files/presign", filename=name, file_size=size)
+    parts, done = sorted(start.get("parts") or [], key=lambda p: p["part_number"]), []
+    if not parts or not start.get("upload_id"):
+        raise GumroadError("Gumroad did not give a place to upload the file to.")
+    try:
+        with open(path, "rb") as f:
+            for i, p in enumerate(parts):
+                chunk = f.read(PART)
+                r = httpx.put(p["presigned_url"], content=chunk, timeout=httpx.Timeout(60, write=1800, read=1800))
+                if r.status_code >= 300 or not r.headers.get("etag"):
+                    raise GumroadError(f"The upload of {name} stopped at part {i + 1} (error {r.status_code}).")
+                done.append((p["part_number"], r.headers["etag"]))
+                if progress:
+                    progress(min(size, (i + 1) * PART), size)
+    except (httpx.HTTPError, OSError, GumroadError) as e:
+        try:
+            call(user, "POST", "/files/abort", upload_id=start["upload_id"], key=start.get("key"))
+        except GumroadError:
+            pass
+        raise e if isinstance(e, GumroadError) else GumroadError(f"The upload of {name} failed ({type(e).__name__}). Nothing was created.")
+    pairs = []
+    for n, tag in done:
+        pairs += [("parts[][part_number]", n), ("parts[][etag]", tag)]
+    fin = call(user, "POST", "/files/complete", upload_id=start["upload_id"], key=start.get("key"), _pairs=pairs)
+    return fin.get("file_url") or start.get("file_url")
+
+
+def _html(text):
+    """Plain typed text as the simple HTML Gumroad wants for a description."""
+    import html
+    text = str(text or "").strip()
+    if not text or re.search(r"<(p|br|ul|ol|h\d|div)\b", text, re.I):
+        return text or None
+    return "".join("<p>" + html.escape(par.strip()).replace("\n", "<br>") + "</p>" for par in re.split(r"\n\s*\n", text) if par.strip())
+
+
+def create_product(user, name, price_cents, description="", files=None, publish=True, currency=None, summary=None, progress=None):
+    """Make a new product on Gumroad, upload its files and, if asked, put it on sale. files is a list of (path, name).
+    Returns {"product", "published", "warning"}."""
+    name = str(name or "").strip()[:200]
+    if len(name) < 2:
+        raise GumroadError("Give the product a name.")
+    price_cents = int(price_cents)
+    if price_cents < 0 or price_cents > 5_000_000:
+        raise GumroadError("That price does not look right.")
+    files = [(str(p), n) for p, n in (files or [])]
+    for p, n in files:
+        if not os.path.isfile(p):
+            raise GumroadError(f"I cannot find the file {n or os.path.basename(p)} on the PC any more.")
+    urls = [upload_file(user, p, n, progress) for p, n in files]
+    kinds = {os.path.splitext(n or p)[1].lower() for p, n in files}
+    pairs = [("files[][url]", u) for u in urls]
+    out = call(user, "POST", "/products", name=name, price=price_cents, description=_html(description),
+               native_type="ebook" if kinds and kinds <= {".pdf", ".epub", ".mobi"} else "digital",
+               price_currency_type=(currency or "").lower() or None, custom_summary=(str(summary).strip()[:200] if summary else None),
+               published=bool(publish), _pairs=pairs)
+    p = out.get("product") or {}
+    _refresh_products(user)
+    return {"product": {"id": p.get("id"), "name": p.get("name") or name, "url": p.get("short_url") or "",
+                        "shown": p.get("formatted_price") or _money(price_cents, (currency or "usd").lower())},
+            "published": bool(p.get("published")), "files": len(urls), "warning": str(out.get("warning") or "")}
+
+
 def delete_product(user, pid):
     call(user, "DELETE", f"/products/{_pid(pid)}")
     _refresh_products(user)
@@ -383,15 +516,31 @@ def find_sale(user, sale):
     return dict(r)
 
 
-def background():
-    """Check every connected store every few minutes."""
+def every(user):
+    """How often this login wants its store checked, in seconds."""
+    row = core.q("SELECT * FROM users WHERE id=?", (user["id"],), one=True)       # the saved choice, not a copy read earlier
+    try:
+        v = int(core.settings(row or user).get("store_every") or EVERY)
+    except (TypeError, ValueError):
+        v = EVERY
+    return v if v in CHOICES else EVERY
+
+
+def due(user, now=None):
+    st = core.q("SELECT synced FROM gumroad_store WHERE user_id=?", (user["id"],), one=True)
+    return not st or not st["synced"] or (now or time.time()) - st["synced"] >= every(user)
+
+
+def background(pause=60):
+    """Look once a minute for stores whose next check has come round, each at the pace its login chose."""
     while True:
-        time.sleep(EVERY)
+        time.sleep(pause)
         try:
             for u in core.q("SELECT * FROM users"):
-                if token(u):
+                u = dict(u)
+                if token(u) and core.settings(u).get("store_on") and due(u):
                     try:
-                        sync(dict(u))
+                        sync(u)
                     except Exception:
                         pass
         except Exception:

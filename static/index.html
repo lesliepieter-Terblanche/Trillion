@@ -337,7 +337,7 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <button data-v="phone">PHONE</button>
     <button data-v="videos">VIDEOS</button>
     <button data-v="files">FILES</button>
-    <button data-v="store">STORE<span id="storebadge"></span></button>
+    <button data-v="store" id="navstore" hidden>STORE<span id="storebadge"></span></button>
     <button data-v="memory">MEMORY</button>
     <button data-v="commands">COMMANDS</button>
     <button data-v="settings">SETTINGS</button>
@@ -546,13 +546,33 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <div class="panel">
       <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap"><div><b id="st-name"></b><div class="muted" id="st-when" style="font-size:13px"></div></div>
         <span class="btns"><button class="btn" id="st-check" style="min-height:40px;font-size:12px">CHECK NOW</button><button class="btn" id="st-off" style="min-height:40px;font-size:12px">DISCONNECT</button></span></div>
+      <label class="field" style="max-width:320px"><span>Check for new sales</span><select id="st-every"><option value="900">Every 15 minutes</option><option value="3600">Every hour</option><option value="86400">Once a day</option><option value="604800">Once a week</option></select></label>
       <div class="msg bad" id="st-err"></div>
       <div class="sttiles" id="st-tiles"></div>
     </div>
     <div class="panel"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><b>Money taken per day, last 30 days</b><span class="muted" id="st-max" style="font-size:13px"></span></div>
       <div class="stbars" id="st-bars"></div><div class="stax"><span id="st-d0"></span><span id="st-d1"></span></div>
       <div id="st-top"></div></div>
+    <div class="panel"><b>Add a product</b>
+      <div class="grid2">
+        <label class="field"><span>Name</span><input id="sn-name" autocomplete="off" placeholder="From Seed to Harvest"></label>
+        <div style="display:flex;gap:12px;min-width:0"><label class="field" style="flex:1;min-width:0"><span>Price</span><input id="sn-price" inputmode="decimal" placeholder="19.00" style="min-width:0;width:100%"></label>
+          <label class="field" style="width:140px;flex:none"><span>Currency</span><select id="sn-cur"><option value="">Store default</option><option value="usd">USD</option><option value="zar">ZAR</option><option value="eur">EUR</option><option value="gbp">GBP</option></select></label></div>
+      </div>
+      <label class="field"><span>Description buyers see</span><textarea id="sn-desc" rows="4" placeholder="What it is, who it is for, what they get."></textarea></label>
+      <div class="grid2">
+        <div><div class="btns" style="justify-content:flex-start"><button type="button" class="btn" id="sn-attach">ATTACH THE FILES BUYERS GET</button></div><div class="attrow" id="sn-atts" style="display:none;margin-top:10px"></div></div>
+        <label class="field"><span>Or use an ebook Trillion made</span><select id="sn-ebook"><option value="">None</option></select></label>
+      </div>
+      <label class="tickrow" style="align-items:center"><input type="checkbox" id="sn-pub" checked><span><b>Put it on sale straight away</b><br><span class="muted">Untick to save it as a draft and publish later.</span></span></label>
+      <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="sn-go">CREATE PRODUCT</button></div>
+      <div class="msg" id="sn-msg" style="font-size:15px;overflow-wrap:anywhere"></div>
+      <div class="muted" style="font-size:13px">The cover picture is added on Gumroad itself: Gumroad only accepts covers from a public web address, not from this PC.</div>
+    </div>
     <div class="panel"><b>Products</b><div id="st-products"></div><div class="msg" id="st-pmsg"></div></div>
+    <div class="panel"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><b>What this access token may do</b><button class="btn" id="st-perm" style="min-height:40px;font-size:12px">CHECK AGAIN</button></div>
+      <div id="st-perms"></div>
+      <div class="muted" style="font-size:13px">To change these: on Gumroad open Settings, Advanced, Applications, open your application, tick the permissions, save, press Generate access token, then disconnect here and connect with the new token.</div></div>
     <div class="panel"><b>Recent sales</b><div id="st-sales"></div><div class="msg" id="st-smsg"></div></div>
     <div class="panel"><b>Payouts</b><div id="st-payouts"></div></div>
   </div>
@@ -682,7 +702,7 @@ const api=async(u,o={})=>{if(o.json!==undefined){o.method=o.method||'POST';o.hea
 const hm=t=>new Date(t*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false});
 let hold=0,S=null,sending=false,speakNext=false,settingsLoaded=false,cwd='';
 
-const LOADERS={store:()=>loadStore(true),projects:()=>loadProjects(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);},memory:()=>loadNotes(''),videos:()=>loadVideos(),skills:()=>loadSkills(),settings:()=>loadSettings(),family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
+const LOADERS={store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);},memory:()=>loadNotes(''),videos:()=>loadVideos(),skills:()=>loadSkills(),settings:()=>loadSettings(),family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
 let VIEW='control';
 function go(v){
   VIEW=v;
@@ -843,7 +863,7 @@ function showMap(m){
   $('popring').onclick=()=>{closePop();send('ring my phone',voiceOn);};
 }
 let SEENV=null;
-async function tick(){try{S=await (await api('/api/state')).json();if(SEENV&&S.version!==SEENV){location.reload();return;}SEENV=S.version;render();statRefresh();$('storebadge').textContent=S.store_new||'';if(S.store_new&&S.store_new!==storeSeen&&document.getElementById('v-store').classList.contains('on'))loadStore(true);storeSeen=S.store_new;if(S.wa_unseen!==waSeenCount){waSeenCount=S.wa_unseen;loadWA();}}catch(e){}}
+async function tick(){try{S=await (await api('/api/state')).json();if(SEENV&&S.version!==SEENV){location.reload();return;}SEENV=S.version;render();statRefresh();$('navstore').hidden=!S.store_on;$('storebadge').textContent=S.store_new||'';if(S.store_new&&S.store_new!==storeSeen&&document.getElementById('v-store').classList.contains('on'))loadStore(true);storeSeen=S.store_new;if(S.wa_unseen!==waSeenCount){waSeenCount=S.wa_unseen;loadWA();}}catch(e){}}
 const FMARK=/\n?\[\[file:(\d+):([^\]\n]*?):(image|video|audio|document|file)\]\]/g;
 const KLBL={image:'PIC',video:'VID',audio:'SND',document:'DOC',file:'FILE'};
 function withFiles(raw){   // a person's message: the words, then what was attached to it
@@ -1175,7 +1195,7 @@ const SECF={look:['assistant_name','personality','brand','site','accent'],brain:
 async function loadSettings(){
   if(!S)return;const s=S.user.settings;$('setver').textContent='Trillion version '+S.version;SK.forEach(k=>$('s-'+k).value=s[k]??'');$('s-daily_review').checked=!!s.daily_review;$('s-fast_answers').checked=s.fast_answers!==false;$('s-wake_word').checked=!!s.wake_word;$('wakeex').textContent=s.assistant_name||'Trillion';drawThemes();
   drawLinks();
-  const on=s.quick_actions||[];$('qapick').innerHTML=Object.keys(QA).map(k=>`<label class="tickrow" style="align-items:center"><input type="checkbox" data-qa="${k}" ${on.includes(k)?'checked':''}><span>${esc(QA[k].label)}</span></label>`).join('');
+  const on=s.quick_actions||[];$('qapick').innerHTML=Object.keys(QA).filter(k=>k!=='store'||S.store_on).map(k=>`<label class="tickrow" style="align-items:center"><input type="checkbox" data-qa="${k}" ${on.includes(k)?'checked':''}><span>${esc(QA[k].label)}</span></label>`).join('');
   const ks=await (await api('/api/secrets')).json();
   $('keys').innerHTML=ks.map(k=>`<div class="panel"><b>${LABEL[k.name]}</b><div class="${k.set?(k.enabled?'ok':'muted'):'muted'}">${k.set?(k.enabled?'Saved and on '+esc(k.hint):'Saved, switched off '+esc(k.hint)):'Not added'}</div>
     <label class="field"><span>Key</span><input type="password" id="k-${k.name}" placeholder="${k.set?'Leave empty to keep the saved key':'Paste the key'}" autocomplete="off"></label>
@@ -1426,7 +1446,7 @@ const stDay=t=>{const d=new Date(t*1000);return d.toLocaleDateString(undefined,{
 async function loadStore(seen){try{ST=await (await api('/api/store'+(seen?'?seen=1':''))).json();}catch(e){return;}drawStore();if(seen)tick();}
 function drawStore(){const o=ST;$('st-connect').hidden=o.connected;$('st-body').hidden=!o.connected;$('st-body').style.display=o.connected?'flex':'none';if(!o.connected)return;
   $('st-name').textContent=(o.account.name||'Your store')+(o.account.email?' · '+o.account.email:'');
-  $('st-when').textContent=o.synced?'Last checked '+stDay(o.synced)+'. Checked again every few minutes.':'Not checked yet.';
+  $('st-when').textContent=(o.synced?'Last checked '+stDay(o.synced)+'. ':'Not checked yet. ')+'Checked '+o.every_words+', and whenever you press Check now or ask about sales.';$('st-every').value=String(o.every);
   $('st-err').textContent=[o.error,o.notes.sales,o.notes.payouts].filter(Boolean).join(' ');
   $('st-tiles').innerHTML=o.periods.map(p=>`<div class="tile"><span class="lab">${esc(p.label)}</span><span class="bigv">${esc(p.text)}</span><span class="muted" style="font-size:13px">${p.count} sale${p.count===1?'':'s'}${p.money.length?' · '+esc(p.money.map(m=>m.net).join(' + '))+' after fees':''}</span></div>`).join('');
   const mx=Math.max(1,...o.days.map(d=>d.cents));
@@ -1434,6 +1454,7 @@ function drawStore(){const o=ST;$('st-connect').hidden=o.connected;$('st-body').
   $('st-d0').textContent=o.days[0].day;$('st-d1').textContent=o.days[o.days.length-1].day+' (today)';
   const best=o.days.reduce((a,b)=>b.cents>a.cents?b:a,o.days[0]);$('st-max').textContent=best.cents?'Best day: '+best.day+', '+best.shown:'No sales in this period yet';
   $('st-top').innerHTML=o.top.length?'<div class="muted" style="font-size:13px;margin-bottom:4px">Best sellers, last 30 days</div>'+o.top.map(t=>`<div class="row"><span>${esc(t.product)}</span><span class="amt" style="font-family:var(--mono)">${t.count} · ${esc(t.money)}</span></div>`).join(''):'';
+  const pm=o.perms;$('st-perms').innerHTML=pm?pm.list.map(x=>`<div class="row"><span>${esc(x.label)}<small>Gumroad permission: ${esc(x.key)}</small></span><span class="${x.ok===true?'ok':x.ok===false?'bad':'muted'}">${x.ok===true?'Allowed':x.ok===false?'Not allowed':'Not known until tried'}</span></div>`).join('')+(pm.how==='tried'?'<div class="muted" style="font-size:13px;margin-top:8px">Gumroad would not list the token\'s permissions, so I tried the reading ones. The changing ones show when you first use them.</div>':''):'<div class="muted">Not checked yet. Press Check again.</div>';
   $('st-products').innerHTML=o.products.map((p,i)=>`<div class="strow" data-pi="${i}"><div class="nm"><b>${esc(p.name)}</b> <span class="pill ${p.published?'on':''}">${p.published?'Published':'Not published'}</span><small>${esc(p.shown)}${p.sales!=null?' · '+p.sales+' sold':''}${p.earned_usd_cents!=null?' · $'+(p.earned_usd_cents/100).toFixed(2)+' earned':''}</small></div>
     <button class="btn" data-pa="${p.published?'unpublish':'publish'}">${p.published?'UNPUBLISH':'PUBLISH'}</button><button class="btn" data-ps="edit">EDIT</button><button class="btn" data-ps="codes">DISCOUNT CODES</button><button class="btn" data-ps="reviews">REVIEWS</button>${p.url?`<a class="btn" href="${esc(p.url)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;text-decoration:none;color:inherit">OPEN</a>`:''}<button class="btn" data-pa="delete">DELETE</button>
     <div class="stsub" data-sub hidden></div></div>`).join('')||'<div class="muted">No products in this store yet. Create the first one on Gumroad.</div>';
@@ -1474,6 +1495,21 @@ async function stSub(p,kind,box){
 $('st-go').onclick=async()=>{const m=$('st-cmsg');m.className='msg';m.textContent='Connecting and reading your sales. This can take a minute the first time...';
   try{ST=await (await api('/api/store/connect',{json:{token:$('st-token').value}})).json();$('st-token').value='';m.textContent='';drawStore();}catch(e){m.className='msg bad';m.textContent=e.message;}};
 $('st-check').onclick=async()=>{const b=$('st-check');b.disabled=true;b.textContent='CHECKING...';try{ST=await (await api('/api/store/check',{method:'POST'})).json();drawStore();}catch(e){$('st-err').textContent=e.message;}b.disabled=false;b.textContent='CHECK NOW';};
+$('st-perm').onclick=async()=>{const b=$('st-perm');b.disabled=true;try{ST=await (await api('/api/store/permissions',{method:'POST'})).json();drawStore();}catch(e){$('st-err').textContent=e.message;}b.disabled=false;};
+const snAtt=attBox($('sn-atts'));$('sn-attach').onclick=()=>snAtt.pick();
+async function snEbooks(){try{const r=await (await api('/api/ebooks')).json();const cur=$('sn-ebook').value;$('sn-ebook').innerHTML='<option value="">None</option>'+r.ebooks.filter(e=>e.exists).map(e=>`<option value="${e.id}">${esc(e.title)}</option>`).join('');$('sn-ebook').value=cur;}catch(e){}}
+$('sn-go').onclick=async()=>{const m=$('sn-msg'),b=$('sn-go'),name=$('sn-name').value.trim(),price=$('sn-price').value.trim();
+  if(!name||price===''){m.className='msg bad';m.textContent='Fill in the name and the price. Type 0 for a free product.';return;}
+  if(snAtt.busy()){m.className='msg bad';m.textContent='A file is still on its way to the PC. Wait for it to finish.';return;}
+  if(snAtt.bad()){m.className='msg bad';m.textContent='One file did not arrive. Remove it with the x, or attach it again.';return;}
+  const ids=snAtt.ids(),eb=$('sn-ebook').value,pub=$('sn-pub').checked;
+  if(pub&&!ids.length&&!eb){m.className='msg bad';m.textContent='Attach the file buyers get, or untick "Put it on sale straight away" to save a draft without one.';return;}
+  if(pub&&!twice(b,'PUT IT ON SALE NOW?'))return;
+  b.disabled=true;m.className='msg';m.textContent='Uploading to Gumroad and creating the product. Large files take a while...';
+  try{const r=await (await api('/api/store/create',{json:{name,price,currency:$('sn-cur').value,description:$('sn-desc').value,attachments:ids,ebook:eb||null,publish:pub}})).json();ST=r.store;drawStore();m.className='msg ok';m.innerHTML=linkify(r.message);$('sn-name').value=$('sn-price').value=$('sn-desc').value='';$('sn-ebook').value='';snAtt.clear();}
+  catch(e){m.className='msg bad';m.textContent=e.message;}
+  b.disabled=false;delete b.dataset.armed;b.textContent='CREATE PRODUCT';b.classList.remove('red');};
+$('st-every').onchange=async()=>{try{ST=await (await api('/api/store/every',{json:{every:+$('st-every').value}})).json();drawStore();}catch(e){$('st-err').textContent=e.message;}};
 $('st-off').onclick=async()=>{if(!twice($('st-off'),'DISCONNECT STORE?'))return;ST=await (await api('/api/store',{method:'DELETE'})).json();drawStore();};
 // ---- projects ----
 const ago=t=>{if(!t)return 'never';const d=(Date.now()/1000-t);return d<3600?Math.max(1,Math.round(d/60))+' min ago':(d<86400?Math.round(d/3600)+' h ago':Math.round(d/86400)+' days ago');};
@@ -1499,7 +1535,7 @@ async function loadProjects(){
 }
 // ---- commands help ----
 const CMDS=[
-  ['Gumroad store',[['how are my gumroad sales','Today and the last 30 days'],['how much did I sell this week',''],['how much did I make this month',''],['unpublish My Ebook on gumroad','Hides a product from buyers'],['publish My Ebook on gumroad',''],['make a 20% discount code for My Ebook','Add "called SPRING20" to choose the name']]],
+  ['Gumroad store',[['how are my gumroad sales','Today and the last 30 days'],['how much did I sell this week',''],['how much did I make this month',''],['unpublish My Ebook on gumroad','Hides a product from buyers'],['publish My Ebook on gumroad',''],['make a 20% discount code for My Ebook','Add "called SPRING20" to choose the name'],['post a product called My Ebook for $19','Attach the file with + first. Say "create" instead of "post" to save a draft']]],
   ['WhatsApp',[['read my whatsapps','Reads out new incoming messages'],['send a whatsapp to Llewellyn saying I will be there at 5','Goes straight out to a saved contact'],['send this to Llewellyn on whatsapp','Attach a photo or file with the + button first'],['send a test whatsapp to Llewellyn Terblanche',''],['send me a test whatsapp','Needs your own number on the Phone page'],['open my whatsapp','']]],
   ['Phone',[['ring my phone','Rings at full volume, even on silent'],['where is my phone','Last known position with a map link'],['how is my phone','Battery, storage, Wi-Fi'],['unlock my phone','Needs an unlock code saved on the Phone page'],['put my phone to sleep','Screen off and locked'],['take a screenshot of my phone',''],['open maps on my phone','Any installed app'],['what is on my phone screen','Needs Full phone control'],['tap Chats on my phone','Needs Full phone control'],['press back on my phone','Needs Full phone control']]],
   ['Briefings',[['good morning','Runs your morning routine'],['what is the weather',''],['give me the news',''],['how are the markets','Rand, gold, shares, crypto']]],
@@ -1510,11 +1546,11 @@ const CMDS=[
   ['PC and Trillion',[['what is the status of my pc',''],['check my website',''],['what version are you',''],['update yourself','Gets the newest version and restarts'],['be witty','Also: be professional, be warm']]],
 ];
 function drawCommands(){
-  $('cmdlist').innerHTML=CMDS.map(g=>`<div class="panel"><b>${esc(g[0])}</b><div class="cmdg">${g[1].map(c=>`<div class="cmdr"><div><code>${esc(c[0])}</code>${c[1]?`<small>${esc(c[1])}</small>`:''}</div><button class="btn" data-use="${esc(c[0])}" style="min-height:40px;font-size:12px;flex:none">USE</button></div>`).join('')}</div></div>`).join('');
+  $('cmdlist').innerHTML=CMDS.filter(g=>g[0]!=='Gumroad store'||(S&&S.store_on)).map(g=>`<div class="panel"><b>${esc(g[0])}</b><div class="cmdg">${g[1].map(c=>`<div class="cmdr"><div><code>${esc(c[0])}</code>${c[1]?`<small>${esc(c[1])}</small>`:''}</div><button class="btn" data-use="${esc(c[0])}" style="min-height:40px;font-size:12px;flex:none">USE</button></div>`).join('')}</div></div>`).join('');
   document.querySelectorAll('[data-use]').forEach(b=>b.onclick=()=>{go('control');$('say').value=b.dataset.use;$('say').focus();});
 }
 function drawMore(){
-  const items=[['store','Store','Gumroad sales, products, codes'],['videos','Videos','Make and watch videos'],['files','Files','Browse your folders'],['memory','Memory','What she remembers'],['routines','Routines','Morning briefing, news, weather'],['skills','Skills','Extra abilities and connectors'],['commands','Commands','Everything you can say'],['settings','Settings','Look, brain, voice, keys']];
+  const items=[...(S&&S.store_on?[['store','Store','Gumroad sales, products, codes']]:[]),['videos','Videos','Make and watch videos'],['files','Files','Browse your folders'],['memory','Memory','What she remembers'],['routines','Routines','Morning briefing, news, weather'],['skills','Skills','Extra abilities and connectors'],['commands','Commands','Everything you can say'],['settings','Settings','Look, brain, voice, keys']];
   if(S&&S.user.is_admin)items.push(['family','Family','Logins, update, backup']);
   $('moregrid').innerHTML=items.map(i=>`<button class="mbtn" data-go="${i[0]}"><b>${i[1]}</b><span>${i[2]}</span></button>`).join('')+`<button class="mbtn" id="out2"><b>Sign out</b><span>${S?esc(S.user.name):''}</span></button>`;
   $('out2').onclick=()=>$('out').click();
@@ -1527,8 +1563,10 @@ async function loadFamily(){const f=await (await api('/api/admin/family')).json(
     <div class="row"><span>Brain</span><span>${esc(u.brain)}</span></div>
     <div class="row"><span>Connections on</span><span>${esc(u.connections.join(', ')||'none')}</span></div>
     <div class="row"><span>Cloud calls today</span><span>${u.cloud_calls}</span></div>
+    <label class="tickrow" style="align-items:center"><input type="checkbox" data-st="${u.id}" ${u.store_on?'checked':''}><span>Gumroad store page for this login</span></label>
     <label class="field"><span>Folders this login may use (one per line; * = whole PC, owner only)</span><textarea id="r-${u.id}" rows="3">${esc(u.roots.join('\n'))}</textarea></label>
     <div class="btns" style="justify-content:flex-start"><button class="btn pri" data-u="${u.id}" data-o="roots">SAVE FOLDERS</button><button class="btn" data-u="${u.id}" data-o="reset">RESET PASSWORD</button></div></div>`).join('');
+  document.querySelectorAll('[data-st]').forEach(c=>c.onchange=async()=>{await api('/api/admin/family/'+c.dataset.st,{method:'PUT',json:{store_on:c.checked}});tick();});
   document.querySelectorAll('[data-u]').forEach(b=>b.onclick=async()=>{const id=b.dataset.u;
     await api('/api/admin/family/'+id,{method:'PUT',json:b.dataset.o==='roots'?{roots:$('r-'+id).value.split('\n')}:{reset_password:true}});loadFamily();});
 }

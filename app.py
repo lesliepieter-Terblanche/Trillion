@@ -1,5 +1,5 @@
 """Trillion: a local agent OS for one PC and one family. Run with Start-Trillion.bat."""
-import io, json, re, time, threading, datetime, zipfile
+import io, json, os, re, time, threading, datetime, zipfile
 
 import httpx
 from fastapi import FastAPI, Request, Response, HTTPException, Depends, Body
@@ -34,6 +34,15 @@ for _u in core.q("SELECT * FROM users WHERE lower(name)='brandon'"):
         _raw["links"] = [l for l in (_raw.get("links") or []) if l.get("id") != "health"] + [
             {"id": "health", "name": "Health tracker", "url": "https://vapeessence.co.za/health-tracker"}]
         _raw["links_health_set"] = True
+        core.save_settings(_u["id"], _raw)
+# 0.7.25: the Gumroad store belongs to Brandon's login. The owner can switch it on for another login on the Family page.
+for _u in core.q("SELECT * FROM users"):
+    try:
+        _raw = json.loads(_u["settings"] or "{}")
+    except Exception:
+        _raw = {}
+    if not _raw.get("store_set"):
+        _raw["store_on"], _raw["store_set"] = _u["name"].lower() == "brandon", True
         core.save_settings(_u["id"], _raw)
 extend.init()
 video.init()
@@ -340,12 +349,35 @@ STORE_CODE = re.compile(r"\b(?:make|create|add|set up|give me)\s+(?:me\s+)?an?\s
                         r"(?:my\s+|the\s+)?(.+?)(?:\s+(?:on|in)\s+(?:gum ?road|my store|the store))?[.!?]?\s*$", re.I)
 
 
-def store_shortcut(user, text):
+STORE_NEW = re.compile(r"\b(?:create|add|make|list|post|put up|sell)\s+(?:an?\s+|this\s+(?:as\s+an?\s+)?|it\s+as\s+an?\s+)?(?:new\s+)?(?:gum ?road\s+)?"
+                       r"(?:product|listing|item)\s+(?:on\s+(?:gum ?road|my store|the store)\s+)?(?:called|named|titled)\s+[\"\u201c']?(.+?)[\"\u201d']?\s+"
+                       r"(?:for|at|priced at|costing)\s+(?:\$|usd\s*|r\s*)?(\d+(?:[.,]\d{1,2})?)\b(.*)$", re.I | re.S)
+
+
+def store_allowed(user):
+    st = core.settings(user)
+    return bool(st["store_on"]) if "store_on" in st else user["name"].lower() == "brandon"
+
+
+def store_user(user=Depends(auth)):
+    if not store_allowed(user):
+        raise HTTPException(403, "The store is not switched on for this login.")
+    return user
+
+
+def store_shortcut(user, text, files=None):
     """Questions about the Gumroad store and simple changes to it, answered without the model."""
-    if len(text) > 300:
+    if len(text) > 300 or not store_allowed(user):
         return None
     on = bool(gumroad.token(user))
     try:
+        m = STORE_NEW.search(text)
+        if m and on:
+            rest = m.group(3) or ""
+            live = bool(re.search(r"\b(publish|post|put it on sale|go live|make it live|on sale|sell it)\b", rest + " " + text[:m.start(1)], re.I))
+            r = gumroad.create_product(user, m.group(1).strip(), int(round(float(m.group(2).replace(",", ".")) * 100)),
+                                       files=[(f["path"], f["name"]) for f in (files or [])], publish=live)
+            return created_sentence(r), "store"
         m = STORE_PUB.search(text)
         if m and on:
             p = gumroad.find_product(user, m.group(2))
@@ -791,7 +823,7 @@ def run_agent(user, text, files=None):
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="completed", detail=reply[:200])
         return {"reply": reply, "task_id": tid, "provider": "built-in"}
-    ss = store_shortcut(user, text)
+    ss = store_shortcut(user, text, files)
     if ss:
         reply, show = ss
         BUSY[uid] = False
@@ -1031,25 +1063,92 @@ def _store_do(fn):
 
 
 @app.get("/api/store")
-def store_get(seen: int = 0, user=Depends(auth)):
+def store_get(seen: int = 0, user=Depends(store_user)):
     return gumroad.overview(user, mark_seen=bool(seen))
 
 
 @app.post("/api/store/connect")
-def store_connect(p: dict = Body(...), user=Depends(auth)):
+def store_connect(p: dict = Body(...), user=Depends(store_user)):
     _store_do(lambda: gumroad.connect(user, p.get("token")))
     core.log(user["id"], "Gumroad store connected", "done")
     return gumroad.overview(user)
 
 
 @app.delete("/api/store")
-def store_disconnect(user=Depends(auth)):
+def store_disconnect(user=Depends(store_user)):
     gumroad.disconnect(user)
     return {"connected": False}
 
 
+@app.post("/api/store/permissions")
+def store_permissions(user=Depends(store_user)):
+    _store_do(lambda: gumroad.permissions(user))
+    return gumroad.overview(user)
+
+
+def _store_files(user, ids, ebook_id=None):
+    """The files for a new product: this login's own uploads, and optionally an ebook Trillion made for this login."""
+    files = []
+    for i in (ids or [])[:10]:
+        f = attach.get(user, i) if str(i).isdigit() else None
+        if not f or not os.path.isfile(f["path"]):
+            raise HTTPException(400, "One of the attached files is no longer on the PC. Attach it again.")
+        files.append((f["path"], f["name"]))
+    if ebook_id:
+        import ebook
+        ebook.init()
+        e = core.q("SELECT * FROM ebooks WHERE id=? AND user_id=?", (int(ebook_id), user["id"]), one=True)
+        if not e or not os.path.isfile(e["path"]):
+            raise HTTPException(400, "That ebook is no longer on the PC.")
+        files.append((e["path"], re.sub(r'[\\/:*?"<>|]', "", e["title"] or "ebook").strip()[:120] + ".pdf"))
+        epub = os.path.splitext(e["path"])[0] + ".epub"
+        if os.path.isfile(epub):
+            files.append((epub, re.sub(r'[\\/:*?"<>|]', "", e["title"] or "ebook").strip()[:120] + ".epub"))
+    return files
+
+
+def created_sentence(r):
+    p = r["product"]
+    files = f" with {r['files']} file{'s' if r['files'] != 1 else ''}" if r["files"] else " with no file attached yet"
+    if r["published"]:
+        return f"{p['name']} is on sale on Gumroad for {p['shown']}{files}." + (f" {p['url']}" if p["url"] else "")
+    return (f"{p['name']} is saved on Gumroad as a draft at {p['shown']}{files}. It is not on sale yet."
+            + (" Gumroad says: " + r["warning"] if r["warning"] else " Press Publish on the Store page when you are ready."))
+
+
+@app.post("/api/store/create")
+def store_create(p: dict = Body(...), user=Depends(store_user)):
+    try:
+        price = float(str(p.get("price") or "0").replace(",", ".").replace("$", "").strip())
+    except ValueError:
+        raise HTTPException(400, "Type the price as a number, like 9.99.")
+    cur = str(p.get("currency") or "").lower()
+    if cur and not re.fullmatch(r"[a-z]{3}", cur):
+        raise HTTPException(400, "Unknown currency.")
+    files = _store_files(user, p.get("attachments"), p.get("ebook"))
+    r = _store_do(lambda: gumroad.create_product(user, p.get("name"), int(round(price * (1 if cur == "jpy" else 100))),
+                                                 description=p.get("description") or "", files=files, publish=bool(p.get("publish")),
+                                                 currency=cur or None, summary=p.get("summary")))
+    core.log(user["id"], f"Gumroad: created {r['product']['name']}" + (" and put it on sale" if r["published"] else " as a draft"), "done")
+    return {"message": created_sentence(r), "result": r, "store": gumroad.overview(user)}
+
+
+@app.post("/api/store/every")
+def store_every(p: dict = Body(...), user=Depends(store_user)):
+    try:
+        v = int(p.get("every"))
+    except (TypeError, ValueError):
+        v = 0
+    if v not in gumroad.CHOICES:
+        raise HTTPException(400, "Choose 15 minutes, 1 hour, once a day or once a week.")
+    st = core.settings(user)
+    st["store_every"] = v
+    core.save_settings(user["id"], st)
+    return gumroad.overview(user)
+
+
 @app.post("/api/store/check")
-def store_check(user=Depends(auth)):
+def store_check(user=Depends(store_user)):
     _store_do(lambda: gumroad.sync(user))
     return gumroad.overview(user)
 
@@ -1062,7 +1161,7 @@ def _own_product(user, pid):
 
 
 @app.post("/api/store/product")
-def store_product(p: dict = Body(...), user=Depends(auth)):
+def store_product(p: dict = Body(...), user=Depends(store_user)):
     prod, act = _own_product(user, str(p.get("id") or "")), p.get("action")
     if act in ("publish", "unpublish"):
         _store_do(lambda: gumroad.set_published(user, prod["id"], act == "publish"))
@@ -1085,13 +1184,13 @@ def store_product(p: dict = Body(...), user=Depends(auth)):
 
 
 @app.get("/api/store/codes")
-def store_codes(product: str, user=Depends(auth)):
+def store_codes(product: str, user=Depends(store_user)):
     prod = _own_product(user, product)
     return {"codes": _store_do(lambda: gumroad.codes(user, prod["id"]))}
 
 
 @app.post("/api/store/codes")
-def store_code_add(p: dict = Body(...), user=Depends(auth)):
+def store_code_add(p: dict = Body(...), user=Depends(store_user)):
     prod = _own_product(user, str(p.get("product") or ""))
     if p.get("delete"):
         _store_do(lambda: gumroad.delete_code(user, prod["id"], str(p["delete"])))
@@ -1106,13 +1205,13 @@ def store_code_add(p: dict = Body(...), user=Depends(auth)):
 
 
 @app.get("/api/store/reviews")
-def store_reviews(product: str, user=Depends(auth)):
+def store_reviews(product: str, user=Depends(store_user)):
     prod = _own_product(user, product)
     return {"reviews": _store_do(lambda: gumroad.reviews(user, prod["id"]))}
 
 
 @app.post("/api/store/sale")
-def store_sale(p: dict = Body(...), user=Depends(auth)):
+def store_sale(p: dict = Body(...), user=Depends(store_user)):
     sale, act = _store_do(lambda: gumroad.find_sale(user, str(p.get("id") or ""))), p.get("action")
     if act == "refund":
         _store_do(lambda: gumroad.refund(user, sale["id"]))
@@ -1581,7 +1680,7 @@ def state(user=Depends(auth)):
         "notes": {"personal": n("PERSONAL"), "work": n("WORK"),
                   "today": core.q("SELECT COUNT(*) c FROM notes WHERE user_id=? AND ts>=?", (uid, ds), one=True)["c"]},
         "site": SITES.get(s.get("site")) if s.get("site") else None,
-        "day_start": ds, "now": time.time(), "store_new": gumroad.unseen(uid), "wa_unseen": core.q("SELECT COUNT(*) c FROM wa_inbox WHERE user_id=? AND seen=0", (uid,), one=True)["c"],
+        "day_start": ds, "now": time.time(), "store_new": gumroad.unseen(uid) if store_allowed(user) else 0, "store_on": store_allowed(user), "wa_unseen": core.q("SELECT COUNT(*) c FROM wa_inbox WHERE user_id=? AND seen=0", (uid,), one=True)["c"],
         "version": VERSION, "hearing": HEARING["state"], "hearing_device": HEARING.get("device", ""),
         "phone": ({"linked": True, "model": s.get("phone_model", ""), **(PHONE_STATS.get(uid) or {"pending": True})}
                   if s.get("phone_serial") else {"linked": False}),
@@ -2346,6 +2445,7 @@ def family(user=Depends(admin)):
         s = core.settings(u)
         out.append({"id": u["id"], "name": u["name"], "brand": s["brand"], "site": s["site"], "brain": s["brain"],
                     "has_password": bool(u["pw_hash"]), "roots": core.user_roots(u),
+                    "store_on": store_allowed(u),
                     "connections": [c["name"] for c in core.list_secrets(u["id"]) if c["set"] and c["enabled"]],
                     "cloud_calls": sum(core.usage_today(u["id"]).values()),
                     "site_status": SITES.get(s["site"])})
@@ -2360,6 +2460,10 @@ def family_put(uid: int, p: dict = Body(...), user=Depends(admin)):
     if "roots" in p:
         s = core.settings(u)
         s["roots"] = [r.strip() for r in p["roots"] if r.strip() and (r.strip() != "*" or u["is_admin"])]
+        core.save_settings(uid, s)
+    if "store_on" in p:
+        s = core.settings(u)
+        s["store_on"], s["store_set"] = bool(p["store_on"]), True
         core.save_settings(uid, s)
     if p.get("reset_password"):
         core.x("UPDATE users SET pw_hash=NULL, salt=NULL WHERE id=?", (uid,))
