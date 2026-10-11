@@ -128,6 +128,15 @@ body{padding-bottom:var(--attpad,0px)}
 .mmbar{position:relative;height:22px;background:var(--panel);border:1px solid var(--edge);border-radius:4px;overflow:hidden;margin-bottom:6px}
 .mmbar i{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--green);transition:width .06s linear}.mmbar i.low{background:var(--dim)}
 .mmbar u{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--red)}
+.hverse{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--a);border-radius:8px;padding:18px 20px;margin-bottom:18px;cursor:pointer}
+.hverse .lab{font-family:var(--mono);font-size:12px;letter-spacing:.18em;color:var(--dim);text-transform:uppercase}
+.hverse blockquote,.bbq{margin:8px 0 6px;font-family:var(--disp);font-size:clamp(19px,2.4vw,26px);line-height:1.35}
+.hverse cite,.bbcite{font-style:normal;color:var(--a);font-weight:700}
+.bbtext{font-size:18px;line-height:1.75;max-width:760px}
+.bbtext p{margin:0;padding:3px 6px;border-radius:4px;cursor:pointer}.bbtext p:hover{background:var(--well)}
+.bbtext p.sel{background:var(--well);outline:1px solid var(--a)}.bbtext p.has{border-left:3px solid var(--a)}
+.bbtext sup{font-family:var(--mono);font-size:11px;color:var(--a);margin-right:6px}
+.bbhit{border-bottom:1px solid var(--line);padding:10px 0;cursor:pointer}.bbhit:hover b{color:var(--a)}
 .sttiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
 .sttiles .tile .bigv{font-size:30px;overflow-wrap:anywhere}
 .stbars{display:flex;align-items:flex-end;gap:3px;height:140px;border-bottom:1px solid var(--edge)}
@@ -340,6 +349,7 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <button data-v="phone">PHONE</button>
     <button data-v="videos">VIDEOS</button>
     <button data-v="files">FILES</button>
+    <button data-v="bible" id="navbible" hidden>BIBLE</button>
     <button data-v="store" id="navstore" hidden>STORE<span id="storebadge"></span></button>
     <button data-v="memory">MEMORY</button>
     <button data-v="commands">COMMANDS</button>
@@ -359,6 +369,7 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
 
 <main>
 <div class="view on" id="v-control">
+  <section class="hverse" id="hverse" hidden></section>
   <section class="brief" id="brief" hidden aria-live="polite"></section>
   <div class="hero" id="stage">
     <div class="orb"><div class="r1"></div><div class="r2"></div><div class="r3"></div><div class="c"></div></div>
@@ -531,6 +542,36 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <div><button class="btn pri" id="nadd">SAVE NOTE</button></div></div>
 </div>
 
+<div class="view" id="v-bible">
+  <h2>Bible study</h2>
+  <div class="grid2" id="bb-daily"></div>
+  <div class="panel"><b>Reader</b>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+      <label class="field" style="flex:1;min-width:160px"><span>Book</span><select id="bb-book"></select></label>
+      <label class="field" style="width:110px"><span>Chapter</span><select id="bb-ch"></select></label>
+      <label class="field" style="flex:1;min-width:170px"><span>Translation</span><select id="bb-ver"></select></label>
+      <button class="btn" id="bb-prev" aria-label="Previous chapter">&larr; BACK</button><button class="btn" id="bb-next" aria-label="Next chapter">NEXT &rarr;</button>
+    </div>
+    <form id="bb-gof" style="display:flex;gap:10px"><input id="bb-go" placeholder="Jump to a passage: John 3:16, Psalms 23, Rom 8:28-30" autocomplete="off" style="flex:1;min-width:0;min-height:44px;background:var(--well);border:1px solid var(--edge);border-radius:6px;padding:0 12px"><button class="btn">GO</button></form>
+    <div class="msg" id="bb-msg"></div>
+    <h3 id="bb-title" style="font-family:var(--disp);font-size:26px;margin:4px 0 0"></h3>
+    <div class="muted" style="font-size:13px">Tap a verse to write a study note on it. Verses with a note are marked.</div>
+    <div class="bbtext" id="bb-text"></div>
+    <div id="bb-note" hidden class="stsub"><b id="bb-nref"></b><textarea id="bb-ntext" rows="4" placeholder="What stands out? What does it mean? What will you do with it?" style="min-height:110px;background:var(--panel);border:1px solid var(--edge);border-radius:6px;padding:10px"></textarea>
+      <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="bb-nsave">SAVE NOTE</button><button class="btn" id="bb-nask">ASK ABOUT THIS VERSE</button><button class="btn" id="bb-nread">READ ALOUD</button><button class="btn" id="bb-ncancel">CLOSE</button></div><div class="msg" id="bb-nmsg"></div></div>
+  </div>
+  <div class="panel"><b>Search the Bible</b>
+    <form id="bb-sf" style="display:flex;gap:10px"><input id="bb-sq" placeholder='A word or words: grace faith. An exact phrase in quotes: "living water"' autocomplete="off" style="flex:1;min-width:0;min-height:44px;background:var(--well);border:1px solid var(--edge);border-radius:6px;padding:0 12px"><button class="btn pri">SEARCH</button></form>
+    <div class="msg" id="bb-smsg"></div><div id="bb-shits"></div></div>
+  <div class="panel"><b>Study helper</b>
+    <div class="muted" style="font-size:13px">Ask about a passage or a subject. She answers only from the verses she shows underneath, so check her against them. She can be wrong; your own reading, your church and your study leader come first.</div>
+    <textarea id="bb-q" rows="2" placeholder="Explain Romans 8:28 in its context. What does the Bible say about forgiveness? Compare John 3:16 with Romans 5:8." style="min-height:70px;background:var(--well);border:1px solid var(--edge);border-radius:6px;padding:10px"></textarea>
+    <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="bb-ask">ASK</button><span class="msg" id="bb-amsg"></span></div>
+    <div id="bb-answer"></div></div>
+  <div class="panel"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><b>My study notes</b><input id="bb-nq" placeholder="Find in my notes" autocomplete="off" style="min-height:40px;background:var(--well);border:1px solid var(--edge);border-radius:6px;padding:0 12px;max-width:260px"></div>
+    <div id="bb-notes"></div></div>
+  <div class="muted" style="font-size:13px" id="bb-about"></div>
+</div>
 <div class="view" id="v-store">
   <h2>My store <span class="muted" style="font-size:14px;font-weight:400;letter-spacing:0;text-transform:none">Gumroad</span></h2>
   <div class="panel" id="st-connect" hidden><b>Connect your Gumroad store</b>
@@ -716,7 +757,7 @@ const api=async(u,o={})=>{if(o.json!==undefined){o.method=o.method||'POST';o.hea
 const hm=t=>new Date(t*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false});
 let hold=0,S=null,sending=false,speakNext=false,settingsLoaded=false,cwd='';
 
-const LOADERS={store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);},memory:()=>loadNotes(''),videos:()=>loadVideos(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
+const LOADERS={bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);},memory:()=>loadNotes(''),videos:()=>loadVideos(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
 let VIEW='control';
 function go(v){
   VIEW=v;try{if(v!=='settings'&&mtTimer)micTestStop();}catch(e){}
@@ -877,7 +918,7 @@ function showMap(m){
   $('popring').onclick=()=>{closePop();send('ring my phone',voiceOn);};
 }
 let SEENV=null;
-async function tick(){try{S=await (await api('/api/state')).json();if(SEENV&&S.version!==SEENV){location.reload();return;}SEENV=S.version;render();statRefresh();$('navstore').hidden=!S.store_on;$('storebadge').textContent=S.store_new||'';if(S.store_new&&S.store_new!==storeSeen&&document.getElementById('v-store').classList.contains('on'))loadStore(true);storeSeen=S.store_new;if(S.wa_unseen!==waSeenCount){waSeenCount=S.wa_unseen;loadWA();}}catch(e){}}
+async function tick(){try{S=await (await api('/api/state')).json();if(SEENV&&S.version!==SEENV){location.reload();return;}SEENV=S.version;render();statRefresh();$('navstore').hidden=!S.store_on;$('navbible').hidden=!S.bible_on;drawHomeVerse();$('storebadge').textContent=S.store_new||'';if(S.store_new&&S.store_new!==storeSeen&&document.getElementById('v-store').classList.contains('on'))loadStore(true);storeSeen=S.store_new;if(S.wa_unseen!==waSeenCount){waSeenCount=S.wa_unseen;loadWA();}}catch(e){}}
 const FMARK=/\n?\[\[file:(\d+):([^\]\n]*?):(image|video|audio|document|file)\]\]/g;
 const KLBL={image:'PIC',video:'VID',audio:'SND',document:'DOC',file:'FILE'};
 function withFiles(raw){   // a person's message: the words, then what was attached to it
@@ -1518,6 +1559,58 @@ $('pp-send').onclick=()=>{const w=$('pp-who').value.trim(),t=$('pp-msg').value.t
   const ids=ppAtt.ids();
   if(!w||(!t&&!ids.length)){m.className='msg bad';m.textContent='Fill in who it is for, and a message or a file.';return;}
   runHere(`send a whatsapp to ${w}`+(t?` saying ${t}`:''),m,{to:w,message:t,attachments:ids}).then(()=>{if(m.className.includes('ok')){$('pp-msg').value='';ppAtt.clear();}});};
+// ---- Bible study ----
+let BB=null,bbCur={book:42,chapter:3},bbSel=null,bbChap=null,bbNoteId=null;
+function drawHomeVerse(){const h=$('hverse'),v=S&&S.verse;h.hidden=!v;if(!v)return;
+  h.innerHTML=`<div class="lab">${v.when==='night'?'Evening verse':'Morning verse'}</div><blockquote>${esc(v.text)}</blockquote><cite>${esc(v.ref)}</cite> <span class="muted" style="font-size:13px">${esc(v.version)}</span>`;
+  h.onclick=()=>{bbCur={book:v.book,chapter:v.chapter};go('bible');};}
+const bbAloud=t=>{talking=true;say(t).finally(()=>{talking=false;});};   // listening pauses while she reads
+async function loadBible(){const m=$('bb-msg');try{BB=await (await api('/api/bible')).json();}catch(e){m.className='msg bad';m.textContent=e.message;return;}
+  $('bb-daily').innerHTML=[['morning','Morning verse'],['night','Evening verse']].map(([k,l])=>{const v=BB[k];return `<div class="panel"><span class="muted" style="font-family:var(--mono);font-size:12px;letter-spacing:.18em;text-transform:uppercase">${l}</span><div class="bbq">${esc(v.text)}</div><div><span class="bbcite">${esc(v.ref)}</span> <span class="muted" style="font-size:13px">${esc(v.version_name)}</span></div><div class="btns" style="justify-content:flex-start"><button class="btn" data-bbr="${k}" style="min-height:40px;font-size:12px">READ ALOUD</button><button class="btn" data-bbo="${k}" style="min-height:40px;font-size:12px">OPEN THE CHAPTER</button></div></div>`;}).join('');
+  $('bb-daily').querySelectorAll('[data-bbr]').forEach(b=>b.onclick=()=>bbAloud(BB[b.dataset.bbr].ref+'. '+BB[b.dataset.bbr].text));
+  $('bb-daily').querySelectorAll('[data-bbo]').forEach(b=>b.onclick=()=>{const v=BB[b.dataset.bbo];bbOpen(v.book,v.chapter,v.verses[0].n);});
+  $('bb-ver').innerHTML=BB.versions.map(v=>`<option value="${esc(v.code)}">${esc(v.name)}</option>`).join('');$('bb-ver').value=BB.version;
+  $('bb-book').innerHTML=BB.books.map(b=>`<option value="${b.i}">${esc(b.name)}</option>`).join('');
+  $('bb-about').textContent=BB.versions.length>1?'':'Only the King James Version is installed. The usual Afrikaans translations (1933/1953, 1983, 2020) are under copyright of the Bible Society of South Africa, so they are not included. A translation you have the right to use can be added as a file in the "bibles" folder inside Trillion\'s data folder.';
+  bbOpen(bbCur.book,bbCur.chapter);bbNotes();}
+async function bbOpen(book,ch,verse){const m=$('bb-msg');m.textContent='';$('bb-note').hidden=true;bbSel=null;
+  try{bbChap=await (await api(`/api/bible/chapter?book=${book}&chapter=${ch}`)).json();}catch(e){m.className='msg bad';m.textContent=e.message;return;}
+  bbCur={book,chapter:ch};$('bb-book').value=book;$('bb-ch').innerHTML=Array.from({length:bbChap.chapters},(_,i)=>`<option>${i+1}</option>`).join('');$('bb-ch').value=ch;
+  $('bb-title').textContent=bbChap.name+' '+ch;bbDrawText();
+  if(verse){const el=$('bb-text').querySelector(`[data-v="${verse}"]`);if(el){el.classList.add('sel');el.scrollIntoView({block:'center'});}}else if(VIEW==='bible'&&window.scrollY>200)$('bb-title').scrollIntoView({block:'start'});}
+function bbDrawText(){const noted=new Set();bbChap.notes.forEach(n=>{for(let v=n.verse||1;v<=(n.verse_to||n.verse||1);v++)noted.add(v);});
+  $('bb-text').innerHTML=bbChap.verses.map(v=>`<p data-v="${v.n}" class="${noted.has(v.n)?'has':''}${bbSel===v.n?' sel':''}"><sup>${v.n}</sup>${esc(v.t)}</p>`).join('');
+  $('bb-text').querySelectorAll('p').forEach(p=>p.onclick=()=>bbPick(+p.dataset.v));}
+function bbPick(n){bbSel=n;bbDrawText();const ex=bbChap.notes.find(x=>(x.verse||0)===n);bbNoteId=ex?ex.id:null;
+  $('bb-nref').textContent=(ex?'Your note on ':'New note on ')+bbChap.name+' '+bbChap.chapter+':'+n;$('bb-ntext').value=ex?ex.text:'';$('bb-nmsg').textContent='';$('bb-note').hidden=false;$('bb-note').scrollIntoView({block:'nearest'});}
+$('bb-book').onchange=()=>bbOpen(+$('bb-book').value,1);$('bb-ch').onchange=()=>bbOpen(bbCur.book,+$('bb-ch').value);
+$('bb-prev').onclick=()=>{let {book,chapter}=bbCur;if(chapter>1)chapter--;else if(book>0){book--;chapter=BB.books[book].chapters;}else return;bbOpen(book,chapter);};
+$('bb-next').onclick=()=>{let {book,chapter}=bbCur;if(chapter<BB.books[book].chapters)chapter++;else if(book<65){book++;chapter=1;}else return;bbOpen(book,chapter);};
+$('bb-ver').onchange=async()=>{try{BB=await (await api('/api/bible/version',{json:{version:$('bb-ver').value}})).json();await loadBible();tick();}catch(e){$('bb-msg').className='msg bad';$('bb-msg').textContent=e.message;}};
+$('bb-gof').onsubmit=async e=>{e.preventDefault();const m=$('bb-msg');try{const r=await (await api('/api/bible/go?ref='+encodeURIComponent($('bb-go').value))).json();$('bb-go').value='';await bbOpen(r.book,r.chapter,r.verse);}catch(x){m.className='msg bad';m.textContent=x.message;}};
+$('bb-ncancel').onclick=()=>{$('bb-note').hidden=true;bbSel=null;bbDrawText();};
+$('bb-nread').onclick=()=>{const v=bbChap.verses.find(x=>x.n===bbSel);if(v)bbAloud(bbChap.name+' chapter '+bbChap.chapter+', verse '+v.n+'. '+v.t);};
+$('bb-nask').onclick=()=>{$('bb-q').value='Explain '+bbChap.ref.replace(/:.*$/,'')+':'+bbSel+' in its context.';$('bb-ask').click();$('bb-q').scrollIntoView({block:'center'});};
+$('bb-nsave').onclick=async()=>{const m=$('bb-nmsg');try{await api('/api/bible/notes',{json:{id:bbNoteId,text:$('bb-ntext').value,book:bbCur.book,chapter:bbCur.chapter,verse:bbSel}});const keep=bbSel;await bbOpen(bbCur.book,bbCur.chapter);bbPick(keep);$('bb-nmsg').className='msg ok';$('bb-nmsg').textContent='Saved.';bbNotes();}catch(e){m.className='msg bad';m.textContent=e.message;}};
+$('bb-sf').onsubmit=async e=>{e.preventDefault();const m=$('bb-smsg'),q=$('bb-sq').value.trim();if(!q)return;m.className='msg';m.textContent='Searching...';
+  try{const r=await (await api('/api/bible/search?q='+encodeURIComponent(q))).json();m.textContent=r.total?r.total+' verse'+(r.total===1?'':'s')+' found'+(r.total>r.hits.length?', showing the first '+r.hits.length+'.':'.'):'No verse has all of those words.';
+    $('bb-shits').innerHTML=r.hits.map((h,i)=>`<div class="bbhit" data-i="${i}"><b>${esc(h.ref)}</b><div>${esc(h.t)}</div></div>`).join('');
+    $('bb-shits').querySelectorAll('.bbhit').forEach(d=>d.onclick=()=>{const h=r.hits[+d.dataset.i];bbOpen(h.book,h.chapter,h.verse);});}catch(x){m.className='msg bad';m.textContent=x.message;}};
+$('bb-ask').onclick=async()=>{const m=$('bb-amsg'),b=$('bb-ask'),q=$('bb-q').value.trim();if(!q){m.className='msg bad';m.textContent='Type a question first.';return;}
+  b.disabled=true;m.className='msg';m.textContent='Reading the passages and thinking. This can take a minute...';
+  try{const r=await (await api('/api/bible/ask',{json:{question:q}})).json();m.textContent='';
+    $('bb-answer').innerHTML=`<div class="stsub"><div style="white-space:pre-wrap;line-height:1.6">${esc(r.answer)}</div>${r.passages.length?`<div class="btns" style="justify-content:flex-start"><button class="btn" id="bb-asave" style="min-height:40px;font-size:12px">SAVE AS A NOTE ON ${esc((r.passages[0].focus||r.passages[0].ref).toUpperCase())}</button><button class="btn" id="bb-aread" style="min-height:40px;font-size:12px">READ ALOUD</button><span class="msg" id="bb-asmsg"></span></div>`:''}</div>`
+      +(r.passages.length?`<div class="muted" style="font-size:13px;margin-top:10px">${r.found==='words'?'She found these verses by the words in your question; they may not be the best ones.':'The passages she answered from:'}</div>`+r.passages.map(p=>`<div class="bbhit" data-b="${p.book}" data-c="${p.chapter}" data-v="${p.verses[0].n}"><b>${esc(p.ref)}</b><div>${p.verses.map(v=>`<sup style="color:var(--a)">${v.n}</sup> ${esc(v.t)}`).join(' ')}</div></div>`).join(''):'');
+    $('bb-answer').querySelectorAll('.bbhit').forEach(d=>d.onclick=()=>bbOpen(+d.dataset.b,+d.dataset.c,+d.dataset.v));
+    if($('bb-aread'))$('bb-aread').onclick=()=>bbAloud(r.answer);
+    if($('bb-asave'))$('bb-asave').onclick=async()=>{const sm=$('bb-asmsg');try{await api('/api/bible/notes',{json:{ref:r.passages[0].focus||r.passages[0].ref,text:'Question: '+q+'\n\n'+r.answer}});sm.className='msg ok';sm.textContent='Saved to your notes.';bbNotes();}catch(e){sm.className='msg bad';sm.textContent=e.message;}};
+  }catch(e){m.className='msg bad';m.textContent=e.message;}
+  b.disabled=false;};
+async function bbNotes(){let r;try{r=await (await api('/api/bible/notes?q='+encodeURIComponent($('bb-nq').value.trim()))).json();}catch(e){return;}
+  $('bb-notes').innerHTML=r.notes.map(n=>`<div class="strow"><div class="nm"><b>${esc(n.ref)}</b><small>${esc(new Date(n.updated*1000).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'}))}</small><div style="white-space:pre-wrap;margin-top:6px">${esc(n.text)}</div></div><button class="btn" data-no="${n.id}">OPEN</button><button class="btn" data-nd="${n.id}">DELETE</button></div>`).join('')||'<div class="muted">No notes yet. Tap a verse in the reader to write the first one.</div>';
+  $('bb-notes').querySelectorAll('[data-no]').forEach(b=>b.onclick=async()=>{const n=r.notes.find(x=>x.id==b.dataset.no);await bbOpen(n.book,n.chapter,n.verse);if(n.verse)bbPick(n.verse);$('bb-title').scrollIntoView({block:'start'});});
+  $('bb-notes').querySelectorAll('[data-nd]').forEach(b=>b.onclick=async()=>{if(!twice(b,'DELETE NOTE?'))return;await api('/api/bible/notes/'+b.dataset.nd,{method:'DELETE'});bbNotes();if(bbChap)bbOpen(bbCur.book,bbCur.chapter);});}
+$('bb-nq').oninput=()=>{clearTimeout(bbNotes.t);bbNotes.t=setTimeout(bbNotes,300);};
 // ---- the Gumroad store ----
 let ST=null,stOpen=null;var storeSeen=0;
 const stDay=t=>{const d=new Date(t*1000);return d.toLocaleDateString(undefined,{day:'numeric',month:'short'})+' '+d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});};
@@ -1613,6 +1706,7 @@ async function loadProjects(){
 }
 // ---- commands help ----
 const CMDS=[
+  ['Bible study',[['verse of the day','The morning verse, or the evening verse after 5 pm'],['read John 3:16',''],['read Psalms 23',''],['search the bible for living water',''],['explain Romans 8:28','She answers from the passage and its context'],['what does the bible say about forgiveness','']]],
   ['Gumroad store',[['how are my gumroad sales','Today and the last 30 days'],['how much did I sell this week',''],['how much did I make this month',''],['unpublish My Ebook on gumroad','Hides a product from buyers'],['publish My Ebook on gumroad',''],['make a 20% discount code for My Ebook','Add "called SPRING20" to choose the name'],['post a product called My Ebook for $19','Attach the file with + first. Say "create" instead of "post" to save a draft']]],
   ['WhatsApp',[['read my whatsapps','Reads out new incoming messages'],['send a whatsapp to Llewellyn saying I will be there at 5','Goes straight out to a saved contact'],['send this to Llewellyn on whatsapp','Attach a photo or file with the + button first'],['send a test whatsapp to Llewellyn Terblanche',''],['send me a test whatsapp','Needs your own number on the Phone page'],['open my whatsapp','']]],
   ['Phone',[['ring my phone','Rings at full volume, even on silent'],['where is my phone','Last known position with a map link'],['how is my phone','Battery, storage, Wi-Fi'],['unlock my phone','Needs an unlock code saved on the Phone page'],['put my phone to sleep','Screen off and locked'],['take a screenshot of my phone',''],['open maps on my phone','Any installed app'],['what is on my phone screen','Needs Full phone control'],['tap Chats on my phone','Needs Full phone control'],['press back on my phone','Needs Full phone control']]],
@@ -1624,11 +1718,11 @@ const CMDS=[
   ['PC and Trillion',[['what is the status of my pc',''],['check my website',''],['what version are you',''],['update yourself','Gets the newest version and restarts'],['be witty','Also: be professional, be warm']]],
 ];
 function drawCommands(){
-  $('cmdlist').innerHTML=CMDS.filter(g=>g[0]!=='Gumroad store'||(S&&S.store_on)).map(g=>`<div class="panel"><b>${esc(g[0])}</b><div class="cmdg">${g[1].map(c=>`<div class="cmdr"><div><code>${esc(c[0])}</code>${c[1]?`<small>${esc(c[1])}</small>`:''}</div><button class="btn" data-use="${esc(c[0])}" style="min-height:40px;font-size:12px;flex:none">USE</button></div>`).join('')}</div></div>`).join('');
+  $('cmdlist').innerHTML=CMDS.filter(g=>(g[0]!=='Gumroad store'||(S&&S.store_on))&&(g[0]!=='Bible study'||(S&&S.bible_on))).map(g=>`<div class="panel"><b>${esc(g[0])}</b><div class="cmdg">${g[1].map(c=>`<div class="cmdr"><div><code>${esc(c[0])}</code>${c[1]?`<small>${esc(c[1])}</small>`:''}</div><button class="btn" data-use="${esc(c[0])}" style="min-height:40px;font-size:12px;flex:none">USE</button></div>`).join('')}</div></div>`).join('');
   document.querySelectorAll('[data-use]').forEach(b=>b.onclick=()=>{go('control');$('say').value=b.dataset.use;$('say').focus();});
 }
 function drawMore(){
-  const items=[...(S&&S.store_on?[['store','Store','Gumroad sales, products, codes']]:[]),['videos','Videos','Make and watch videos'],['files','Files','Browse your folders'],['memory','Memory','What she remembers'],['routines','Routines','Morning briefing, news, weather'],['skills','Skills','Extra abilities and connectors'],['commands','Commands','Everything you can say'],['settings','Settings','Look, brain, voice, keys']];
+  const items=[...(S&&S.bible_on?[['bible','Bible study','Daily verse, reader, notes, helper']]:[]),...(S&&S.store_on?[['store','Store','Gumroad sales, products, codes']]:[]),['videos','Videos','Make and watch videos'],['files','Files','Browse your folders'],['memory','Memory','What she remembers'],['routines','Routines','Morning briefing, news, weather'],['skills','Skills','Extra abilities and connectors'],['commands','Commands','Everything you can say'],['settings','Settings','Look, brain, voice, keys']];
   if(S&&S.user.is_admin)items.push(['family','Family','Logins, update, backup']);
   $('moregrid').innerHTML=items.map(i=>`<button class="mbtn" data-go="${i[0]}"><b>${i[1]}</b><span>${i[2]}</span></button>`).join('')+`<button class="mbtn" id="out2"><b>Sign out</b><span>${S?esc(S.user.name):''}</span></button>`;
   $('out2').onclick=()=>$('out').click();
@@ -1642,8 +1736,10 @@ async function loadFamily(){const f=await (await api('/api/admin/family')).json(
     <div class="row"><span>Connections on</span><span>${esc(u.connections.join(', ')||'none')}</span></div>
     <div class="row"><span>Cloud calls today</span><span>${u.cloud_calls}</span></div>
     <label class="tickrow" style="align-items:center"><input type="checkbox" data-st="${u.id}" ${u.store_on?'checked':''}><span>Gumroad store page for this login</span></label>
+    <label class="tickrow" style="align-items:center"><input type="checkbox" data-bb="${u.id}" ${u.bible_on?'checked':''}><span>Bible study for this login</span></label>
     <label class="field"><span>Folders this login may use (one per line; * = whole PC, owner only)</span><textarea id="r-${u.id}" rows="3">${esc(u.roots.join('\n'))}</textarea></label>
     <div class="btns" style="justify-content:flex-start"><button class="btn pri" data-u="${u.id}" data-o="roots">SAVE FOLDERS</button><button class="btn" data-u="${u.id}" data-o="reset">RESET PASSWORD</button></div></div>`).join('');
+  document.querySelectorAll('[data-bb]').forEach(c=>c.onchange=async()=>{await api('/api/admin/family/'+c.dataset.bb,{method:'PUT',json:{bible_on:c.checked}});tick();});
   document.querySelectorAll('[data-st]').forEach(c=>c.onchange=async()=>{await api('/api/admin/family/'+c.dataset.st,{method:'PUT',json:{store_on:c.checked}});tick();});
   document.querySelectorAll('[data-u]').forEach(b=>b.onclick=async()=>{const id=b.dataset.u;
     await api('/api/admin/family/'+id,{method:'PUT',json:b.dataset.o==='roots'?{roots:$('r-'+id).value.split('\n')}:{reset_password:true}});loadFamily();});

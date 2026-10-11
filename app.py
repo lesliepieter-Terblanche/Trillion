@@ -45,11 +45,31 @@ for _u in core.q("SELECT * FROM users"):
         _raw["store_on"], _raw["store_set"] = _u["name"].lower() == "brandon", True
         core.save_settings(_u["id"], _raw)
 extend.init()
+import bible
+bible.init()
 video.init()
 attach.init()
 import gumroad
 gumroad.init()
 routines.init()
+# 0.7.28: Bible study belongs to Lewellyn's login. His morning and evening routines read the day's verse aloud, a different
+# one each. The owner can switch Bible study on for another login on the Family page.
+for _u in core.q("SELECT * FROM users"):
+    try:
+        _raw = json.loads(_u["settings"] or "{}")
+    except Exception:
+        _raw = {}
+    if not _raw.get("bible_set"):
+        _raw["bible_on"], _raw["bible_set"] = _u["name"].lower() in ("lewellyn", "llewellyn"), True
+        core.save_settings(_u["id"], _raw)
+        if _raw["bible_on"]:
+            _lu = core.q("SELECT * FROM users WHERE id=?", (_u["id"],), one=True)
+            for _r in routines.list_for(_lu):
+                _which = "morning" if "morning" in _r["name"].lower() else "night" if re.search(r"evening|night", _r["name"], re.I) else None
+                if _which:
+                    _secs = [dict(x, on=True, which=_which) if x["type"] == "verse" else x for x in _r["sections"]]
+                    _secs.sort(key=lambda x: x["type"] != "verse")            # the verse comes first
+                    core.x("UPDATE routines SET sections=? WHERE id=?", (json.dumps(_secs), _r["id"]))
 app = FastAPI(title="Trillion")
 COOKIE = "trillion"
 BUSY, STOP, SITES, LAST_PROVIDER = {}, set(), {}, {}
@@ -347,6 +367,51 @@ STORE_PUB = re.compile(r"\b(un-?publish|re-?publish|publish|take down|hide|put b
 STORE_CODE = re.compile(r"\b(?:make|create|add|set up|give me)\s+(?:me\s+)?an?\s+(\d{1,3})\s*(?:%|percent|per cent)\s+(?:off\s+)?"
                         r"(?:discount\s+|coupon\s+|offer\s+|promo\s+)?code(?:\s+(?:called|named)\s+([A-Za-z0-9_-]{2,40}))?\s+(?:for|on)\s+"
                         r"(?:my\s+|the\s+)?(.+?)(?:\s+(?:on|in)\s+(?:gum ?road|my store|the store))?[.!?]?\s*$", re.I)
+
+
+# ---------- Bible study, asked for in plain words ----------
+BIBLE_VERSE = re.compile(r"\b(?:verse|scripture)\s+(?:of|for)\s+the\s+(?:day|morning|evening|night)\b|\b(?:today'?s|this (?:morning|evening)'?s?|tonight'?s|daily|morning|evening)\s+(?:bible\s+)?(?:verse|scripture)\b", re.I)
+BIBLE_READ = re.compile(r"^\s*(?:please\s+)?(?:read|open|show|look up|what does|what is|give me)\s+(?:me\s+)?(?:the\s+)?(?:bible\s+)?(?:verse\s+|passage\s+|chapter\s+)?(.+?)(?:\s+say)?[.?!]?\s*$", re.I)
+BIBLE_FIND = re.compile(r"\b(?:search|find|look)\b.{0,25}\b(?:bible|scripture|verses?)\b.{0,12}?\b(?:for|about|with|on|containing)\s+(.+?)[.?!]?\s*$", re.I)
+BIBLE_ASK = re.compile(r"\b(?:explain|meaning of|what does .{1,60} mean|what does the bible say|what does scripture say|study|context of|"
+                       r"help me understand|bible study|bybelstudie)\b", re.I)
+
+
+def bible_shortcut(user, text):
+    """Verse of the day, reading a passage, searching and study questions, for a login with Bible study on."""
+    if len(text) > 400 or not bible.allowed(user):
+        return None
+    try:
+        code = bible.version_of(user)
+        if BIBLE_VERSE.search(text):
+            night = bool(re.search(r"\b(evening|night|tonight)", text, re.I)) or (datetime.datetime.now().hour >= 17 and not re.search(r"\bmorning\b", text, re.I))
+            p = bible.daily(user, "night" if night else "morning")
+            return ("Tonight's verse" if night else "This morning's verse") + f" is {p['ref']}: {p['text']}", "bible"
+        m = BIBLE_FIND.search(text)
+        if m:
+            want = m.group(1).strip().strip('"\u201c\u201d')
+            r = bible.search(code, f'"{want}"', 8) if " " in want else {"total": 0}       # spoken words are a phrase first
+            if not r["total"]:
+                r = bible.search(code, want, 8)
+            if not r["total"]:
+                return f"I found no verse with {m.group(1)}.", "bible"
+            return (f"{r['total']} verse{'s' if r['total'] != 1 else ''} with {m.group(1)}. " + " ".join(f"{h['ref']}: {h['t']}" for h in r["hits"][:3])
+                    + (" The rest are on the Bible page." if r["total"] > 3 else "")), "bible"
+        refs = bible.refs_in(text, 3)
+        if BIBLE_ASK.search(text) and (refs or re.search(r"\bbible|scripture|verse|bybel\b", text, re.I)):
+            h = bible.helper(llm_chat, user, text)
+            return h["answer"] + ("\n\nPassages used: " + "; ".join(p.get("focus") or p["ref"] for p in h["passages"]) if h["passages"] else ""), "bible"
+        m = BIBLE_READ.match(text)
+        if m and refs and len(refs) == 1 and bible.refs_in(m.group(1), 1) and len(m.group(1)) < 40:
+            p = bible.passage(code, *refs[0])
+            body = " ".join((f"{x['n']} " if len(p["verses"]) > 1 else "") + x["t"] for x in p["verses"][:12])
+            return f"{p['ref']}: {body}" + (" The rest of the chapter is on the Bible page." if len(p["verses"]) > 12 else ""), "bible"
+        if refs and re.fullmatch(r"\s*" + bible.REF.pattern + r"\s*[.?]?\s*", text, re.I):      # just a reference on its own
+            p = bible.passage(code, *refs[0])
+            return f"{p['ref']}: " + " ".join((f"{x['n']} " if len(p["verses"]) > 1 else "") + x["t"] for x in p["verses"][:12]), "bible"
+    except bible.BibleError as e:
+        return str(e), "bible"
+    return None
 
 
 STORE_NEW = re.compile(r"\b(?:create|add|make|list|post|put up|sell)\s+(?:an?\s+|this\s+(?:as\s+an?\s+)?|it\s+as\s+an?\s+)?(?:new\s+)?(?:gum ?road\s+)?"
@@ -823,7 +888,7 @@ def run_agent(user, text, files=None):
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="completed", detail=reply[:200])
         return {"reply": reply, "task_id": tid, "provider": "built-in"}
-    ss = store_shortcut(user, text, files)
+    ss = bible_shortcut(user, text) or store_shortcut(user, text, files)
     if ss:
         reply, show = ss
         BUSY[uid] = False
@@ -1052,6 +1117,93 @@ def phone_whatsapp(p: dict = Body(...), user=Depends(auth)):
     core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
     core.set_task(tid, status="waiting" if waiting_ else ("failed" if "error" in res else "completed"), detail=reply[:200])
     return {"reply": reply, "task_id": tid, "provider": "built-in"}
+
+
+# ---------- Bible study ----------
+def bible_today(user):
+    """The verse the Home page shows: the morning verse until five in the afternoon, the evening verse after that."""
+    if not bible.allowed(user):
+        return None
+    try:
+        p = bible.daily(user, "night" if datetime.datetime.now().hour >= 17 else "morning")
+        return {"when": p["when"], "ref": p["ref"], "text": p["text"], "version": p["version_name"], "book": p["book"], "chapter": p["chapter"]}
+    except bible.BibleError:
+        return None
+
+
+def bible_user(user=Depends(auth)):
+    if not bible.allowed(user):
+        raise HTTPException(403, "Bible study is not switched on for this login.")
+    return user
+
+
+def _bible_do(fn):
+    try:
+        return fn()
+    except bible.BibleError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/bible")
+def bible_home(user=Depends(bible_user)):
+    code = bible.version_of(user)
+    return {"version": code, "versions": bible.versions(), "books": bible.books(code),
+            "morning": _bible_do(lambda: bible.daily(user, "morning")), "night": _bible_do(lambda: bible.daily(user, "night")),
+            "notes": len(bible.notes(user))}
+
+
+@app.post("/api/bible/version")
+def bible_version(p: dict = Body(...), user=Depends(bible_user)):
+    code = str(p.get("version") or "").lower()
+    if code not in [v["code"] for v in bible.versions()]:
+        raise HTTPException(400, "That translation is not installed.")
+    st = core.settings(user)
+    st["bible_version"] = code
+    core.save_settings(user["id"], st)
+    return bible_home(core.q("SELECT * FROM users WHERE id=?", (user["id"],), one=True))
+
+
+@app.get("/api/bible/chapter")
+def bible_chapter(book: int, chapter: int, user=Depends(bible_user)):
+    out = _bible_do(lambda: bible.chapter(bible.version_of(user), book, chapter))
+    out["notes"] = bible.notes(user, book, chapter)
+    return out
+
+
+@app.get("/api/bible/go")
+def bible_go(ref: str, user=Depends(bible_user)):
+    r = bible.parse(ref)
+    if not r:
+        raise HTTPException(400, "I could not read that reference. Write it like John 3:16 or Psalms 23.")
+    return {"book": r[0], "chapter": r[1], "verse": r[2], "verse_to": r[3]}
+
+
+@app.get("/api/bible/search")
+def bible_search(q: str, user=Depends(bible_user)):
+    return _bible_do(lambda: bible.search(bible.version_of(user), q[:120]))
+
+
+@app.get("/api/bible/notes")
+def bible_notes(q: str = "", user=Depends(bible_user)):
+    return {"notes": bible.notes(user, q=q or None)}
+
+
+@app.post("/api/bible/notes")
+def bible_note_save(p: dict = Body(...), user=Depends(bible_user)):
+    nid = _bible_do(lambda: bible.save_note(user, p.get("text"), ref=p.get("ref"), book=p.get("book"), chapter_=p.get("chapter"),
+                                            verse=p.get("verse"), verse_to=p.get("verse_to"), nid=p.get("id")))
+    return {"id": nid, "notes": bible.notes(user)}
+
+
+@app.delete("/api/bible/notes/{nid}")
+def bible_note_delete(nid: int, user=Depends(bible_user)):
+    bible.delete_note(user, nid)
+    return {"notes": bible.notes(user)}
+
+
+@app.post("/api/bible/ask")
+def bible_ask(p: dict = Body(...), user=Depends(bible_user)):
+    return _bible_do(lambda: bible.helper(llm_chat, user, p.get("question")))
 
 
 # ---------- this login's own Gumroad store ----------
@@ -1680,7 +1832,7 @@ def state(user=Depends(auth)):
         "notes": {"personal": n("PERSONAL"), "work": n("WORK"),
                   "today": core.q("SELECT COUNT(*) c FROM notes WHERE user_id=? AND ts>=?", (uid, ds), one=True)["c"]},
         "site": SITES.get(s.get("site")) if s.get("site") else None,
-        "day_start": ds, "now": time.time(), "store_new": gumroad.unseen(uid) if store_allowed(user) else 0, "store_on": store_allowed(user), "wa_unseen": core.q("SELECT COUNT(*) c FROM wa_inbox WHERE user_id=? AND seen=0", (uid,), one=True)["c"],
+        "day_start": ds, "now": time.time(), "bible_on": bible.allowed(user), "verse": bible_today(user), "store_new": gumroad.unseen(uid) if store_allowed(user) else 0, "store_on": store_allowed(user), "wa_unseen": core.q("SELECT COUNT(*) c FROM wa_inbox WHERE user_id=? AND seen=0", (uid,), one=True)["c"],
         "version": VERSION, "hearing": HEARING["state"], "hearing_device": HEARING.get("device", ""),
         "phone": ({"linked": True, "model": s.get("phone_model", ""), **(PHONE_STATS.get(uid) or {"pending": True})}
                   if s.get("phone_serial") else {"linked": False}),
@@ -2446,6 +2598,7 @@ def family(user=Depends(admin)):
         out.append({"id": u["id"], "name": u["name"], "brand": s["brand"], "site": s["site"], "brain": s["brain"],
                     "has_password": bool(u["pw_hash"]), "roots": core.user_roots(u),
                     "store_on": store_allowed(u),
+                    "bible_on": bible.allowed(u),
                     "connections": [c["name"] for c in core.list_secrets(u["id"]) if c["set"] and c["enabled"]],
                     "cloud_calls": sum(core.usage_today(u["id"]).values()),
                     "site_status": SITES.get(s["site"])})
@@ -2460,6 +2613,10 @@ def family_put(uid: int, p: dict = Body(...), user=Depends(admin)):
     if "roots" in p:
         s = core.settings(u)
         s["roots"] = [r.strip() for r in p["roots"] if r.strip() and (r.strip() != "*" or u["is_admin"])]
+        core.save_settings(uid, s)
+    if "bible_on" in p:
+        s = core.settings(u)
+        s["bible_on"], s["bible_set"] = bool(p["bible_on"]), True
         core.save_settings(uid, s)
     if "store_on" in p:
         s = core.settings(u)

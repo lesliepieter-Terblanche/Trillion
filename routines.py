@@ -64,6 +64,10 @@ SECTIONS = [
      "fields": [], "defaults": {}},
     {"type": "phone", "label": "My phone", "hint": "Battery level of the phone linked to this login.",
      "fields": [], "defaults": {}},
+    {"type": "verse", "label": "Bible verse", "hint": "A verse read aloud. The morning and the evening each have their own verse for the day.",
+     "fields": [{"key": "which", "label": "Which verse", "kind": "select",
+                 "options": [["morning", "The morning verse"], ["night", "The evening verse"]]}],
+     "defaults": {"which": "morning"}},
     {"type": "note", "label": "My own reminder", "hint": "A line of your own that she reads out every time.",
      "fields": [{"key": "text", "label": "What she should say", "kind": "textarea"}],
      "defaults": {"text": ""}},
@@ -736,7 +740,20 @@ def sec_note(user, cfg, ctx):
     return {"title": "Reminder", "lines": [{"t": text}], "say": text if text[-1] in ".!?" else text + "."}
 
 
-RUNNERS = {"weather": sec_weather, "news": sec_news, "markets": sec_markets, "done": sec_done,
+def sec_verse(user, cfg, ctx):
+    import bible
+    if not bible.allowed(user):
+        raise Miss("Bible study is not switched on for this login.")
+    try:
+        p = bible.daily(user, "night" if cfg.get("which") == "night" else "morning")
+    except bible.BibleError as e:
+        raise Miss(str(e))
+    lead = "Tonight's verse" if p["when"] == "night" else "This morning's verse"
+    return {"title": "Evening verse" if p["when"] == "night" else "Morning verse", "lines": [{"t": p["text"]}, {"t": p["ref"], "v": p["version_name"]}],
+            "say": f"{lead} is {bible.say(p)}"}
+
+
+RUNNERS = {"verse": sec_verse, "weather": sec_weather, "news": sec_news, "markets": sec_markets, "done": sec_done,
            "outstanding": sec_outstanding, "website": sec_website, "pc": sec_pc, "phone": sec_phone, "note": sec_note}
 
 VOICE = {
