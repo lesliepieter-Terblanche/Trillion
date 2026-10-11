@@ -488,9 +488,10 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <label class="field"><span>What is it about, and who is it for?</span><textarea id="ebprompt" rows="2" placeholder="A first-time seller's guide to selling a home in Johannesburg"></textarea></label>
     <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end">
       <label class="field"><span>Chapters</span><select id="ebch"><option>3</option><option>4</option><option selected>5</option><option>6</option><option>8</option><option>10</option></select></label>
+      <label style="display:flex;gap:10px;align-items:center;min-height:44px"><input type="checkbox" id="ebpics" style="width:22px;height:22px"> Add AI-made pictures</label>
       <button class="btn pri" id="ebgo">WRITE THE EBOOK</button></div>
     <div class="msg" id="ebmsg"></div>
-    <div class="muted" style="font-size:13px">I write it myself and lay it out as a PDF with a cover, a contents page and chapter pages. About a minute or two per chapter. Read it through before you share or sell it.</div>
+    <div class="muted" style="font-size:13px">I write it myself and lay it out as a PDF with a cover, a contents page and chapter pages. About a minute or two per chapter. Read it through before you share or sell it.<br><b>From your own document:</b> press <b>+</b> in the message bar below, add the Word or PDF file (and any photos), and type "make this an ebook". Your words are kept as they are; add "with pictures" if you want pictures made for it.</div>
   </div>
   <div id="eblist" style="display:flex;flex-direction:column;gap:10px"></div>
   <h2>Files</h2>
@@ -1208,7 +1209,7 @@ async function loadEbooks(){
 $('ebgo').onclick=async()=>{const about=$('ebprompt').value.trim();if(!about){$('ebmsg').textContent='Say what the ebook is about first.';return;}
   if(sending){$('ebmsg').textContent='She is busy with another job.';return;}
   $('ebmsg').className='msg';$('ebmsg').textContent='Writing. This takes several minutes; progress shows on the home screen.';
-  await send(`Write an ebook with ${$('ebch').value} chapters: ${about}`,false);$('ebmsg').textContent='';$('ebprompt').value='';loadEbooks();};
+  await send(`Write an ebook with ${$('ebch').value} chapters${$('ebpics').checked?' and pictures':''}: ${about}`,false);$('ebmsg').textContent='';$('ebprompt').value='';loadEbooks();};
 let WV=null;   // the link being shown: {id,timer,busy}
 async function showLink(id){
   let l;try{l=(await (await api('/api/links')).json()).find(x=>x.id===id);}catch(e){}

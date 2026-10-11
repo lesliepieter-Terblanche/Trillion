@@ -514,16 +514,34 @@ def aiclip_reply(res):
 EBOOK_RE = re.compile(r"\b(create|make|write|generate|produce|build)\b[^.?!]{0,60}\b(e-?books?|lead magnet|guide ?book|pdf guide|digital guide)\b", re.I)
 
 
-def ebook_request(text):
+EBOOK_WORD = re.compile(r"\be-?books?\b", re.I)
+EBOOK_FROM = re.compile(r"\b(create|make|turn|convert|build|write|generate|produce|into|from|as an?)\b", re.I)
+PICTURES = re.compile(r"\b(images?|pictures?|photos?|illustrations?|visuals?|graphics?)\b", re.I)
+
+
+def wants_ebook(text, files):
+    """An ebook asked for outright, or any 'make this an ebook' said about an attached document."""
+    if EBOOK_RE.search(text):
+        return True
+    return bool(any(f["kind"] == "document" for f in files) and EBOOK_WORD.search(text) and EBOOK_FROM.search(text))
+
+
+def ebook_request(text, files=()):
     m = re.search(r"(\d{1,2})[\s-]*chapters?\b", text, re.I)
-    return {"prompt": text, "chapters": int(m.group(1)) if m else 5}
+    no_pics = re.search(r"\b(no|without)\s+(images?|pictures?|photos?|illustrations?)\b", text, re.I)
+    return {"prompt": text, "chapters": int(m.group(1)) if m else 5,
+            "sources": [f["path"] for f in files if f["kind"] == "document"],
+            "images": [f["path"] for f in files if f["kind"] == "image"],
+            "pictures": bool(PICTURES.search(text)) and not no_pics}
 
 
 def ebook_reply(res):
     if "error" in res:
         return "I could not make the ebook: " + res["error"]
-    return (f"Your ebook is ready: {res['title']}. {res['pages']} pages, {res['chapters']} chapters, about {res['words']} words. "
-            f"It is saved at {res['saved']}{', with an EPUB copy next to it' if res.get('epub') else ''}. I wrote it myself, so read it through and check the facts before you share or sell it. "
+    return (f"Your ebook is ready: {res['title']}. {res['pages']} pages, {res['chapters']} chapters, about {res['words']} words"
+            f"{', ' + str(res['pictures']) + ' picture' + ('s' if res['pictures'] != 1 else '') if res.get('pictures') else ''}. "
+            f"It is saved at {res['saved']}{', with an EPUB copy next to it' if res.get('epub') else ''}. " + ("" if res.get("from_document") else
+               "I wrote it myself, so read it through and check the facts before you share or sell it. ")
             + " ".join(res.get("notes", []))).strip()
 
 
@@ -692,7 +710,7 @@ def run_agent(user, text, files=None):
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", quick, time.time()))
         core.set_task(tid, status="completed", detail=quick[:200])
         return {"reply": quick, "task_id": tid, "provider": "built-in"}
-    im = IMAGE_RE.search(text) if not VIDEO_RE.search(text) else None
+    im = IMAGE_RE.search(text) if not VIDEO_RE.search(text) and not wants_ebook(text, files) else None
     if im and len(text) < 600:
         want = (im.group(3) or "").strip(" .") or text
         kind = im.group(2).lower()
@@ -750,9 +768,9 @@ def run_agent(user, text, files=None):
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="failed" if "error" in res else "completed", detail=reply[:200])
         return {"reply": reply, "task_id": tid, "provider": "FreeVideo", "show": "" if "error" in res else "videos"}
-    if EBOOK_RE.search(text) and not asking:
+    if wants_ebook(text, files) and not asking:
         try:
-            res = tools.execute(user, "create_ebook", ebook_request(text), task_id=tid)
+            res = tools.execute(user, "create_ebook", ebook_request(text, files), task_id=tid)
         finally:
             BUSY[uid] = False
         reply = ebook_reply(res)

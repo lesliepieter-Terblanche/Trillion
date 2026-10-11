@@ -631,10 +631,10 @@ def t_create_ai_clip(user, prompt, seconds=5, format="vertical", _task=None):
     return freevideo.create(core.LLM, user, prompt, seconds, fmt, progress=say)
 
 
-def t_create_ebook(user, prompt, chapters=5, _task=None):
+def t_create_ebook(user, prompt, chapters=5, _task=None, sources=None, images=None, pictures=False):
     import ebook
     say = (lambda text: core.set_task(_task, detail=text)) if _task else None
-    return ebook.create(core.LLM, user, prompt, chapters, progress=say)
+    return ebook.create(core.LLM, user, prompt, chapters, progress=say, sources=sources, images=images, pictures=bool(pictures))
 
 
 def t_phone_read_screen(user):
