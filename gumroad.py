@@ -7,6 +7,7 @@ is slow; buyer details never leave this PC.
 import json
 import os
 import re
+import threading
 import time
 from urllib.parse import quote
 
@@ -204,14 +205,25 @@ def _keep_sale(uid, s, fresh):
         core.x("UPDATE gumroad_sales SET created=?,product_id=?,product=?,email=?,price=?,fee=?,currency=?,shown=?,refunded=?,"
                "partial=?,disputed=?,code=? WHERE user_id=? AND id=?", vals + (uid, sid))
         return False
-    core.x("INSERT INTO gumroad_sales(created,product_id,product,email,price,fee,currency,shown,refunded,partial,disputed,code,"
+    core.x("INSERT OR IGNORE INTO gumroad_sales(created,product_id,product,email,price,fee,currency,shown,refunded,partial,disputed,code,"
            "user_id,id,seen) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", vals + (uid, sid, 0 if fresh else 1))
     return True
 
 
+_LOCKS, _LOCKS_GUARD = {}, threading.Lock()
+
+
 def sync(user, everything=False):
     """Read the store from Gumroad. The first time all sales are copied; after that only the last weeks are re-read.
-    Returns the number of sales not seen before."""
+    Returns the number of sales not seen before. One check at a time per login: the timed check and a pressed
+    Check now must not both file the same sale."""
+    with _LOCKS_GUARD:
+        lock = _LOCKS.setdefault(user["id"], threading.Lock())
+    with lock:
+        return _sync(user, everything)
+
+
+def _sync(user, everything=False):
     uid = user["id"]
     st = _store(uid)
     first = everything or not st["complete"]
