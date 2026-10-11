@@ -483,6 +483,16 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
 </div>
 
 <div class="view" id="v-files">
+  <h2>Ebooks</h2>
+  <div class="panel"><b>Make an ebook</b>
+    <label class="field"><span>What is it about, and who is it for?</span><textarea id="ebprompt" rows="2" placeholder="A first-time seller's guide to selling a home in Johannesburg"></textarea></label>
+    <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end">
+      <label class="field"><span>Chapters</span><select id="ebch"><option>3</option><option>4</option><option selected>5</option><option>6</option><option>8</option><option>10</option></select></label>
+      <button class="btn pri" id="ebgo">WRITE THE EBOOK</button></div>
+    <div class="msg" id="ebmsg"></div>
+    <div class="muted" style="font-size:13px">I write it myself and lay it out as a PDF with a cover, a contents page and chapter pages. About a minute or two per chapter. Read it through before you share or sell it.</div>
+  </div>
+  <div id="eblist" style="display:flex;flex-direction:column;gap:10px"></div>
   <h2>Files</h2>
   <div class="muted" id="fpath"></div>
   <div id="flist"></div>
@@ -626,7 +636,7 @@ const api=async(u,o={})=>{if(o.json!==undefined){o.method=o.method||'POST';o.hea
 const hm=t=>new Date(t*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false});
 let hold=0,S=null,sending=false,speakNext=false,settingsLoaded=false,cwd='';
 
-const LOADERS={projects:()=>loadProjects(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>loadFiles(cwd),memory:()=>loadNotes(''),videos:()=>loadVideos(),skills:()=>loadSkills(),settings:()=>loadSettings(),family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
+const LOADERS={projects:()=>loadProjects(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);},memory:()=>loadNotes(''),videos:()=>loadVideos(),skills:()=>loadSkills(),settings:()=>loadSettings(),family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
 let VIEW='control';
 function go(v){
   VIEW=v;
@@ -831,7 +841,7 @@ async function send(text,speak,atts){
   $('chat').insertAdjacentHTML('beforeend',`<div class="user">${withFiles(text+atts.map(a=>`\n[[file:${a.id}:${a.name.replace(/[\]:]/g,'-')}:${a.kind}]]`).join(''))}</div>`);$('chat').scrollTop=1e9;
   $('kicker').textContent='NOW WORKING';$('big').textContent='Thinking';$('sub').textContent=text;
   const liveT=setInterval(async()=>{try{const l=await (await fetch('/api/live')).json();if(l.text){let b=$('livebub');if(!b){$('chat').insertAdjacentHTML('beforeend','<div class="assistant" id="livebub"></div>');b=$('livebub');}b.textContent=l.text+' ▍';$('chat').scrollTop=1e9;$('big').textContent='Answering';}}catch(e){}},350);
-  try{const r=await (await api('/api/chat',{json:{message:text,attachments:atts.map(a=>a.id)}})).json();clearInterval(liveT);await loadChat();await tick();if(S&&S.approvals.length)$('chatwait').scrollIntoView({block:'nearest'});if(r.brief)showBrief(r.brief,true);if(r.map)showMap(r.map);if(r.image)showImage(r.image);if(r.link)showLink(r.link);else replyPop(text,r);if(r.show)go(r.show);if(speak||voiceOn){talking=true;if(S)render();await say(r.reply);await new Promise(r=>setTimeout(r,350));talking=false;}}
+  try{const r=await (await api('/api/chat',{json:{message:text,attachments:atts.map(a=>a.id)}})).json();clearInterval(liveT);await loadChat();await tick();if(S&&S.approvals.length)$('chatwait').scrollIntoView({block:'nearest'});if(r.brief)showBrief(r.brief,true);if(r.map)showMap(r.map);if(r.image)showImage(r.image);if(r.ebook)showEbook(r.ebook);else if(r.link)showLink(r.link);else replyPop(text,r);if(r.show)go(r.show);if(speak||voiceOn){talking=true;if(S)render();await say(r.reply);await new Promise(r=>setTimeout(r,350));talking=false;}}
   catch(e){$('chat').insertAdjacentHTML('beforeend',`<div class="assistant">${esc(e.message)}</div>`);}
   clearInterval(liveT);sending=false;tick();
 }
@@ -1161,6 +1171,7 @@ const QA={
   news:{label:'News',cmd:()=>'give me the news'},
   markets:{label:'Financials',cmd:()=>'how are the markets'},
   image:{label:'Make a picture',fields:[{k:'about',label:'What should it show?',ph:'a modern family home at sunset'},{k:'shape',label:'Shape',opts:[['square','Square'],['tall','Tall (phone, stories)'],['wide','Wide (banner, YouTube)']],def:'square'}],cmd:f=>`create a ${f.shape} picture of ${f.about}`},
+  ebook:{label:'Write an ebook',fields:[{k:'about',label:'What is it about, and who is it for?',ph:'a first-time seller\'s guide to selling a home'},{k:'ch',label:'Chapters',opts:[['3','3'],['5','5'],['8','8']],def:'5'}],cmd:f=>`write an ebook with ${f.ch} chapters: ${f.about}`},
   video:{label:'Make a video',fields:[{k:'about',label:'What is it about?',ph:'our newest listings in Johannesburg'},{k:'sec',label:'Length',opts:[['15','15 seconds'],['20','20 seconds'],['30','30 seconds'],['45','45 seconds']],def:'20'}],cmd:f=>`create a ${f.sec} second cinematic video about ${f.about}`},
   lastvideo:{label:'Show last video',cmd:()=>'open the video'},
   pc:{label:'PC status',cmd:()=>'what is the status of my pc'},
@@ -1182,6 +1193,22 @@ function drawQA(){
   $('qa').querySelectorAll('[data-lk]').forEach(b=>b.onclick=()=>showLink(b.dataset.lk));
 }
 // ---- this login's own links: a big button to open it, and its login code if one is saved ----
+// ---- ebooks ----
+function showEbook(e){popup({kicker:'YOUR EBOOK',title:e.title,sub:(e.pages||'?')+' pages',narrow:true,
+  html:`<div style="display:flex;gap:12px;flex-wrap:wrap"><a class="btn pri" href="/api/ebooks/${e.id}/file" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;text-decoration:none;min-height:54px;font-size:16px;padding:0 22px">OPEN THE EBOOK</a>
+    <a class="btn" href="/api/ebooks/${e.id}/file?download=1" style="display:inline-flex;align-items:center;text-decoration:none;min-height:54px;padding:0 22px">DOWNLOAD PDF</a>${e.epub?`<a class="btn" href="/api/ebooks/${e.id}/file?epub=1" style="display:inline-flex;align-items:center;text-decoration:none;min-height:54px;padding:0 22px">DOWNLOAD EPUB</a>`:''}</div>
+    <div class="muted" style="margin-top:14px">All your ebooks are on the Files page. I wrote this one myself: read it through and check the facts before you share or sell it.</div>`});}
+async function loadEbooks(){
+  let d;try{d=await (await api('/api/ebooks')).json();}catch(e){return;}
+  $('ebmsg').className='msg'+(d.status.installed?'':' bad');$('ebmsg').textContent=d.status.installed?'':d.status.note;$('ebgo').disabled=!d.status.installed;
+  $('eblist').innerHTML=d.ebooks.map(e=>`<div class="row" style="flex-wrap:wrap;gap:10px"><div style="flex:1;min-width:200px"><b>${esc(e.title)}</b><small>${e.pages||'?'} pages &middot; ${(e.detail.chapters||[]).length} chapters &middot; ${ago(e.created)}${e.exists?'':' &middot; the file was moved or deleted'}</small></div>
+    ${e.exists?`<a class="btn pri" href="/api/ebooks/${e.id}/file" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;text-decoration:none;min-height:40px">OPEN</a><a class="btn" href="/api/ebooks/${e.id}/file?download=1" style="display:inline-flex;align-items:center;text-decoration:none;min-height:40px">PDF</a>${e.detail.epub?`<a class="btn" href="/api/ebooks/${e.id}/file?epub=1" style="display:inline-flex;align-items:center;text-decoration:none;min-height:40px">EPUB</a>`:''}`:''}<button class="btn" data-ebd="${e.id}" style="min-height:40px">DELETE</button></div>`).join('')||'<div class="muted">No ebooks yet.</div>';
+  document.querySelectorAll('[data-ebd]').forEach(b=>b.onclick=async()=>{await api('/api/ebooks/'+b.dataset.ebd,{method:'DELETE'});loadEbooks();});
+}
+$('ebgo').onclick=async()=>{const about=$('ebprompt').value.trim();if(!about){$('ebmsg').textContent='Say what the ebook is about first.';return;}
+  if(sending){$('ebmsg').textContent='She is busy with another job.';return;}
+  $('ebmsg').className='msg';$('ebmsg').textContent='Writing. This takes several minutes; progress shows on the home screen.';
+  await send(`Write an ebook with ${$('ebch').value} chapters: ${about}`,false);$('ebmsg').textContent='';$('ebprompt').value='';loadEbooks();};
 let WV=null;   // the link being shown: {id,timer,busy}
 async function showLink(id){
   let l;try{l=(await (await api('/api/links')).json()).find(x=>x.id===id);}catch(e){}

@@ -73,6 +73,8 @@ SPECS = [
        "FreeVideo. Use only when the user asks for an AI video, AI clip or generated clip. Takes several minutes. "
        "format is vertical, square or landscape.",
        {"prompt": S, "seconds": {"type": "integer"}, "format": S}, ["prompt"]),
+    fn("create_ebook", "Write and lay out a designed ebook (PDF with cover, contents page and chapters) from a plain description. "
+       "Takes several minutes.", {"prompt": S, "chapters": {"type": "integer"}}, ["prompt"]),
     fn("update_self", "Update Trillion herself to the newest version from GitHub, then restart. Owner only. "
        "Use when the user says update yourself, get the latest version, or pull the update.", {}),
     fn("run_command", "Run a Windows command. Owner only, and always needs approval on the dashboard.",
@@ -130,6 +132,7 @@ def describe(name, a):
         "phone_screenshot": "Taking a phone screenshot",
         "create_video": "Creating a video",
         "create_ai_clip": "Generating an AI clip",
+        "create_ebook": "Writing an ebook",
         "system_status": "Checking the PC", "update_self": "Updating myself from GitHub", "run_command": f"Run command: {g('command')}",
     }.get(name, name)
 
@@ -171,7 +174,7 @@ def execute(user, name, args, task_id=None, approved=False, direct=False):
             core.log(uid, f"Waiting on you: {summary}", "waiting")
             return {"status": "waiting_for_approval",
                     "note": "Not done yet. The user must approve this on the dashboard."}
-        if name in ("create_video", "create_ai_clip"):
+        if name in ("create_video", "create_ai_clip", "create_ebook"):
             args = dict(args, _task=task_id)
         out = globals()["t_" + name](user, **args)
         core.log(uid, describe(name, args), "done")
@@ -626,6 +629,12 @@ def t_create_ai_clip(user, prompt, seconds=5, format="vertical", _task=None):
     fmt = "landscape" if fmt in ("landscape", "horizontal", "wide", "youtube") else ("square" if fmt == "square" else "vertical")
     say = (lambda text: core.set_task(_task, detail=text)) if _task else None
     return freevideo.create(core.LLM, user, prompt, seconds, fmt, progress=say)
+
+
+def t_create_ebook(user, prompt, chapters=5, _task=None):
+    import ebook
+    say = (lambda text: core.set_task(_task, detail=text)) if _task else None
+    return ebook.create(core.LLM, user, prompt, chapters, progress=say)
 
 
 def t_phone_read_screen(user):

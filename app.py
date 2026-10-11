@@ -468,7 +468,7 @@ NEEDS_TOOLS = re.compile(
 def tools_for(user, text):
     """Hand the brain only the tools this request could need: fewer choices, fewer wrong ones."""
     uid = user["id"]
-    skip = {"update_self", "create_video", "create_ai_clip"}                      # both handled directly
+    skip = {"update_self", "create_video", "create_ai_clip", "create_ebook"}                      # both handled directly
     if not (PHONE_WORDS.search(text) and core.settings(user).get("phone_serial")):
         skip |= {n for n in (s_["function"]["name"] for s_ in tools.SPECS) if n.startswith("phone_")}
     if not core.settings(user).get("phone_full_control"):
@@ -509,6 +509,22 @@ def aiclip_reply(res):
         return "I could not make the AI clip: " + res["error"]
     return (f"Your AI clip is ready: {res['title']}, {res['seconds']:g} seconds. It took {res['minutes']:g} minutes. "
             f"It is on the Videos page and saved at {res['saved']}. " + " ".join(res.get("notes", []))).strip()
+
+
+EBOOK_RE = re.compile(r"\b(create|make|write|generate|produce|build)\b[^.?!]{0,60}\b(e-?books?|lead magnet|guide ?book|pdf guide|digital guide)\b", re.I)
+
+
+def ebook_request(text):
+    m = re.search(r"(\d{1,2})[\s-]*chapters?\b", text, re.I)
+    return {"prompt": text, "chapters": int(m.group(1)) if m else 5}
+
+
+def ebook_reply(res):
+    if "error" in res:
+        return "I could not make the ebook: " + res["error"]
+    return (f"Your ebook is ready: {res['title']}. {res['pages']} pages, {res['chapters']} chapters, about {res['words']} words. "
+            f"It is saved at {res['saved']}{', with an EPUB copy next to it' if res.get('epub') else ''}. I wrote it myself, so read it through and check the facts before you share or sell it. "
+            + " ".join(res.get("notes", []))).strip()
 
 
 def my_links(user):
@@ -734,6 +750,18 @@ def run_agent(user, text, files=None):
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="failed" if "error" in res else "completed", detail=reply[:200])
         return {"reply": reply, "task_id": tid, "provider": "FreeVideo", "show": "" if "error" in res else "videos"}
+    if EBOOK_RE.search(text) and not asking:
+        try:
+            res = tools.execute(user, "create_ebook", ebook_request(text), task_id=tid)
+        finally:
+            BUSY[uid] = False
+        reply = ebook_reply(res)
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="failed" if "error" in res else "completed", detail=reply[:200])
+        out = {"reply": reply, "task_id": tid, "provider": LAST_PROVIDER.get(uid, "local")}
+        if "ebook_id" in res:
+            out["ebook"] = {"id": res["ebook_id"], "title": res["title"], "pages": res["pages"], "epub": bool(res.get("epub"))}
+        return out
     if VIDEO_RE.search(text) and not asking:  # a long job with fixed steps: run it directly
         try:
             media = [f["path"] for f in files if f["kind"] in ("image", "video")]
@@ -1449,6 +1477,47 @@ def _video(vid, user):
     if not v:
         raise HTTPException(404, "No such video")
     return v
+
+
+@app.get("/api/ebooks")
+def ebooks_list(user=Depends(auth)):
+    import os, ebook
+    ebook.init()
+    rows = [dict(r, detail=json.loads(r["detail"] or "{}"), exists=os.path.exists(r["path"]))
+            for r in core.q("SELECT * FROM ebooks WHERE user_id=? ORDER BY id DESC LIMIT 60", (user["id"],))]
+    return {"status": ebook.status(), "ebooks": rows}
+
+
+@app.get("/api/ebooks/{eid}/file")
+def ebooks_file(eid: int, download: int = 0, epub: int = 0, user=Depends(auth)):
+    import os
+    r = core.q("SELECT * FROM ebooks WHERE id=? AND user_id=?", (eid, user["id"]), one=True)
+    if not r or not os.path.exists(r["path"]):
+        raise HTTPException(404, "That ebook is no longer there")
+    if epub:
+        ep = json.loads(r["detail"] or "{}").get("epub") or ""
+        if not ep or not os.path.exists(ep):
+            raise HTTPException(404, "There is no EPUB copy of that ebook")
+        return FileResponse(ep, media_type="application/epub+zip", filename=ep.replace("\\", "/").split("/")[-1])
+    name = r["path"].replace("\\", "/").split("/")[-1]
+    return FileResponse(r["path"], media_type="application/pdf", filename=name,
+                        content_disposition_type="attachment" if download else "inline")
+
+
+@app.delete("/api/ebooks/{eid}")
+def ebooks_delete(eid: int, user=Depends(auth)):
+    import os
+    r = core.q("SELECT * FROM ebooks WHERE id=? AND user_id=?", (eid, user["id"]), one=True)
+    if not r:
+        raise HTTPException(404, "No such ebook")
+    for f in (r["path"], json.loads(r["detail"] or "{}").get("epub") or ""):
+        try:
+            if f:
+                os.unlink(f)
+        except OSError:
+            pass
+    core.x("DELETE FROM ebooks WHERE id=?", (eid,))
+    return {"ok": True}
 
 
 @app.get("/api/freevideo")
