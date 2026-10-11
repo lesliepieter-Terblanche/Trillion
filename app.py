@@ -267,7 +267,19 @@ THEME_RE = re.compile(r"\b(?:switch|change|go|turn|set|use|put)\b.{0,30}\b(night
                       r"^\s*(night|dark|day|light|ocean|forest|royal)\s+(?:mode|theme)[.!]?\s*$", re.I)
 VERSION_RE = re.compile(r"\b(?:what|which)\s+version\b|\bversion\s+(?:are|is|do)\b|\byour\s+version\b", re.I)
 _PH = r"(?:my |the )?(?:cell ?phone|mobile(?: phone)?|phone|cell|galaxy|samsung)"
+_WA = r"what'?s ?(?:app|up)"
+_OBJ = (r"(?:this|these|that|those|it|them|(?:(?:the|my|this|these|that|those)\s+)?(?:\w+\s+){0,2}?(?:files?|photos?|pictures?|pics?|images?|"
+        r"documents?|docs?|videos?|clips?|pdfs?|attachments?|ebooks?|books?|recordings?|voice notes?))")
+_SAY = r"(?:\s*(?:,?\s*saying|that says|to say|with the message|with the caption|:)\s+(.+?))?[.!?]?\s*$"
+WA_WITH = re.compile(r"\s+(?:with|and|plus)\s+(?:(?:the|this|these|my|an?)\s+)?(?:attached\s+)?" + _OBJ.replace("this|these|that|those|it|them|", "attached|attachment|", 1)
+                     + r"(?:\s+attached)?\s*$", re.I)
 PHONE_RULES = [
+    # a file was attached and should go out on WhatsApp: "send this to Brandon on WhatsApp", "WhatsApp these to Sarie saying ..."
+    ("whatsapp_file", re.compile(r"^\s*(?:(?:hey\s+|ok\s+)?\w+,\s+)?(?:please\s+|can you\s+|could you\s+|will you\s+)*(?:send|forward|share|" + _WA + r")\s+" + _OBJ + r"\s+to\s+(.+?)\s+(?:on|via|by|over|using|with)\s+" + _WA + r"(?:\s+message)?" + _SAY, re.I | re.S)),
+    ("whatsapp_file", re.compile(r"^\s*(?:(?:hey\s+|ok\s+)?\w+,\s+)?(?:please\s+|can you\s+|could you\s+|will you\s+)*" + _WA + r"\s+" + _OBJ + r"\s+to\s+(.+?)" + _SAY, re.I | re.S)),
+    ("whatsapp_file", re.compile(r"^\s*(?:(?:hey\s+|ok\s+)?\w+,\s+)?(?:please\s+|can you\s+|could you\s+|will you\s+)*(?:send|forward|" + _WA + r")\s+(.{2,60}?)\s+" + _OBJ + r"\s+(?:on|via|by|over|using|with)\s+" + _WA + _SAY, re.I | re.S)),
+    ("whatsapp_file", re.compile(r"^\s*(?:(?:hey\s+|ok\s+)?\w+,\s+)?(?:please\s+|can you\s+|could you\s+|will you\s+)*" + _WA + r"\s+(me|myself)\s+" + _OBJ + _SAY, re.I | re.S)),
+    ("whatsapp_file", re.compile(r"^\s*(?:send\s+(?:an?\s+)?)?" + _WA + r"\s+(?:to\s+)?(?!me\b|myself\b|this\b|these\b|it\b|them\b)([^,.!?:]{2,40}?)[.!?]?\s*$", re.I)),
     ("mynumber", re.compile(r"\bmy\s+(?:own\s+)?(?:%s|cell ?phone|cell|mobile|phone)\s+number\s+is\s+([+\d][\d\s()-]{6,})" % r"what'?s ?(?:app|up)", re.I)),
     ("whatsapp_me", re.compile(r"\b(?:send|whats ?app|text|message)\s+(?:me|myself)\s+(?:an?\s+)?(?:quick\s+|test\s+)*(?:%s|message|text)?(?:\s+(?:message|text))?"
                                r"(?:\s+on\s+%s)?\s*(?:(?:,?\s*saying|that says|to say|:)\s+(.+))?[.!?]?\s*$" % (r"what'?s ?(?:app|up)", r"what'?s ?(?:app|up)"), re.I | re.S)),
@@ -314,19 +326,57 @@ PHONE_WORDS = re.compile(r"\b(phone|cell|mobile|what'?s ?(?:app|up)|contact|batt
 
 
 def sent_sentence(r, msg):
+    went, left = r.get("files_sent") or [], r.get("files_left") or []
+    if not went and not left:
+        if r["status"] == "send_pressed":
+            return f'Sent to {r.get("to")} on WhatsApp: "{msg}". I pressed Send; I cannot confirm delivery from here.'
+        return f'The WhatsApp to {r.get("to")} is typed in the chat but I could not press Send. Press it on the phone.'
+    files = lambda names: (f"{len(names)} files ({', '.join(names[:6])})" if len(names) != 1 else names[0])
     if r["status"] == "send_pressed":
-        return f'Sent to {r.get("to")} on WhatsApp: "{msg}". I pressed Send; I cannot confirm delivery from here.'
-    return f'The WhatsApp to {r.get("to")} is typed in the chat but I could not press Send. Press it on the phone.'
+        what = (f'"{msg}" and ' if msg else "") + files(went)
+        return f'Sent to {r.get("to")} on WhatsApp: {what}. I pressed Send; I cannot confirm delivery from here.'
+    done = ([f'the message "{msg}"'] if msg and (went or "ready" in r.get("note", "")) else []) + ([files(went)] if went else [])
+    return ((f'Sent to {r.get("to")} on WhatsApp: ' + " and ".join(done) + ". " if done else "") + r.get("note", "")
+            + (f" Not sent yet: {', '.join(left[:6])}." if left else ""))
 
 
-def phone_shortcut(user, text, tid):
+def wa_send(user, tid, who, msg, files, own=False):
+    """One WhatsApp from a chat shortcut, with any files attached in this turn. Returns the shortcut's answer."""
+    args = {"contact": who, "message": msg}
+    if files:
+        args["files"] = [f["id"] for f in files]
+    r = tools.execute(user, "phone_send_whatsapp", args, task_id=tid, direct=True)
+    if r.get("status") in ("send_pressed", "typed_not_sent"):
+        return sent_sentence(r, msg), False, r
+    if r.get("status") == "waiting_for_approval":
+        a = core.q("SELECT summary FROM approvals WHERE user_id=? ORDER BY id DESC LIMIT 1", (user["id"],), one=True)
+        return "Ready. " + (a["summary"] if a else "The message") + ". Press Approve in the red box and I will send it.", True, r
+    return ("I could not send that WhatsApp: " + r.get("error", "unknown problem")), False, r
+
+
+def phone_shortcut(user, text, tid, files=None):
     """Common phone requests are run directly, so they do not depend on the model choosing the right tool."""
     if len(text) > 400:
         return None
+    files = files or []
     for kind, rx in PHONE_RULES:
         m = rx.search(text)
         if not m:
             continue
+        if kind == "whatsapp_file":
+            if not files:
+                continue
+            who = re.sub(r"^(?:my |to )", "", m.group(1).strip(" ,.:"), flags=re.I).strip()
+            msg = ((m.group(2) if rx.groups > 1 else "") or "").strip().strip('"\u201c\u201d')
+            if not who or len(who) > 60 or re.search(_WA + r"|\bsaying\b|\bmessage\b", who, re.I):
+                continue
+            who = WA_WITH.sub("", who).strip()
+            if who.lower() in ("me", "myself"):
+                who = str(core.settings(user).get("phone_own_number") or "").strip()
+                if not who:
+                    return ("I do not know your own number yet. Tell me once, like this: my WhatsApp number is 082 123 4567. "
+                            "Then ask me again."), False, {"error": "own number not set"}
+            return wa_send(user, tid, who, msg, files)
         if kind == "mynumber":
             st = core.settings(user)
             st["phone_own_number"] = re.sub(r"[^\d+]", "", m.group(1))
@@ -339,7 +389,12 @@ def phone_shortcut(user, text, tid):
             if not own:
                 return ("I do not know your own number yet. Tell me once, like this: my WhatsApp number is 082 123 4567. "
                         "Then ask me again."), False, {"error": "own number not set"}
-            msg = (m.group(1) or "").strip().strip('"\u201c\u201d') or f"Test message from {core.settings(user).get('assistant_name') or 'Trillion'}."
+            msg = (m.group(1) or "").strip().strip('"\u201c\u201d')
+            if files and (msg or not re.search(r"\btest\b", text, re.I)):
+                return wa_send(user, tid, own, msg, files)
+            msg = msg or f"Test message from {core.settings(user).get('assistant_name') or 'Trillion'}."
+            if files:
+                return wa_send(user, tid, own, msg, files)
             r = tools.execute(user, "phone_send_whatsapp", {"contact": own, "message": msg}, task_id=tid, direct=True)
             if r.get("status") in ("send_pressed", "typed_not_sent"):
                 return sent_sentence(r, msg), False, r
@@ -348,6 +403,10 @@ def phone_shortcut(user, text, tid):
             return ("I could not prepare that WhatsApp: " + r.get("error", "unknown problem")), False, r
         if kind == "whatsapp_plain":
             who = re.sub(r"^(?:my |to )", "", m.group(1).strip(), flags=re.I).strip()
+            if files:                                   # the attached file is the message: no wording needed
+                who = WA_WITH.sub("", who).strip()
+                return wa_send(user, tid, who, f"Test message from {core.settings(user).get('assistant_name') or 'Trillion'}."
+                               if re.search(r"\btest\b", text, re.I) else "", files)
             if not re.search(r"\btest\b", text, re.I):
                 return f"What should the WhatsApp to {who} say? Tell me like this: send a WhatsApp to {who} saying ...", False, {"asked": True}
             msg = f"Test message from {core.settings(user).get('assistant_name') or 'Trillion'}."
@@ -364,8 +423,12 @@ def phone_shortcut(user, text, tid):
             who = re.sub(r"\s+(?:a|the)\s+(?:what'?s ?(?:app|up)\s+)?(?:message|text|note)$", "", who, flags=re.I)
             who = re.sub(r"^(?:my |to )", "", who, flags=re.I).strip()
             msg = m.group(2).strip().strip('"\u201c\u201d')
+            if files:
+                who = WA_WITH.sub("", who).strip()
             if not who or not msg or len(who) > 60:
                 continue
+            if files:
+                return wa_send(user, tid, who, msg, files)
             r = tools.execute(user, "phone_send_whatsapp", {"contact": who, "message": msg}, task_id=tid, direct=True)
             if r.get("status") in ("send_pressed", "typed_not_sent"):
                 return sent_sentence(r, msg), False, r
@@ -677,7 +740,7 @@ def run_agent(user, text, files=None):
         return {"reply": reply, "task_id": tid, "provider": "built-in"}
     ps = None
     try:
-        ps = phone_shortcut(user, text, tid)
+        ps = phone_shortcut(user, text, tid, files)
     except Exception as e:
         ps = (f"The phone request failed: {type(e).__name__}: {e}", False, {"error": str(e)})
     if ps:
@@ -869,6 +932,34 @@ def chat(p: dict = Body(...), user=Depends(auth)):
     if BUSY.get(user["id"]):
         raise HTTPException(409, "Still busy with the previous job")
     return run_agent(user, text[:4000], files)
+
+
+@app.post("/api/phone/whatsapp")
+def phone_whatsapp(p: dict = Body(...), user=Depends(auth)):
+    """The Send a WhatsApp box on the Phone page: who, the message, and any files to go with it."""
+    uid = user["id"]
+    who, msg = str(p.get("to") or "").strip()[:80], str(p.get("message") or "").strip()[:4000]
+    files = [f for f in (attach.get(user, i) for i in (p.get("attachments") or [])[:10] if str(i).isdigit()) if f]
+    if not who:
+        raise HTTPException(400, "Fill in who it is for.")
+    if not msg and not files:
+        raise HTTPException(400, "Type a message or attach a file.")
+    if BUSY.get(uid):
+        raise HTTPException(409, "Still busy with the previous job")
+    BUSY[uid] = True
+    text = f"Send a WhatsApp to {who}" + (f" saying {msg}" if msg else "")
+    tid = core.add_task(uid, text)
+    core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)",
+           (uid, "user", text + "".join(attach.marker(f) for f in files), time.time()))
+    try:
+        reply, waiting_, res = wa_send(user, tid, who, msg, files)
+    except Exception as e:
+        reply, waiting_, res = f"I could not send that WhatsApp: {e}", False, {"error": str(e)}
+    finally:
+        BUSY[uid] = False
+    core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+    core.set_task(tid, status="waiting" if waiting_ else ("failed" if "error" in res else "completed"), detail=reply[:200])
+    return {"reply": reply, "task_id": tid, "provider": "built-in"}
 
 
 # ---------- this login's own links (a tracker, a portal), each with an optional login code kept encrypted ----------

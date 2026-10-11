@@ -124,6 +124,7 @@ body{padding-bottom:var(--attpad,0px)}
 .att button{min-height:32px!important;min-width:32px!important;padding:0!important;border:0!important;background:none!important;font-size:18px;flex:none}
 .att .bar{position:absolute;left:0;bottom:0;height:3px;background:var(--green);transition:width .2s}
 .att.bad{border-color:var(--red)}
+.attrow{display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 10px}
 .cfiles{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 .cfiles a{display:flex;align-items:center;gap:8px;border:1px solid var(--edge);padding:4px 8px 4px 4px;font-size:13px;text-decoration:none;color:inherit;max-width:100%}
 .cfiles a.pic{padding:0;border:0}
@@ -425,6 +426,8 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
       <label class="field"><span>To (start typing a contact's name)</span><input id="pp-who" list="contacts" autocomplete="off" placeholder="Llewellyn Terblanche"></label>
       <label class="field"><span>Message</span><input id="pp-msg" autocomplete="off" placeholder="I will be there at 5"></label>
     </div>
+    <div class="btns" style="justify-content:flex-start"><button type="button" class="btn" id="pp-attach">ATTACH PHOTOS OR FILES</button><span class="muted" style="font-size:13px">Pictures, videos, documents. With a file attached the message is optional.</span></div>
+    <div class="attrow" id="pp-atts" style="display:none"></div>
     <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="pp-send">SEND WHATSAPP</button><span class="msg" id="pp-cmsg"></span></div>
     <div class="msg" id="pp-sendmsg" style="font-size:15px"></div>
   </div>
@@ -1148,10 +1151,10 @@ $('qasave').onclick=async()=>{await saveSet({quick_actions:[...document.querySel
 $('phsave').onclick=async()=>{const m=$('phsmsg');try{await api('/api/settings',{method:'PUT',json:{wa_inbox:$('s-wa_inbox').checked,whatsapp_auto_contacts:$('s-whatsapp_auto_contacts').checked,phone_own_number:$('s-phone_own_number').value.trim(),phone_full_control:$('s-phone_full_control').checked,phone_country_code:$('s-phone_country_code').value.replace(/\D/g,'')||'27'}});await tick();m.className='msg ok';ppUse();loadPhonePage();m.textContent='Saved. Straight-away WhatsApps: '+($('s-whatsapp_auto_contacts').checked?'ON':'off')+'. Full phone control: '+($('s-phone_full_control').checked?'ON':'off')+'.';}catch(e){m.className='msg bad';m.textContent=e.message;}};
 
 // ---- run a command without leaving the page: the answer shows where the button is ----
-async function runHere(text,m){
+async function runHere(text,m,wa){
   if(sending){m.className='msg';m.textContent='She is busy with something else. Try again in a moment.';return;}
-  sending=true;m.className='msg';m.textContent='Working...';
-  try{const r=await (await api('/api/chat',{json:{message:text}})).json();m.innerHTML=linkify(r.reply);if(r.map)showMap(r.map);if(r.brief)showBrief(r.brief,true);await tick();if(r.link)showLink(r.link);else replyPop(text,r);m.className='msg '+(/^(i could not|i did not|there is no|the phone is|full phone control is switched off)/i.test(r.reply)?'bad':'ok');if(r.show)go(r.show);if(voiceOn){talking=true;await say(r.reply);talking=false;}}
+  sending=true;m.className='msg';m.textContent=wa&&wa.attachments.length?'Copying to the phone and sending...':'Working...';
+  try{const r=await (await api(wa?'/api/phone/whatsapp':'/api/chat',{json:wa||{message:text}})).json();m.innerHTML=linkify(r.reply);if(r.map)showMap(r.map);if(r.brief)showBrief(r.brief,true);await tick();if(r.link)showLink(r.link);else replyPop(text,r);m.className='msg '+(/^(i could not|i did not|there is no|the phone is|full phone control is switched off)/i.test(r.reply)?'bad':'ok');if(r.show)go(r.show);if(voiceOn){talking=true;await say(r.reply);talking=false;}}
   catch(e){m.className='msg bad';m.textContent=e.message;}
   sending=false;loadChat();tick();
 }
@@ -1349,8 +1352,31 @@ $('ul-save').onclick=async()=>{const m=$('ul-msg');try{ulDraw(await (await api('
 $('ul-del').onclick=async()=>{ulDraw(await (await api('/api/phone/unlock',{method:'DELETE'})).json());$('ul-msg').className='msg ok';$('ul-msg').textContent='Removed.';};
 $('ul-test').onclick=()=>runHere('unlock my phone',$('ul-msg')).then(ulLoad);
 $('pp-open').onclick=()=>{const a=$('pp-app').value.trim();if(a)runHere('open '+a+' on my phone',$('pp-cmdmsg'));};
-$('pp-send').onclick=()=>{const w=$('pp-who').value.trim(),t=$('pp-msg').value.trim(),m=$('pp-sendmsg');if(!w||!t){m.className='msg bad';m.textContent='Fill in who it is for and the message.';return;}
-  runHere(`send a whatsapp to ${w} saying ${t}`,m).then(()=>{if(m.className.includes('ok'))$('pp-msg').value='';});};
+// files chosen to go with something other than the conversation (the WhatsApp box): each is uploaded to the PC first
+function attBox(host){const L=[];const inp=document.createElement('input');inp.type='file';inp.multiple=true;inp.hidden=true;host.after(inp);
+  const draw=()=>{host.style.display=L.length?'flex':'none';
+    host.innerHTML=L.map(a=>`<div class="att${a.err?' bad':''}">${a.url?`<img src="${a.url}" alt="">`:`<span class="ic">${KLBL[a.kind]||'FILE'}</span>`}<span class="nm">${esc(a.name)}<small>${a.err?esc(a.err):a.id?fsize(a.size):'Sending '+a.pct+'%'}</small></span><button type="button" data-ax="${a.key}" aria-label="Remove ${esc(a.name)}">&times;</button>${a.id||a.err?'':`<span class="bar" style="width:${a.pct}%"></span>`}</div>`).join('');
+    host.querySelectorAll('[data-ax]').forEach(x=>x.onclick=()=>{const i=L.findIndex(p=>p.key==x.dataset.ax);if(i<0)return;const a=L[i];if(a.xhr&&!a.id)a.xhr.abort();if(a.url)URL.revokeObjectURL(a.url);L.splice(i,1);draw();});};
+  const add=list=>{for(const f of [...list].slice(0,10-L.length)){
+      const a={key:Date.now()+'-'+Math.random().toString(36).slice(2),name:f.name||'file',kind:kindOf(f.name||''),size:f.size,pct:0,id:null,err:''};
+      if(a.kind==='image')a.url=URL.createObjectURL(f);L.push(a);
+      const x=new XMLHttpRequest();a.xhr=x;x.open('POST','/api/upload?name='+encodeURIComponent(a.name));
+      x.upload.onprogress=e=>{if(e.lengthComputable){a.pct=Math.round(e.loaded/e.total*100);draw();}};
+      x.onload=()=>{if(x.status===200){try{const r=JSON.parse(x.responseText);a.id=r.id;a.kind=r.kind;}catch(e){a.err='Did not arrive';}}else{let d='';try{d=JSON.parse(x.responseText).detail;}catch(e){}a.err=d||'Did not arrive';}draw();};
+      x.onerror=()=>{a.err='Connection lost';draw();};
+      x.setRequestHeader('Content-Type','application/octet-stream');x.send(f);}
+    draw();};
+  inp.onchange=e=>{add(e.target.files);e.target.value='';};
+  return {pick:()=>inp.click(),add,ids:()=>L.filter(a=>a.id).map(a=>a.id),busy:()=>L.some(a=>!a.id&&!a.err),bad:()=>L.some(a=>a.err),
+    clear:()=>{L.forEach(a=>{if(a.url)URL.revokeObjectURL(a.url);});L.length=0;draw();}};}
+const ppAtt=attBox($('pp-atts'));
+$('pp-attach').onclick=()=>ppAtt.pick();
+$('pp-send').onclick=()=>{const w=$('pp-who').value.trim(),t=$('pp-msg').value.trim(),m=$('pp-sendmsg');
+  if(ppAtt.busy()){m.className='msg bad';m.textContent='A file is still on its way to the PC. Wait for it to finish, then press Send.';return;}
+  if(ppAtt.bad()){m.className='msg bad';m.textContent='One file did not arrive. Remove it with the x, or attach it again.';return;}
+  const ids=ppAtt.ids();
+  if(!w||(!t&&!ids.length)){m.className='msg bad';m.textContent='Fill in who it is for, and a message or a file.';return;}
+  runHere(`send a whatsapp to ${w}`+(t?` saying ${t}`:''),m,{to:w,message:t,attachments:ids}).then(()=>{if(m.className.includes('ok')){$('pp-msg').value='';ppAtt.clear();}});};
 // ---- projects ----
 const ago=t=>{if(!t)return 'never';const d=(Date.now()/1000-t);return d<3600?Math.max(1,Math.round(d/60))+' min ago':(d<86400?Math.round(d/3600)+' h ago':Math.round(d/86400)+' days ago');};
 async function loadProjects(){
@@ -1375,7 +1401,7 @@ async function loadProjects(){
 }
 // ---- commands help ----
 const CMDS=[
-  ['WhatsApp',[['read my whatsapps','Reads out new incoming messages'],['send a whatsapp to Llewellyn saying I will be there at 5','Goes straight out to a saved contact'],['send a test whatsapp to Llewellyn Terblanche',''],['send me a test whatsapp','Needs your own number on the Phone page'],['open my whatsapp','']]],
+  ['WhatsApp',[['read my whatsapps','Reads out new incoming messages'],['send a whatsapp to Llewellyn saying I will be there at 5','Goes straight out to a saved contact'],['send this to Llewellyn on whatsapp','Attach a photo or file with the + button first'],['send a test whatsapp to Llewellyn Terblanche',''],['send me a test whatsapp','Needs your own number on the Phone page'],['open my whatsapp','']]],
   ['Phone',[['ring my phone','Rings at full volume, even on silent'],['where is my phone','Last known position with a map link'],['how is my phone','Battery, storage, Wi-Fi'],['unlock my phone','Needs an unlock code saved on the Phone page'],['put my phone to sleep','Screen off and locked'],['take a screenshot of my phone',''],['open maps on my phone','Any installed app'],['what is on my phone screen','Needs Full phone control'],['tap Chats on my phone','Needs Full phone control'],['press back on my phone','Needs Full phone control']]],
   ['Briefings',[['good morning','Runs your morning routine'],['what is the weather',''],['give me the news',''],['how are the markets','Rand, gold, shares, crypto']]],
   ['Pictures',[['create a picture of a modern family home at sunset','Needs your Google Gemini key under Settings, Keys'],['make a wide banner for TrueHome with a city skyline','']]],

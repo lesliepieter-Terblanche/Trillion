@@ -124,7 +124,8 @@ def describe(name, a):
         "phone_status": "Checking the phone", "phone_open_app": f"Opening {g('app')} on the phone",
         "phone_find_contact": f"Looking up {g('name')} in contacts",
         "phone_send_whatsapp": f"Send WhatsApp to {a.get('_name') or g('contact')}"
-                               + (f" (+{a['contact']})" if a.get('_name') and not str(a.get('contact', '')).startswith('chat:') else "") + f": \"{str(a.get('message', ''))[:120]}\"",
+                               + (f" (+{a['contact']})" if a.get('_name') and not str(a.get('contact', '')).startswith('chat:') else "") + (f": \"{str(a.get('message', ''))[:120]}\"" if str(a.get('message', '')).strip() else "")
+                               + (f" with {len(a['files'])} file{'s' if len(a['files']) != 1 else ''}" if a.get('files') else ""),
         "phone_read_screen": "Reading the phone screen", "phone_tap": f"Tapping {g('target') or 'the screen'}",
         "phone_type": "Typing on the phone", "phone_press": f"Pressing {g('key')}", "phone_swipe": f"Swiping {g('direction')}",
         "phone_shell": f"Run on the phone: {g('command')}",
@@ -157,8 +158,13 @@ def execute(user, name, args, task_id=None, approved=False, direct=False):
             if name == "phone_send_whatsapp":  # settle exactly who it goes to before asking
                 import phone
                 who, number = phone.resolve_contact(user, str(args.get("contact", "")))
-                args = {"contact": number, "message": str(args.get("message", "")), "_name": who}
-                if not args["message"].strip():
+                ids = [int(i) for i in (args.get("files") or []) if str(i).isdigit()][:10]
+                args = {"contact": number, "message": str(args.get("message") or ""), "_name": who}
+                if ids:
+                    if len(whatsapp_files(user, ids)) != len(set(ids)):
+                        return {"error": "One of the attached files is no longer on the PC. Attach it again."}
+                    args["files"] = ids
+                if not args["message"].strip() and not ids:
                     return {"error": "There is no message to send."}
                 st = core.settings(user)
                 own = phone.normalise(st["phone_own_number"], str(st.get("phone_country_code", "27"))) if st.get("phone_own_number") else None
@@ -531,9 +537,23 @@ def t_phone_find_contact(user, name):
                                       "called with the name: it looks the person up inside WhatsApp itself."}
 
 
-def t_phone_send_whatsapp(user, contact, message, _name=None):
+def whatsapp_files(user, ids):
+    """The files a login attached, by their upload numbers. Only that login's own files; anything else is left out."""
+    import attach
+    out = []
+    for i in (ids or [])[:10]:
+        f = attach.get(user, i) if str(i).isdigit() else None
+        if f and f["path"] not in [o["path"] for o in out]:
+            out.append(f)
+    return out
+
+
+def t_phone_send_whatsapp(user, contact, message="", _name=None, files=None):
     import phone
-    res = phone.send_whatsapp(user, contact, message)
+    found = whatsapp_files(user, files)
+    if files and len(found) != len(set(str(i) for i in files[:10])):
+        return {"error": "One of the attached files is no longer on the PC. Attach it again."}
+    res = phone.send_whatsapp(user, contact, message, [f["path"] for f in found])
     if _name and not str(contact).startswith("chat:"):
         res["to"] = _name
     return res

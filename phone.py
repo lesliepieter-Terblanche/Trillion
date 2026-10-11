@@ -442,13 +442,217 @@ def _send_in_chat(user, pkg, name, message):
     return name, _tap_send(user, pkg)
 
 
-def send_whatsapp(user, contact, message):
+# ---------- sending files with a WhatsApp ----------
+PHONE_DROP = "/storage/emulated/0/Download/Trillion"     # where a file is put on the phone before WhatsApp picks it up
+WA_FILE_MAX = 2 * 1024 ** 3                              # WhatsApp's own ceiling for a document
+
+
+def _phone_name(path, taken):
+    """A file name the phone's command line cannot trip over: plain letters, numbers, dot, dash, underscore."""
+    stem, ext = os.path.splitext(os.path.basename(str(path)))
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("._") or "file"
+    ext = re.sub(r"[^A-Za-z0-9.]", "", ext)[:10]
+    name, n = stem[:80] + ext, 2
+    while name.lower() in taken:
+        name = f"{stem[:80]}_{n}{ext}"
+        n += 1
+    taken.add(name.lower())
+    return name
+
+
+def _mime(path):
+    import mimetypes
+    ext = os.path.splitext(str(path))[1].lower()
+    known = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif",
+             ".mp4": "video/mp4", ".mov": "video/quicktime", ".3gp": "video/3gpp", ".mkv": "video/x-matroska", ".webm": "video/webm",
+             ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".ogg": "audio/ogg", ".opus": "audio/ogg", ".wav": "audio/x-wav",
+             ".pdf": "application/pdf", ".txt": "text/plain", ".csv": "text/csv", ".zip": "application/zip",
+             ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+             ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+             ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+             ".doc": "application/msword", ".xls": "application/vnd.ms-excel", ".ppt": "application/vnd.ms-powerpoint"}
+    return known.get(ext) or mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+
+
+def _media_id(user, remote):
+    out = sh(user, f"content query --uri content://media/external/file --projection _id --where \"_data='{remote}'\"")
+    m = re.search(r"\b_id=(\d+)", out)
+    return m.group(1) if m else None
+
+
+def push_file(user, path, taken=None):
+    """Copy one file from this PC to the phone and return (the address WhatsApp can open it by, its type, its name)."""
+    path = str(path)
+    if not os.path.isfile(path):
+        raise PhoneError(f"I cannot find the file {os.path.basename(path)} on the PC any more.")
+    size = os.path.getsize(path)
+    if size > WA_FILE_MAX:
+        raise PhoneError(f"{os.path.basename(path)} is bigger than 2 GB, which is the most WhatsApp accepts.")
+    name = _phone_name(path, taken if taken is not None else set())
+    remote = f"{PHONE_DROP}/{name}"
+    serial = working_serial(user)
+    sh(user, f"mkdir -p {PHONE_DROP}")
+    code, out = _run(["-s", serial, "push", path, remote], timeout=90 + size // 400_000)     # allows for a slow wireless link
+    if code != 0 or re.search(r"^adb: error|failed to copy|No such file|Permission denied", out, re.I | re.M):
+        raise PhoneError(f"I could not copy {os.path.basename(path)} to the phone: " + out.strip()[-160:])
+    # the phone's media index must know the file before another app is allowed to open it
+    sh(user, f"am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d 'file://{remote}' >/dev/null 2>&1")
+    mid = None
+    for attempt in range(6):
+        mid = _media_id(user, remote)
+        if mid:
+            break
+        if attempt == 1:
+            sh(user, f"content call --uri content://media --method scan_file --arg '{remote}' >/dev/null 2>&1")
+        if attempt == 3:
+            sh(user, "content call --uri content://media --method scan_volume --arg external_primary >/dev/null 2>&1", timeout=60)
+        time.sleep(1.2)
+    if not mid:
+        raise PhoneError(f"{os.path.basename(path)} is on the phone (Download > Trillion) but the phone has not listed it yet, "
+                         "so WhatsApp cannot be handed it. Try again in a moment.")
+    return f"content://media/external/file/{mid}", _mime(path), name
+
+
+_BOUNDS = r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"'
+
+
+def _tap_send_file(user, pkg):
+    """Press Send on WhatsApp's file screen. True when pressed, "picker" when WhatsApp is asking who to send to,
+    "invite" when the number has no WhatsApp, False when no Send button showed up."""
+    for _ in range(6):
+        time.sleep(1.7)
+        xml = sh(user, "uiautomator dump /sdcard/trillion_ui.xml >/dev/null 2>&1; cat /sdcard/trillion_ui.xml", timeout=30)
+        m = (re.search(r'resource-id="%s:id/send"[^>]*%s' % (re.escape(pkg), _BOUNDS), xml)
+             or re.search(r'content-desc="Send"[^>]*' + _BOUNDS, xml)
+             or re.search(r'text="(?:Send|SEND)"[^>]*resource-id="android:id/button1"[^>]*' + _BOUNDS, xml)
+             or re.search(r'<node[^>]*text="(?:Send|SEND)"[^>]*class="android\.widget\.Button"[^>]*' + _BOUNDS, xml))
+        if m:
+            x1, y1, x2, y2 = map(int, m.groups()[-4:])
+            sh(user, f"input tap {(x1 + x2) // 2} {(y1 + y2) // 2}")
+            return True
+        if NOT_ON_WA.search(xml):
+            sh(user, "input keyevent KEYCODE_BACK")
+            return "invite"
+        if re.search(r'resource-id="%s:id/contactpicker[^"]*"|text="Send to(?:\.\.\.|…)?"' % re.escape(pkg), xml):
+            return "picker"
+    return False
+
+
+def _pick_in_share_list(user, pkg, name):
+    """WhatsApp is showing its "Send to" list with the file waiting: find the person there and choose them."""
+    import difflib
+    want = re.sub(r"\s+", " ", name.lower().strip())
+    if not want or any(ord(c) > 126 for c in want):
+        raise PhoneError("I can only search WhatsApp for names in plain letters.")
+    box = _find(_nodes(user), ("menuitem_search", "search_src_text", "search_input", "my_search_bar", "search_bar"), r"^search\b")
+    if not box:
+        raise PhoneError("WhatsApp is asking who to send the file to, and I could not find its search box. Pick the person on the phone.")
+    sh(user, f"input tap {box['x']} {box['y']}")
+    time.sleep(1.0)
+    sh(user, f"input text '{want.split()[0][:4]}'")
+    best = []
+    for _ in range(3):
+        time.sleep(1.6)
+        scored = {}
+        for n in _nodes(user):
+            if not n["label"] or n["field"] or n["id"] not in ("contactpicker_row_name", "chat_able_contacts_row_name", "conversations_row_contact_name", "name"):
+                continue
+            lab = n["label"].lower()
+            r = difflib.SequenceMatcher(None, want, lab).ratio()
+            if " " not in want:
+                r = max([r] + [difflib.SequenceMatcher(None, want, w).ratio() for w in lab.split()])
+            if r >= 0.8:
+                scored.setdefault(n["label"], (r, n))
+        best = sorted(scored.values(), key=lambda t: -t[0])
+        if best:
+            break
+    if not best:
+        raise PhoneError(f"I could not find '{name}' in WhatsApp's send-to list. The file is waiting on the phone: pick the person there.")
+    if len(best) > 1 and best[0][0] - best[1][0] < 0.1:
+        raise PhoneError("More than one WhatsApp chat matches: " + "; ".join(t[1]["label"] for t in best[:6]) + ". Say exactly which one.")
+    n = best[0][1]
+    sh(user, f"input tap {n['x']} {n['y']}")
+    time.sleep(0.8)
+    arrow = _find(_nodes(user), ("send",), r"^send$")          # the green arrow that confirms the chosen person
+    if not arrow:
+        raise PhoneError(f"I chose {n['label']} in WhatsApp but could not find the arrow to go on. Finish it on the phone.")
+    sh(user, f"input tap {arrow['x']} {arrow['y']}")
+    return n["label"]
+
+
+def _send_file(user, pkg, uri, mime, number, name):
+    """Hand one file on the phone to WhatsApp for one person and press Send. Returns (pressed, the name it went to)."""
+    jid = "" if number.startswith("chat:") else f" --es jid '{number}@s.whatsapp.net'"
+    out = sh(user, f"am start -a android.intent.action.SEND -t '{mime}' --eu android.intent.extra.STREAM '{uri}'{jid} "
+                   f"--grant-read-uri-permission -p {pkg}")
+    if "Error" in out:
+        raise PhoneError("WhatsApp would not take the file: " + out.strip()[-160:])
+    pressed = _tap_send_file(user, pkg)
+    if pressed == "picker":
+        if not name or re.fullmatch(r"[\d\s+()-]{7,}", name):
+            raise PhoneError("WhatsApp is asking who to send the file to and I only have a number, not a name to look for. "
+                             "The file is waiting on the phone: pick the person there.")
+        name = _pick_in_share_list(user, pkg, name)
+        pressed = _tap_send_file(user, pkg)
+        if pressed == "picker":
+            pressed = False
+    return pressed, name
+
+
+def send_whatsapp(user, contact, message, files=None):
+    """Send a WhatsApp. files is a list of file paths on this PC that go along: the message first, then each file."""
+    files = [str(f) for f in (files or [])]
+    message = (message or "").strip()
+    if not message and not files:
+        raise PhoneError("There is no message to send.")
+    for f in files:
+        if not os.path.isfile(f):
+            raise PhoneError(f"I cannot find the file {os.path.basename(f)} on the PC any more.")
+        if os.path.getsize(f) > WA_FILE_MAX:
+            raise PhoneError(f"{os.path.basename(f)} is bigger than 2 GB, which is the most WhatsApp accepts.")
     name, number = resolve_contact(user, contact)
     pkgs = packages(user)
     pkg = "com.whatsapp" if "com.whatsapp" in pkgs else ("com.whatsapp.w4b" if "com.whatsapp.w4b" in pkgs else None)
     if not pkg:
         raise PhoneError("WhatsApp is not installed on the phone.")
     _awake_and_unlocked(user)
+    res = {"status": "send_pressed", "to": name, "number": "found in WhatsApp" if number.startswith("chat:") else "+" + number,
+           "note": "I pressed Send. I cannot confirm delivery from here."}
+    if message:
+        res = _send_text(user, pkg, name, number, message)
+        if res["status"] != "send_pressed" and files:
+            res["files_sent"], res["files_left"] = [], [os.path.basename(f) for f in files]
+            res["note"] += " The file" + ("s were" if len(files) > 1 else " was") + " not sent."
+            return res
+    if not files:
+        return res
+    if not number.startswith("chat:") and res.get("number", "").startswith("+"):
+        number = res["number"][1:]                 # the number WhatsApp accepted for the message
+    elif not number.startswith("chat:") and message:
+        number = "chat:" + str(res.get("to") or name)      # WhatsApp did not know the number: the chat was found by name
+    who = ALTERNATES.get(number, (None, []))[0] or res.get("to") or name
+    taken, sent = set(), []
+    for i, f in enumerate(files):
+        uri, mime, _ = push_file(user, f, taken)
+        pressed, who2 = _send_file(user, pkg, uri, mime, number, who)
+        if pressed == "invite":
+            raise PhoneError(f"WhatsApp says {who} is not on WhatsApp. " + ("The message went, the file did not." if message else "Nothing was sent."))
+        if not pressed:
+            res.update(status="typed_not_sent", files_sent=sent, files_left=[os.path.basename(x) for x in files[i:]],
+                       note=f"WhatsApp is open with {os.path.basename(f)} ready, but I could not press Send. Press it on the phone.")
+            return res
+        who = who2 or who
+        sent.append(os.path.basename(f))
+        time.sleep(1.5)                            # let WhatsApp return to the chat before the next file
+    res.update(status="send_pressed", files_sent=sent, files_left=[],
+               note="I pressed Send for the message and each file. I cannot confirm delivery from here." if message
+               else "I pressed Send for each file. I cannot confirm delivery from here.")
+    if number.startswith("chat:"):
+        res["to"] = who
+    return res
+
+
+def _send_text(user, pkg, name, number, message):
     if number.startswith("chat:"):
         name, pressed = _send_in_chat(user, pkg, name, message)
         shown = "found in WhatsApp"
