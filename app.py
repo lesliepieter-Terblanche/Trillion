@@ -1509,7 +1509,56 @@ def phone_info(user=Depends(auth)):
             out["devices"].append(d)
     except Exception as e:  # a slow or hung phone link must not empty the settings box
         out["adb"], out["error"] = False, (str(e) if isinstance(e, phone.PhoneError) else "The phone link did not answer. Click LOOK AGAIN.")
+    # every phone linked to a login, so one that should not be there can be removed (the owner sees all, others their own)
+    here = {d["serial"]: d["state"] for d in out["devices"]}
+    out["all_linked"] = []
+    for u in core.q("SELECT * FROM users ORDER BY id"):
+        if not (user["is_admin"] or u["id"] == user["id"]):
+            continue
+        us = core.settings(u)
+        if us.get("phone_serial"):
+            known = [x for x in (us.get("phone_serial"), us.get("phone_usb"), us.get("phone_wifi")) if x]
+            out["all_linked"].append({"user_id": u["id"], "user": u["name"], "model": us.get("phone_model", ""), "serial": us["phone_serial"],
+                                      "mine": u["id"] == user["id"], "connected": any(here.get(x) == "device" for x in known)})
     return out
+
+
+@app.post("/api/phone/remove")
+def phone_remove(p: dict = Body(...), user=Depends(auth)):
+    """Take a phone off a login (the owner may do it for any login), or make this PC forget a wireless phone nobody is linked to."""
+    if p.get("user_id") is not None:
+        target = core.q("SELECT * FROM users WHERE id=?", (int(p["user_id"]),), one=True)
+        if not target or not (user["is_admin"] or target["id"] == user["id"]):
+            raise HTTPException(403, "Only the owner can remove another login's phone")
+        s = core.settings(target)
+        serials = {x for x in (s.get("phone_serial"), s.get("phone_usb"), s.get("phone_wifi")) if x}
+        model = s.get("phone_model") or s.get("phone_serial") or "phone"
+        for k in ("phone_serial", "phone_model", "phone_usb", "phone_wifi"):
+            s.pop(k, None)
+        core.save_settings(target["id"], s)
+        PHONE_STATS.pop(target["id"], None)
+        CONTACT_CACHE.pop(target["id"], None)
+        for x in serials:
+            if ":" in x:                       # a wireless link: also close the connection, or it would just show up again
+                try:
+                    phone._run(["disconnect", x], timeout=10)
+                except Exception:
+                    pass
+        for who in {user["id"], target["id"]}:
+            core.log(who, f"Phone removed from {target['name']}: {model}", "done")
+        return {"ok": True, "removed": model, "from": target["name"]}
+    serial = str(p.get("serial") or "")
+    if not user["is_admin"]:
+        raise HTTPException(403, "Only the owner can do that")
+    if phone.owner_of(serial):
+        raise HTTPException(400, "That phone is linked to a login. Remove it from the login instead.")
+    if ":" not in serial:
+        raise HTTPException(400, "That phone is on a cable. Unplug it and it disappears from the list.")
+    try:
+        phone._run(["disconnect", serial], timeout=10)
+    except Exception as e:
+        raise HTTPException(400, f"Could not let go of it ({type(e).__name__}).")
+    return {"ok": True, "forgot": serial}
 
 
 CONTACT_CACHE = {}
