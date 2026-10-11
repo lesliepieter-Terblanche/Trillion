@@ -125,6 +125,9 @@ body{padding-bottom:var(--attpad,0px)}
 .att .bar{position:absolute;left:0;bottom:0;height:3px;background:var(--green);transition:width .2s}
 .att.bad{border-color:var(--red)}
 .attrow{display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 10px}
+.mmbar{position:relative;height:22px;background:var(--panel);border:1px solid var(--edge);border-radius:4px;overflow:hidden;margin-bottom:6px}
+.mmbar i{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--green);transition:width .06s linear}.mmbar i.low{background:var(--dim)}
+.mmbar u{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--red)}
 .sttiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
 .sttiles .tile .bigv{font-size:30px;overflow-wrap:anywhere}
 .stbars{display:flex;align-items:flex-end;gap:3px;height:140px;border-bottom:1px solid var(--edge)}
@@ -641,6 +644,17 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
       <label class="field"><span>Cloud model name</span><input id="s-cloud_model"></label>
       <label class="field"><span>Voice</span><select id="s-voice"><option value="browser">This PC's voice (free)</option><option value="elevenlabs">ElevenLabs (needs your key under Keys)</option></select></label>
       <label class="field"><span>ElevenLabs voice ID</span><input id="s-eleven_voice_id"></label>
+      <div class="panel" style="background:var(--well)"><b>Microphone on this device</b>
+        <div class="muted" style="font-size:13px">This choice is kept for this browser on this device only. A webcam's microphone is usually not the one Windows picks by itself, so choose it here.</div>
+        <div class="grid2">
+          <label class="field"><span>Which microphone</span><select id="mic-dev"><option value="">The one Windows uses by default</option></select></label>
+          <label class="field"><span>How well she hears you</span><select id="mic-sens"><option value="1">Normal (headset or desk microphone)</option><option value="2">Sensitive (webcam, or you sit further away)</option><option value="3">Very sensitive (quiet microphone across the room)</option></select></label>
+        </div>
+        <label class="tickrow" style="align-items:center"><input type="checkbox" id="mic-raw"><span>Switch off the browser's noise filter <span class="muted">(try this if a webcam microphone cuts your voice off or sounds muffled)</span></span></label>
+        <div class="btns" style="justify-content:flex-start"><button type="button" class="btn" id="mic-test">TEST MICROPHONE</button><button type="button" class="btn" id="mic-scan">FIND MICROPHONES</button></div>
+        <div id="mic-meter" hidden><div class="mmbar"><i id="mic-lvl"></i><u id="mic-line"></u></div><div class="muted" style="font-size:13px">Speak normally. The bar must pass the line when you talk and drop below it when you stop.</div></div>
+        <div class="msg" id="mic-msg" style="font-size:14px;overflow-wrap:anywhere"></div>
+      </div>
       <label class="tickrow"><input type="checkbox" id="s-wake_word"><span><b>Wake word</b><br><span class="muted">In voice mode she only responds when she hears her name, for example "<span id="wakeex">Trillion</span>, what is the weather". Switch this on in noisy places so other talk does not set her off. Her name is the Assistant name under Look and name.</span></span></label>
       <label class="tickrow"><input type="checkbox" id="s-fast_answers"><span><b>Quick answers</b><br><span class="muted">Plain questions go to the small fast model. Anything she has to do, look up or remember still uses the full brain.</span></span></label>
       <label class="tickrow"><input type="checkbox" id="s-daily_review"><span>Learn from each day's conversations at 23:30</span></label>
@@ -702,10 +716,10 @@ const api=async(u,o={})=>{if(o.json!==undefined){o.method=o.method||'POST';o.hea
 const hm=t=>new Date(t*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false});
 let hold=0,S=null,sending=false,speakNext=false,settingsLoaded=false,cwd='';
 
-const LOADERS={store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);},memory:()=>loadNotes(''),videos:()=>loadVideos(),skills:()=>loadSkills(),settings:()=>loadSettings(),family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
+const LOADERS={store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);},memory:()=>loadNotes(''),videos:()=>loadVideos(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
 let VIEW='control';
 function go(v){
-  VIEW=v;
+  VIEW=v;try{if(v!=='settings'&&mtTimer)micTestStop();}catch(e){}
   const inNav=!!document.querySelector('#nav button[data-v="'+v+'"]');document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('on',x.dataset.v===(inNav?v:'more')));
   const main=['control','projects','phone'].includes(v)?v:'more';
   document.querySelectorAll('#bnav button').forEach(x=>x.classList.toggle('on',x.dataset.v===main));
@@ -935,24 +949,52 @@ function say(text){
 }
 // ---- voice mode: tick VOICE and just talk; she listens, answers aloud, and listens again ----
 let voiceOn=false,talking=false,vHearing=false,vStream=null,vCtx=null,vAn=null,vRec=null,vChunks=[],vTimer=null,
-    vSpoke=false,vSpeechMs=0,vSilMs=0,vIdleMs=0,vNoise=0.01;
+    vSpoke=false,vSpeechMs=0,vSilMs=0,vIdleMs=0,vNoise=0.01,vQuietMs=0,vPeak=0;
 const rec=null; // kept so older checks still read cleanly
 function micLabel(){const b=$('mic');b.classList.toggle('on',voiceOn);b.setAttribute('aria-pressed',voiceOn?'true':'false');
   b.innerHTML=`<span class="tick">${voiceOn?'&#10003;':''}</span>${voiceOn?'VOICE ON':'VOICE'}`;}
 const vPaused=()=>sending||talking||vHearing;
+// ---- which microphone, and how sensitive: kept per browser, because microphone names differ on every device ----
+const MICSENS={1:{floor:0.012,mult:3.2,gain:1},2:{floor:0.006,mult:2.5,gain:2.5},3:{floor:0.003,mult:2.0,gain:5}};
+const micGet=k=>{try{return localStorage.getItem('trillion_mic_'+k)||'';}catch(e){return '';}};
+const micSet=(k,v)=>{try{v?localStorage.setItem('trillion_mic_'+k,v):localStorage.removeItem('trillion_mic_'+k);}catch(e){}};
+const micSens=()=>MICSENS[+micGet('sens')]||MICSENS[1];
+let vRaw=null,vRecStream=null,vMicName='';
+const micWhy=e=>e.name==='NotFoundError'?'No microphone was found on this device. Plug one in, or check the Windows sound settings.'
+  :e.name==='NotAllowedError'?'The browser is blocking the microphone. Click the padlock in the address bar and allow the microphone.'
+  :e.name==='NotReadableError'?'The microphone is there but Windows would not hand it over. Another program is probably holding the webcam (Camera, Teams, Zoom, OBS). Close it and try again.'
+  :'Could not open the microphone: '+e.name;
+// open the chosen microphone; if that exact one is gone (unplugged, or the browser renamed it) fall back to the default one
+async function micOpen(){
+  const dev=micGet('dev'),raw=micGet('raw')==='1';
+  const base=raw?{echoCancellation:false,noiseSuppression:false,autoGainControl:true}:{echoCancellation:true,noiseSuppression:true,autoGainControl:true};
+  let st,fell=false;
+  if(dev){try{st=await navigator.mediaDevices.getUserMedia({audio:{...base,deviceId:{exact:dev}}});}
+    catch(e){if(e.name!=='OverconstrainedError'&&e.name!=='NotFoundError')throw e;fell=true;}}
+  if(!st)st=await navigator.mediaDevices.getUserMedia({audio:base});
+  const tr=st.getAudioTracks()[0];
+  return {stream:st,name:(tr&&tr.label)||'microphone',fell,muted:!!(tr&&tr.muted)};
+}
+// the sound goes through a volume boost for quiet microphones; both the listening and the recording use the boosted sound
+function micChain(ctx,stream){const src=ctx.createMediaStreamSource(stream),g=ctx.createGain();g.gain.value=micSens().gain;
+  const an=ctx.createAnalyser();an.fftSize=1024;src.connect(g);g.connect(an);
+  let out=stream;try{const d=ctx.createMediaStreamDestination();g.connect(d);out=d.stream;}catch(e){}
+  return {an,out};}
 async function voiceStart(quiet){
   if(!navigator.mediaDevices||!window.MediaRecorder){if(!quiet)alertMsg('The microphone only works on this PC itself, or over the secure https address.');return false;}
-  try{vStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});}
-  catch(e){if(!quiet)alertMsg(e.name==='NotFoundError'?'No microphone was found on this device. Plug one in, or check the Windows sound settings.'
-      :e.name==='NotAllowedError'?'The browser is blocking the microphone. Click the padlock in the address bar and allow the microphone.'
-      :'Could not open the microphone: '+e.name);return false;}
+  let m;try{m=await micOpen();}catch(e){if(!quiet)alertMsg(micWhy(e));return false;}
+  vRaw=m.stream;vMicName=m.name;
   vCtx=new (window.AudioContext||window.webkitAudioContext)();if(vCtx.state==='suspended')await vCtx.resume().catch(()=>{});
-  vAn=vCtx.createAnalyser();vAn.fftSize=1024;vCtx.createMediaStreamSource(vStream).connect(vAn);
+  const c=micChain(vCtx,vRaw);vAn=c.an;vStream=c.out;vNoise=0.01;vQuietMs=0;vPeak=0;
   voiceOn=true;micLabel();try{localStorage.setItem('trillion_voice','1');}catch(e){}
-  vTimer=setInterval(vadTick,60);if(S)render();return true;
+  vTimer=setInterval(vadTick,60);if(S)render();
+  if(!quiet&&m.fell){hold=Date.now()+9000;$('kicker').textContent='MICROPHONE';$('big').textContent='Using another one';}
+  if(!quiet&&m.fell)alertMsg('The microphone you chose is not plugged in, so I am using '+m.name+'. Choose again under Settings, Brain and voice.');
+  return true;
 }
 function voiceStop(){
   voiceOn=false;clearInterval(vTimer);if(vRec&&vRec.state==='recording'){vRec._keep=false;vRec.stop();}vRec=null;
+  if(vRaw)vRaw.getTracks().forEach(t=>t.stop());vRaw=null;
   if(vStream)vStream.getTracks().forEach(t=>t.stop());if(vCtx)vCtx.close().catch(()=>{});vStream=vCtx=vAn=null;
   try{localStorage.removeItem('trillion_voice');}catch(e){}
   if('speechSynthesis' in window)speechSynthesis.cancel();micLabel();if(S)render();
@@ -968,7 +1010,10 @@ function vadTick(){
   if(vPaused()){endSegment(false);return;}          // never listen while she works or speaks
   if(!vRec||vRec.state!=='recording'){newSegment();return;}
   const buf=new Float32Array(vAn.fftSize);vAn.getFloatTimeDomainData(buf);let sum=0;for(let i=0;i<buf.length;i++)sum+=buf[i]*buf[i];
-  const rms=Math.sqrt(sum/buf.length),thr=Math.max(0.012,vNoise*3.2);
+  const sn=micSens(),rms=Math.sqrt(sum/buf.length),thr=Math.max(sn.floor,vNoise*sn.mult);
+  // a microphone that gives no sound at all for 12 seconds is the wrong one, or muted: say so instead of waiting forever
+  vPeak=Math.max(vPeak,rms);vQuietMs+=60;
+  if(vQuietMs>=12000){if(vPeak<0.0008&&Date.now()>hold){hold=Date.now()+8000;$('kicker').textContent='NO SOUND';$('big').textContent='Microphone silent';alertMsg('No sound at all is coming from '+vMicName+'. It may be muted or the wrong one. Choose the microphone under Settings, Brain and voice.');}vQuietMs=0;vPeak=0;}
   if(rms>thr){vSpeechMs+=60;vSilMs=0;if(vSpeechMs>=240&&!vSpoke){vSpoke=true;if(S)render();}}
   else{vSilMs+=60;if(!vSpoke){vNoise=vNoise*0.95+rms*0.05;vSpeechMs=Math.max(0,vSpeechMs-30);}}
   vIdleMs+=60;
@@ -1009,6 +1054,39 @@ async function heard(blob){
   vHearing=false;
 }
 $('mic').addEventListener('click',e=>{e.preventDefault();voiceOn?voiceStop():voiceStart(false);});
+// ---- microphone settings: choose, test, see the level ----
+let mtStream=null,mtCtx=null,mtTimer=null;
+async function micList(ask){const sel=$('mic-dev'),m=$('mic-msg');if(!navigator.mediaDevices||!navigator.mediaDevices.enumerateDevices){m.className='msg bad';m.textContent='This browser can only use a microphone on the PC itself or over the secure https address.';return;}
+  try{if(ask){const t=await navigator.mediaDevices.getUserMedia({audio:true});t.getTracks().forEach(x=>x.stop());}   // names stay hidden until the browser has been allowed once
+    const ds=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='audioinput'&&d.deviceId!=='default'&&d.deviceId!=='communications');
+    const cur=micGet('dev'),named=ds.some(d=>d.label);
+    sel.innerHTML='<option value="">The one Windows uses by default</option>'+ds.map((d,i)=>`<option value="${esc(d.deviceId)}">${esc(d.label||('Microphone '+(i+1)))}</option>`).join('')+(cur&&!ds.some(d=>d.deviceId===cur)?'<option value="'+esc(cur)+'">The one you chose (not plugged in now)</option>':'');
+    sel.value=cur;
+    if(ask){m.className='msg '+(ds.length?'ok':'bad');m.textContent=ds.length?('Found '+ds.length+' microphone'+(ds.length===1?'':'s')+(named?'.':'. Their names appear once the browser is allowed to use the microphone.')):'Windows reports no microphone at all. Check that the webcam shows under Windows Settings, System, Sound, Input.';}
+  }catch(e){m.className='msg bad';m.textContent=micWhy(e);}}
+function micTestStop(){clearInterval(mtTimer);mtTimer=null;if(mtStream)mtStream.getTracks().forEach(t=>t.stop());if(mtCtx)mtCtx.close().catch(()=>{});mtStream=mtCtx=null;$('mic-meter').hidden=true;$('mic-test').textContent='TEST MICROPHONE';}
+async function micTest(){const m=$('mic-msg');if(mtTimer){micTestStop();return;}
+  if(voiceOn)voiceStop();
+  let o;try{o=await micOpen();}catch(e){m.className='msg bad';m.textContent=micWhy(e);return;}
+  mtStream=o.stream;mtCtx=new (window.AudioContext||window.webkitAudioContext)();if(mtCtx.state==='suspended')await mtCtx.resume().catch(()=>{});
+  const an=micChain(mtCtx,mtStream).an,buf=new Float32Array(an.fftSize);let noise=0.01,peak=0,over=0,ticks=0;
+  await micList(false);$('mic-meter').hidden=false;$('mic-test').textContent='STOP TEST';
+  m.className='msg';m.textContent='Listening on: '+o.name+(o.fell?' (the one you chose is not plugged in)':'')+'. Say a few words.';
+  const scale=v=>Math.min(100,Math.sqrt(v/0.25)*100);
+  mtTimer=setInterval(()=>{an.getFloatTimeDomainData(buf);let sum=0;for(let i=0;i<buf.length;i++)sum+=buf[i]*buf[i];const rms=Math.sqrt(sum/buf.length),sn=micSens(),thr=Math.max(sn.floor,noise*sn.mult);
+    if(rms<=thr)noise=noise*0.95+rms*0.05;else over++;peak=Math.max(peak,rms);ticks++;
+    $('mic-lvl').style.width=scale(rms)+'%';$('mic-lvl').className=rms>thr?'':'low';$('mic-line').style.left=scale(thr)+'%';
+    if(ticks%50===0){const secs=ticks*0.06;
+      if(peak<0.0008){m.className='msg bad';m.textContent='No sound at all from '+o.name+'. It is muted, switched off in Windows, or not the microphone you are speaking into. Pick another one above.';}
+      else if(secs>6&&over<4){m.className='msg bad';m.textContent='I hear '+o.name+', but your voice does not pass the line. Choose a more sensitive setting above, move closer, or raise the input volume in Windows sound settings.';}
+      else if(over>=4){m.className='msg ok';m.textContent='Working: I can hear you on '+o.name+'. Tick VOICE on the Home page to talk to her.';}}
+  },60);}
+$('mic-test').onclick=micTest;$('mic-scan').onclick=()=>micList(true);
+$('mic-dev').onchange=()=>{micSet('dev',$('mic-dev').value);if(mtTimer){micTestStop();micTest();}else if(voiceOn){voiceStop();voiceStart(false);}};
+$('mic-sens').onchange=()=>{micSet('sens',$('mic-sens').value==='1'?'':$('mic-sens').value);if(mtTimer){micTestStop();micTest();}else if(voiceOn){voiceStop();voiceStart(false);}};
+$('mic-raw').onchange=()=>{micSet('raw',$('mic-raw').checked?'1':'');if(mtTimer){micTestStop();micTest();}else if(voiceOn){voiceStop();voiceStart(false);}};
+function micSettingsShow(){$('mic-sens').value=micGet('sens')||'1';$('mic-raw').checked=micGet('raw')==='1';micList(false);}
+if(navigator.mediaDevices&&navigator.mediaDevices.addEventListener)navigator.mediaDevices.addEventListener('devicechange',()=>{if($('mic-dev'))micList(false);});
 micLabel();
 try{if(localStorage.getItem('trillion_voice')==='1')voiceStart(true);}catch(e){}
 // routines: the briefing panel in the Control Room, and the page where each login sets up its own
