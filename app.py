@@ -38,6 +38,8 @@ for _u in core.q("SELECT * FROM users WHERE lower(name)='brandon'"):
 extend.init()
 video.init()
 attach.init()
+import gumroad
+gumroad.init()
 routines.init()
 app = FastAPI(title="Trillion")
 COOKIE = "trillion"
@@ -323,6 +325,57 @@ PHONE_RULES = [
                           r"\b(?:battery|status|storage|charge|stats)\b.{0,30}" + _PH + r"|\bhow(?:'s| is)\s+" + _PH, re.I)),
 ]
 PHONE_WORDS = re.compile(r"\b(phone|cell|mobile|what'?s ?(?:app|up)|contact|battery|galaxy|samsung)\b", re.I)
+
+
+# ---------- the Gumroad store, asked about or managed in plain words ----------
+STORE_SALES = re.compile(r"\bhow much (?:did|have|has) (?:i|we|the store|my store|gumroad)\b.{0,20}\b(?:s[eo]ll|sold|ma[dk]e|earn(?:ed)?|taken?|bring in|brought in)\b|"
+                         r"\bhow many (?:sales|orders|copies|ebooks?|books?)\b|\b(?:any|new) (?:new )?(?:sales|orders)\b|"
+                         r"\b(?:sales|earnings|revenue|income|takings)\b.{0,25}\b(?:today|this week|this month|so far|gum ?road|store)\b|"
+                         r"\b(?:gum ?road|store|shop)\b.{0,30}\b(?:sales|earnings|revenue|income|doing|going|numbers|figures|report)\b|"
+                         r"\bhow (?:is|are|did) (?:my |the )?(?:gum ?road|store|shop|sales)\b", re.I)
+STORE_PUB = re.compile(r"\b(un-?publish|re-?publish|publish|take down|hide|put back|switch off|switch on)\s+(?:my\s+|the\s+)?(.+?)\s+"
+                       r"(?:on|from|in|at)\s+(?:my\s+|the\s+)?(?:gum ?road|store|shop)\b", re.I)
+STORE_CODE = re.compile(r"\b(?:make|create|add|set up|give me)\s+(?:me\s+)?an?\s+(\d{1,3})\s*(?:%|percent|per cent)\s+(?:off\s+)?"
+                        r"(?:discount\s+|coupon\s+|offer\s+|promo\s+)?code(?:\s+(?:called|named)\s+([A-Za-z0-9_-]{2,40}))?\s+(?:for|on)\s+"
+                        r"(?:my\s+|the\s+)?(.+?)(?:\s+(?:on|in)\s+(?:gum ?road|my store|the store))?[.!?]?\s*$", re.I)
+
+
+def store_shortcut(user, text):
+    """Questions about the Gumroad store and simple changes to it, answered without the model."""
+    if len(text) > 300:
+        return None
+    on = bool(gumroad.token(user))
+    try:
+        m = STORE_PUB.search(text)
+        if m and on:
+            p = gumroad.find_product(user, m.group(2))
+            live = bool(re.match(r"(?:re-?publish|publish|put back|switch on)", m.group(1), re.I))
+            gumroad.set_published(user, p["id"], live)
+            return (f"{p['name']} is {'published again' if live else 'unpublished'} on Gumroad."
+                    + ("" if live else " Buyers cannot see it until you publish it again.")), "store"
+        m = STORE_CODE.search(text)
+        if m and on:
+            p = gumroad.find_product(user, m.group(3))
+            pct = int(m.group(1))
+            name = gumroad.create_code(user, p["id"], m.group(2) or f"SAVE{pct}", pct, percent=True)
+            return f"Done. The code {name} gives {pct}% off {p['name']} on Gumroad.", "store"
+        if STORE_SALES.search(text) and (on or re.search(r"\bgum ?road\b", text, re.I)):
+            if not on:
+                return "Your Gumroad store is not connected yet. Open the Store page and connect it with an access token.", "store"
+            try:
+                gumroad.sync(user)
+            except gumroad.GumroadError:
+                pass                                    # the saved figures are still worth giving; the error shows on the page
+            low = text.lower()
+            period = ("week" if re.search(r"\bweek\b|7 days", low) else "days30" if re.search(r"30 days|last month|past month", low)
+                      else "month" if "month" in low else "all" if re.search(r"\b(total|all time|so far|ever|overall|altogether)\b", low)
+                      else "today" if re.search(r"\btoday\b|\bnew (sales|orders)\b", low) else None)
+            if period:
+                return gumroad.say_sales(user, period), "store"
+            return gumroad.say_sales(user, "today") + " " + gumroad.say_sales(user, "days30"), "store"
+    except gumroad.GumroadError as e:
+        return "I could not do that on Gumroad: " + str(e), "store"
+    return None
 
 
 def sent_sentence(r, msg):
@@ -738,6 +791,13 @@ def run_agent(user, text, files=None):
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="completed", detail=reply[:200])
         return {"reply": reply, "task_id": tid, "provider": "built-in"}
+    ss = store_shortcut(user, text)
+    if ss:
+        reply, show = ss
+        BUSY[uid] = False
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="failed" if reply.startswith("I could not") else "completed", detail=reply[:200])
+        return {"reply": reply, "task_id": tid, "provider": "built-in", "show": show}
     ps = None
     try:
         ps = phone_shortcut(user, text, tid, files)
@@ -960,6 +1020,108 @@ def phone_whatsapp(p: dict = Body(...), user=Depends(auth)):
     core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
     core.set_task(tid, status="waiting" if waiting_ else ("failed" if "error" in res else "completed"), detail=reply[:200])
     return {"reply": reply, "task_id": tid, "provider": "built-in"}
+
+
+# ---------- this login's own Gumroad store ----------
+def _store_do(fn):
+    try:
+        return fn()
+    except gumroad.GumroadError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/store")
+def store_get(seen: int = 0, user=Depends(auth)):
+    return gumroad.overview(user, mark_seen=bool(seen))
+
+
+@app.post("/api/store/connect")
+def store_connect(p: dict = Body(...), user=Depends(auth)):
+    _store_do(lambda: gumroad.connect(user, p.get("token")))
+    core.log(user["id"], "Gumroad store connected", "done")
+    return gumroad.overview(user)
+
+
+@app.delete("/api/store")
+def store_disconnect(user=Depends(auth)):
+    gumroad.disconnect(user)
+    return {"connected": False}
+
+
+@app.post("/api/store/check")
+def store_check(user=Depends(auth)):
+    _store_do(lambda: gumroad.sync(user))
+    return gumroad.overview(user)
+
+
+def _own_product(user, pid):
+    p = next((x for x in gumroad.overview(user).get("products", []) if x["id"] == pid), None)
+    if not p:
+        raise HTTPException(404, "That product is not in your store.")
+    return p
+
+
+@app.post("/api/store/product")
+def store_product(p: dict = Body(...), user=Depends(auth)):
+    prod, act = _own_product(user, str(p.get("id") or "")), p.get("action")
+    if act in ("publish", "unpublish"):
+        _store_do(lambda: gumroad.set_published(user, prod["id"], act == "publish"))
+    elif act == "update":
+        price = None
+        if str(p.get("price") or "").strip() != "":
+            try:
+                price = int(round(float(str(p["price"]).replace(",", ".").strip()) * (1 if prod["currency"] == "jpy" else 100)))
+            except ValueError:
+                raise HTTPException(400, "Type the price as a number, like 9.99.")
+        name = str(p.get("name") or "").strip()[:200] or None
+        _store_do(lambda: gumroad.update_product(user, prod["id"], name if name != prod["name"] else None,
+                                                 price if price != prod["price"] else None))
+    elif act == "delete":
+        _store_do(lambda: gumroad.delete_product(user, prod["id"]))
+    else:
+        raise HTTPException(400, "Unknown action")
+    core.log(user["id"], f"Gumroad: {act} {prod['name']}", "done")
+    return gumroad.overview(user)
+
+
+@app.get("/api/store/codes")
+def store_codes(product: str, user=Depends(auth)):
+    prod = _own_product(user, product)
+    return {"codes": _store_do(lambda: gumroad.codes(user, prod["id"]))}
+
+
+@app.post("/api/store/codes")
+def store_code_add(p: dict = Body(...), user=Depends(auth)):
+    prod = _own_product(user, str(p.get("product") or ""))
+    if p.get("delete"):
+        _store_do(lambda: gumroad.delete_code(user, prod["id"], str(p["delete"])))
+    else:
+        try:
+            amount = float(str(p.get("amount") or "").replace(",", ".").replace("%", "").strip())
+        except ValueError:
+            raise HTTPException(400, "Type the discount as a number.")
+        _store_do(lambda: gumroad.create_code(user, prod["id"], p.get("name"), amount, percent=p.get("percent", True),
+                                              limit=p.get("limit") or None, all_products=bool(p.get("all"))))
+    return {"codes": _store_do(lambda: gumroad.codes(user, prod["id"]))}
+
+
+@app.get("/api/store/reviews")
+def store_reviews(product: str, user=Depends(auth)):
+    prod = _own_product(user, product)
+    return {"reviews": _store_do(lambda: gumroad.reviews(user, prod["id"]))}
+
+
+@app.post("/api/store/sale")
+def store_sale(p: dict = Body(...), user=Depends(auth)):
+    sale, act = _store_do(lambda: gumroad.find_sale(user, str(p.get("id") or ""))), p.get("action")
+    if act == "refund":
+        _store_do(lambda: gumroad.refund(user, sale["id"]))
+        core.log(user["id"], f"Gumroad: refunded {sale['product']} to {sale['email']}", "done")
+    elif act == "receipt":
+        _store_do(lambda: gumroad.resend_receipt(user, sale["id"]))
+    else:
+        raise HTTPException(400, "Unknown action")
+    return gumroad.overview(user)
 
 
 # ---------- this login's own links (a tracker, a portal), each with an optional login code kept encrypted ----------
@@ -1419,7 +1581,7 @@ def state(user=Depends(auth)):
         "notes": {"personal": n("PERSONAL"), "work": n("WORK"),
                   "today": core.q("SELECT COUNT(*) c FROM notes WHERE user_id=? AND ts>=?", (uid, ds), one=True)["c"]},
         "site": SITES.get(s.get("site")) if s.get("site") else None,
-        "day_start": ds, "now": time.time(), "wa_unseen": core.q("SELECT COUNT(*) c FROM wa_inbox WHERE user_id=? AND seen=0", (uid,), one=True)["c"],
+        "day_start": ds, "now": time.time(), "store_new": gumroad.unseen(uid), "wa_unseen": core.q("SELECT COUNT(*) c FROM wa_inbox WHERE user_id=? AND seen=0", (uid,), one=True)["c"],
         "version": VERSION, "hearing": HEARING["state"], "hearing_device": HEARING.get("device", ""),
         "phone": ({"linked": True, "model": s.get("phone_model", ""), **(PHONE_STATS.get(uid) or {"pending": True})}
                   if s.get("phone_serial") else {"linked": False}),
@@ -2311,6 +2473,7 @@ def wa_background():
 def start_background():
     threading.Thread(target=background, daemon=True).start()
     threading.Thread(target=wa_background, daemon=True).start()
+    threading.Thread(target=gumroad.background, daemon=True).start()
 
     def warm():  # load hearing and the brains up front so the first request is not slow
         try:

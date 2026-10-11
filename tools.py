@@ -75,12 +75,22 @@ SPECS = [
        {"prompt": S, "seconds": {"type": "integer"}, "format": S}, ["prompt"]),
     fn("create_ebook", "Write and lay out a designed ebook (PDF with cover, contents page and chapters) from a plain description. "
        "Takes several minutes.", {"prompt": S, "chapters": {"type": "integer"}}, ["prompt"]),
+    fn("gumroad_sales", "The user's Gumroad store sales and earnings for a period. period is one of: today, week, days30, month, all.",
+       {"period": S}),
+    fn("gumroad_publish", "Publish or unpublish one product in the user's Gumroad store. product is its name.",
+       {"product": S, "published": {"type": "boolean"}}),
+    fn("gumroad_discount_code", "Create a percentage discount code for one product in the user's Gumroad store.",
+       {"product": S, "code": S, "percent": {"type": "integer"}}),
+    fn("gumroad_set_price", "Change the price of one product in the user's Gumroad store. price is in the product's currency, "
+       "like 9.99. Needs the user's approval.", {"product": S, "price": {"type": "number"}}),
+    fn("gumroad_refund", "Refund one Gumroad sale in full. sale is the buyer's email address or the sale number. "
+       "Needs the user's approval.", {"sale": S}),
     fn("update_self", "Update Trillion herself to the newest version from GitHub, then restart. Owner only. "
        "Use when the user says update yourself, get the latest version, or pull the update.", {}),
     fn("run_command", "Run a Windows command. Owner only, and always needs approval on the dashboard.",
        {"command": S}),
 ]
-NEEDS_APPROVAL = {"delete_path", "run_command", "phone_send_whatsapp", "phone_shell"}
+NEEDS_APPROVAL = {"delete_path", "run_command", "phone_send_whatsapp", "phone_shell", "gumroad_set_price", "gumroad_refund"}
 FULL_PHONE = {"phone_read_screen", "phone_tap", "phone_type", "phone_press", "phone_swipe", "phone_shell"}
 
 
@@ -121,10 +131,14 @@ def describe(name, a):
         "use_skill": f"Reading the skill {g('name')}", "draft_skill": f"Drafting a playbook: {g('name')}",
         "connector_tools": f"Checking what {g('connector')} can do",
         "connector_call": f"Using {g('connector')}: {g('tool')}",
+        "gumroad_sales": "Reading Gumroad sales", "gumroad_publish": f"{'Publish' if a.get('published') else 'Unpublish'} {g('product')} on Gumroad",
+        "gumroad_discount_code": f"Gumroad code {g('code')}: {g('percent')}% off {g('product')}",
+        "gumroad_set_price": f"Change the Gumroad price of {a.get('_name') or g('product')} to {g('price')}",
+        "gumroad_refund": f"Refund the Gumroad sale of {a.get('_name') or g('sale')}",
         "phone_status": "Checking the phone", "phone_open_app": f"Opening {g('app')} on the phone",
         "phone_find_contact": f"Looking up {g('name')} in contacts",
         "phone_send_whatsapp": f"Send WhatsApp to {a.get('_name') or g('contact')}"
-                               + (f" (+{a['contact']})" if a.get('_name') and not str(a.get('contact', '')).startswith('chat:') else "") + (f": \"{str(a.get('message', ''))[:120]}\"" if str(a.get('message', '')).strip() else "")
+                               + (f" (+{a.get('contact')})" if a.get('_name') and a.get('contact') and not str(a.get('contact', '')).startswith('chat:') else "") + (f": \"{str(a.get('message', ''))[:120]}\"" if str(a.get('message', '')).strip() else "")
                                + (f" with {len(a['files'])} file{'s' if len(a['files']) != 1 else ''}" if a.get('files') else ""),
         "phone_read_screen": "Reading the phone screen", "phone_tap": f"Tapping {g('target') or 'the screen'}",
         "phone_type": "Typing on the phone", "phone_press": f"Pressing {g('key')}", "phone_swipe": f"Swiping {g('direction')}",
@@ -155,6 +169,16 @@ def execute(user, name, args, task_id=None, approved=False, direct=False):
         if name in NEEDS_APPROVAL and not approved:
             if name == "delete_path":
                 resolve(user, args.get("path"))  # permission check before asking
+            if name == "gumroad_set_price":       # settle exactly which product before asking
+                import gumroad
+                p = gumroad.find_product(user, args.get("product"))
+                args = {"product": p["id"], "price": float(args.get("price")), "_name": f"{p['name']} (now {p['shown']})"}
+            if name == "gumroad_refund":          # settle exactly which sale before asking
+                import gumroad
+                s_ = gumroad.find_sale(user, args.get("sale"))
+                if s_["refunded"]:
+                    return {"error": "That sale is already refunded."}
+                args = {"sale": s_["id"], "_name": f"{s_['product']} to {s_['email']} ({s_['shown']})"}
             if name == "phone_send_whatsapp":  # settle exactly who it goes to before asking
                 import phone
                 who, number = phone.resolve_contact(user, str(args.get("contact", "")))
@@ -557,6 +581,56 @@ def t_phone_send_whatsapp(user, contact, message="", _name=None, files=None):
     if _name and not str(contact).startswith("chat:"):
         res["to"] = _name
     return res
+
+
+def _gum(fn):
+    import gumroad
+    try:
+        return fn(gumroad)
+    except gumroad.GumroadError as e:
+        return {"error": str(e)}
+
+
+def t_gumroad_sales(user, period="today"):
+    period = {"7": "week", "30": "days30", "total": "all"}.get(str(period).lower(), str(period).lower())
+    def go(g):
+        try:
+            g.sync(user)
+        except g.GumroadError:
+            pass
+        return {"answer": g.say_sales(user, period if period in ("today", "week", "days30", "month", "all") else "today")}
+    return _gum(go)
+
+
+def t_gumroad_publish(user, product, published=True):
+    def go(g):
+        p = g.find_product(user, product)
+        g.set_published(user, p["id"], bool(published))
+        return {"ok": True, "product": p["name"], "published": bool(published)}
+    return _gum(go)
+
+
+def t_gumroad_discount_code(user, product, code="", percent=10):
+    def go(g):
+        p = g.find_product(user, product)
+        return {"ok": True, "product": p["name"], "code": g.create_code(user, p["id"], code or f"SAVE{int(percent)}", percent), "percent": percent}
+    return _gum(go)
+
+
+def t_gumroad_set_price(user, product, price, _name=None):
+    def go(g):
+        p = g.find_product(user, product)
+        g.update_product(user, p["id"], price_cents=int(round(float(price) * (1 if p["currency"] == "jpy" else 100))))
+        return {"ok": True, "product": p["name"], "price": price}
+    return _gum(go)
+
+
+def t_gumroad_refund(user, sale, _name=None):
+    def go(g):
+        s_ = g.find_sale(user, sale)
+        g.refund(user, s_["id"])
+        return {"ok": True, "refunded": s_["product"], "to": s_["email"]}
+    return _gum(go)
 
 
 def t_phone_locate(user):

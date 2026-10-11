@@ -51,9 +51,9 @@ header{background:var(--bar);border-bottom:1px solid var(--line);padding:12px 20
   align-items:center;justify-content:space-between;position:sticky;top:0;z-index:5}
 .logo{font-family:var(--disp);font-weight:700;font-size:26px;letter-spacing:.16em}
 .logo span{color:var(--a)} .logo small{font-size:15px;color:var(--dim);font-weight:400}
-nav{display:flex;flex-wrap:wrap;gap:4px}
-nav button{background:none;border:0;border-bottom:2px solid transparent;min-height:44px;padding:0 14px;
-  font-family:var(--mono);font-size:13px;letter-spacing:.12em;color:var(--dim)}
+nav{display:flex;flex-wrap:wrap;gap:2px}
+nav button{background:none;border:0;border-bottom:2px solid transparent;min-height:44px;padding:0 10px;
+  font-family:var(--mono);font-size:13px;letter-spacing:.08em;color:var(--dim)}
 nav button.on{color:var(--ink);border-color:var(--a)}
 .badges{display:flex;flex-wrap:wrap;gap:16px;align-items:center;font-family:var(--mono);font-size:13px}
 main{flex:1;width:100%;max-width:1400px;margin:0 auto;padding:26px 16px 130px;display:flex;flex-direction:column;gap:26px}
@@ -125,6 +125,18 @@ body{padding-bottom:var(--attpad,0px)}
 .att .bar{position:absolute;left:0;bottom:0;height:3px;background:var(--green);transition:width .2s}
 .att.bad{border-color:var(--red)}
 .attrow{display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 10px}
+.sttiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.sttiles .tile .bigv{font-size:30px;overflow-wrap:anywhere}
+.stbars{display:flex;align-items:flex-end;gap:3px;height:140px;border-bottom:1px solid var(--edge)}
+.stbars i{flex:1;min-width:0;background:var(--a);border-radius:2px 2px 0 0;min-height:1px;opacity:.9}.stbars i.z{background:var(--line)}.stbars i:hover{opacity:1;outline:1px solid var(--ink)}
+.stax{display:flex;justify-content:space-between;font-size:12px;color:var(--dim);font-family:var(--mono)}
+.strow{display:flex;gap:12px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--line);padding:12px 0}
+.strow:last-child{border-bottom:0}.strow .nm{flex:1;min-width:190px}.strow .nm small{display:block;color:var(--dim);font-size:13px;overflow-wrap:anywhere}
+.strow .amt{font-family:var(--mono);white-space:nowrap}.strow .btn{min-height:40px;font-size:12px;padding:0 12px}
+.stsub{flex-basis:100%;background:var(--well);border:1px solid var(--line);border-radius:6px;padding:14px;display:flex;flex-direction:column;gap:12px}
+.pill{display:inline-block;white-space:nowrap;vertical-align:middle;font-family:var(--mono);font-size:11px;letter-spacing:.08em;border:1px solid var(--edge);border-radius:20px;padding:2px 8px;text-transform:uppercase}
+.pill.on{border-color:var(--green);color:var(--green)}.pill.warn{border-color:var(--red);color:var(--red)}
+#storebadge:not(:empty){margin-left:6px;background:var(--green);color:#04130a;border-radius:10px;padding:1px 7px;font-size:11px}
 .cfiles{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 .cfiles a{display:flex;align-items:center;gap:8px;border:1px solid var(--edge);padding:4px 8px 4px 4px;font-size:13px;text-decoration:none;color:inherit;max-width:100%}
 .cfiles a.pic{padding:0;border:0}
@@ -325,6 +337,7 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <button data-v="phone">PHONE</button>
     <button data-v="videos">VIDEOS</button>
     <button data-v="files">FILES</button>
+    <button data-v="store">STORE<span id="storebadge"></span></button>
     <button data-v="memory">MEMORY</button>
     <button data-v="commands">COMMANDS</button>
     <button data-v="settings">SETTINGS</button>
@@ -515,6 +528,35 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <div><button class="btn pri" id="nadd">SAVE NOTE</button></div></div>
 </div>
 
+<div class="view" id="v-store">
+  <h2>My store <span class="muted" style="font-size:14px;font-weight:400;letter-spacing:0;text-transform:none">Gumroad</span></h2>
+  <div class="panel" id="st-connect" hidden><b>Connect your Gumroad store</b>
+    <ol class="muted" style="margin:0;padding-left:20px;line-height:1.7;font-size:14px">
+      <li>On Gumroad, open <b>Settings</b>, then <b>Advanced</b>, and go to <b>Applications</b>.</li>
+      <li>Create an application. Any name works, for example Trillion. For the redirect address type <b>http://localhost</b>.</li>
+      <li>Open the application and press <b>Generate access token</b>. Copy the token.</li>
+      <li>Paste it here and press Connect.</li>
+    </ol>
+    <label class="field"><span>Access token</span><input id="st-token" type="password" autocomplete="off" placeholder="Paste the token from Gumroad"></label>
+    <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="st-go">CONNECT</button></div>
+    <div class="msg" id="st-cmsg"></div>
+    <div class="muted" style="font-size:13px">The token is kept encrypted on this PC under your login only. Other logins cannot see your store.</div>
+  </div>
+  <div id="st-body" hidden style="display:flex;flex-direction:column;gap:26px">
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap"><div><b id="st-name"></b><div class="muted" id="st-when" style="font-size:13px"></div></div>
+        <span class="btns"><button class="btn" id="st-check" style="min-height:40px;font-size:12px">CHECK NOW</button><button class="btn" id="st-off" style="min-height:40px;font-size:12px">DISCONNECT</button></span></div>
+      <div class="msg bad" id="st-err"></div>
+      <div class="sttiles" id="st-tiles"></div>
+    </div>
+    <div class="panel"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><b>Money taken per day, last 30 days</b><span class="muted" id="st-max" style="font-size:13px"></span></div>
+      <div class="stbars" id="st-bars"></div><div class="stax"><span id="st-d0"></span><span id="st-d1"></span></div>
+      <div id="st-top"></div></div>
+    <div class="panel"><b>Products</b><div id="st-products"></div><div class="msg" id="st-pmsg"></div></div>
+    <div class="panel"><b>Recent sales</b><div id="st-sales"></div><div class="msg" id="st-smsg"></div></div>
+    <div class="panel"><b>Payouts</b><div id="st-payouts"></div></div>
+  </div>
+</div>
 <div class="view" id="v-videos">
   <h2>Videos</h2>
   <div class="panel"><b>Make a video</b>
@@ -640,7 +682,7 @@ const api=async(u,o={})=>{if(o.json!==undefined){o.method=o.method||'POST';o.hea
 const hm=t=>new Date(t*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false});
 let hold=0,S=null,sending=false,speakNext=false,settingsLoaded=false,cwd='';
 
-const LOADERS={projects:()=>loadProjects(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);},memory:()=>loadNotes(''),videos:()=>loadVideos(),skills:()=>loadSkills(),settings:()=>loadSettings(),family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
+const LOADERS={store:()=>loadStore(true),projects:()=>loadProjects(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);},memory:()=>loadNotes(''),videos:()=>loadVideos(),skills:()=>loadSkills(),settings:()=>loadSettings(),family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
 let VIEW='control';
 function go(v){
   VIEW=v;
@@ -801,7 +843,7 @@ function showMap(m){
   $('popring').onclick=()=>{closePop();send('ring my phone',voiceOn);};
 }
 let SEENV=null;
-async function tick(){try{S=await (await api('/api/state')).json();if(SEENV&&S.version!==SEENV){location.reload();return;}SEENV=S.version;render();statRefresh();if(S.wa_unseen!==waSeenCount){waSeenCount=S.wa_unseen;loadWA();}}catch(e){}}
+async function tick(){try{S=await (await api('/api/state')).json();if(SEENV&&S.version!==SEENV){location.reload();return;}SEENV=S.version;render();statRefresh();$('storebadge').textContent=S.store_new||'';if(S.store_new&&S.store_new!==storeSeen&&document.getElementById('v-store').classList.contains('on'))loadStore(true);storeSeen=S.store_new;if(S.wa_unseen!==waSeenCount){waSeenCount=S.wa_unseen;loadWA();}}catch(e){}}
 const FMARK=/\n?\[\[file:(\d+):([^\]\n]*?):(image|video|audio|document|file)\]\]/g;
 const KLBL={image:'PIC',video:'VID',audio:'SND',document:'DOC',file:'FILE'};
 function withFiles(raw){   // a person's message: the words, then what was attached to it
@@ -1161,6 +1203,7 @@ async function runHere(text,m,wa){
 // ---- quick actions: buttons that ask only for what is missing ----
 const QA={
   whatsapp:{label:'Send WhatsApp',fields:[{k:'who',label:'To (start typing a contact\'s name)',list:'contacts',ph:'Llewellyn Terblanche'},{k:'msg',label:'Message',ph:'I will be there at 5'}],cmd:f=>`send a whatsapp to ${f.who} saying ${f.msg}`},
+  store:{label:'Store sales',cmd:()=>'how are my gumroad sales'},
   openwa:{label:'Open WhatsApp',cmd:()=>'open my whatsapp'},
   waread:{label:'Read new WhatsApps',cmd:()=>'read my whatsapps'},
   ring:{label:'Ring my phone',cmd:()=>'ring my phone'},
@@ -1377,6 +1420,61 @@ $('pp-send').onclick=()=>{const w=$('pp-who').value.trim(),t=$('pp-msg').value.t
   const ids=ppAtt.ids();
   if(!w||(!t&&!ids.length)){m.className='msg bad';m.textContent='Fill in who it is for, and a message or a file.';return;}
   runHere(`send a whatsapp to ${w}`+(t?` saying ${t}`:''),m,{to:w,message:t,attachments:ids}).then(()=>{if(m.className.includes('ok')){$('pp-msg').value='';ppAtt.clear();}});};
+// ---- the Gumroad store ----
+let ST=null,stOpen=null;var storeSeen=0;
+const stDay=t=>{const d=new Date(t*1000);return d.toLocaleDateString(undefined,{day:'numeric',month:'short'})+' '+d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});};
+async function loadStore(seen){try{ST=await (await api('/api/store'+(seen?'?seen=1':''))).json();}catch(e){return;}drawStore();if(seen)tick();}
+function drawStore(){const o=ST;$('st-connect').hidden=o.connected;$('st-body').hidden=!o.connected;$('st-body').style.display=o.connected?'flex':'none';if(!o.connected)return;
+  $('st-name').textContent=(o.account.name||'Your store')+(o.account.email?' · '+o.account.email:'');
+  $('st-when').textContent=o.synced?'Last checked '+stDay(o.synced)+'. Checked again every few minutes.':'Not checked yet.';
+  $('st-err').textContent=[o.error,o.notes.sales,o.notes.payouts].filter(Boolean).join(' ');
+  $('st-tiles').innerHTML=o.periods.map(p=>`<div class="tile"><span class="lab">${esc(p.label)}</span><span class="bigv">${esc(p.text)}</span><span class="muted" style="font-size:13px">${p.count} sale${p.count===1?'':'s'}${p.money.length?' · '+esc(p.money.map(m=>m.net).join(' + '))+' after fees':''}</span></div>`).join('');
+  const mx=Math.max(1,...o.days.map(d=>d.cents));
+  $('st-bars').innerHTML=o.days.map(d=>`<i class="${d.cents?'':'z'}" style="height:${d.cents?Math.max(3,Math.round(d.cents/mx*100)):1}%" title="${esc(d.day)}: ${esc(d.shown)}, ${d.count} sale${d.count===1?'':'s'}"></i>`).join('');
+  $('st-d0').textContent=o.days[0].day;$('st-d1').textContent=o.days[o.days.length-1].day+' (today)';
+  const best=o.days.reduce((a,b)=>b.cents>a.cents?b:a,o.days[0]);$('st-max').textContent=best.cents?'Best day: '+best.day+', '+best.shown:'No sales in this period yet';
+  $('st-top').innerHTML=o.top.length?'<div class="muted" style="font-size:13px;margin-bottom:4px">Best sellers, last 30 days</div>'+o.top.map(t=>`<div class="row"><span>${esc(t.product)}</span><span class="amt" style="font-family:var(--mono)">${t.count} · ${esc(t.money)}</span></div>`).join(''):'';
+  $('st-products').innerHTML=o.products.map((p,i)=>`<div class="strow" data-pi="${i}"><div class="nm"><b>${esc(p.name)}</b> <span class="pill ${p.published?'on':''}">${p.published?'Published':'Not published'}</span><small>${esc(p.shown)}${p.sales!=null?' · '+p.sales+' sold':''}${p.earned_usd_cents!=null?' · $'+(p.earned_usd_cents/100).toFixed(2)+' earned':''}</small></div>
+    <button class="btn" data-pa="${p.published?'unpublish':'publish'}">${p.published?'UNPUBLISH':'PUBLISH'}</button><button class="btn" data-ps="edit">EDIT</button><button class="btn" data-ps="codes">DISCOUNT CODES</button><button class="btn" data-ps="reviews">REVIEWS</button>${p.url?`<a class="btn" href="${esc(p.url)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;text-decoration:none;color:inherit">OPEN</a>`:''}<button class="btn" data-pa="delete">DELETE</button>
+    <div class="stsub" data-sub hidden></div></div>`).join('')||'<div class="muted">No products in this store yet. Create the first one on Gumroad.</div>';
+  $('st-products').querySelectorAll('.strow').forEach(r=>{const p=o.products[+r.dataset.pi],sub=r.querySelector('[data-sub]');
+    r.querySelectorAll('[data-pa]').forEach(b=>b.onclick=()=>stProduct(p,b.dataset.pa,b));
+    r.querySelectorAll('[data-ps]').forEach(b=>b.onclick=()=>{const k=p.id+':'+b.dataset.ps;if(stOpen===k){stOpen=null;sub.hidden=true;return;}stOpen=k;$('st-products').querySelectorAll('[data-sub]').forEach(x=>x.hidden=true);sub.hidden=false;stSub(p,b.dataset.ps,sub);});
+    if(stOpen&&stOpen.startsWith(p.id+':')){sub.hidden=false;stSub(p,stOpen.slice(p.id.length+1),sub);}});
+  $('st-sales').innerHTML=o.sales.map((x,i)=>`<div class="strow" data-si="${i}"><div class="nm"><b>${esc(x.product)}</b>${x.new?' <span class="pill on">New</span>':''}${x.state?` <span class="pill warn">${esc(x.state)}</span>`:''}<small>${esc(stDay(x.when))} · ${esc(x.email)}${x.code?' · code '+esc(x.code):''}</small></div><span class="amt">${esc(x.amount)}</span>
+    <button class="btn" data-sa="receipt">RESEND RECEIPT</button>${x.state==='refunded'?'':'<button class="btn" data-sa="refund">REFUND</button>'}</div>`).join('')||'<div class="muted">No sales yet. They appear here within a few minutes of happening.</div>';
+  $('st-sales').querySelectorAll('.strow').forEach(r=>{const x=o.sales[+r.dataset.si];r.querySelectorAll('[data-sa]').forEach(b=>b.onclick=()=>stSale(x,b.dataset.sa,b));});
+  $('st-payouts').innerHTML=o.payouts.map(p=>`<div class="row"><span>${esc(p.status==='payable'?'Next payout':(p.status||'').replace(/^./,c=>c.toUpperCase()))}<small>${esc((p.paid||p.created||'').slice(0,10))}${p.to?' · to '+esc(p.to):''}</small></span><span style="font-family:var(--mono)">${esc(p.amount||'')} ${esc(p.currency||'')}</span></div>`).join('')||`<div class="muted">${esc(o.notes.payouts||'No payouts yet.')}</div>`;
+}
+// a button that must be pressed twice for anything that costs money or cannot be undone
+function twice(b,label){if(b.dataset.armed){return true;}b.dataset.armed='1';b.dataset.was=b.textContent;b.textContent=label;b.classList.add('red');setTimeout(()=>{if(b.isConnected){delete b.dataset.armed;b.textContent=b.dataset.was;b.classList.remove('red');}},5000);return false;}
+async function stProduct(p,act,b){const m=$('st-pmsg');
+  if(act==='delete'&&!twice(b,'DELETE FOR GOOD?'))return;
+  if(act==='unpublish'&&!twice(b,'HIDE FROM BUYERS?'))return;
+  m.className='msg';m.textContent='Working...';
+  try{ST=await (await api('/api/store/product',{json:{id:p.id,action:act}})).json();drawStore();m.className='msg ok';m.textContent=act==='delete'?p.name+' was deleted.':p.name+(act==='publish'?' is published.':' is no longer for sale.');}catch(e){m.className='msg bad';m.textContent=e.message;}}
+async function stSale(x,act,b){const m=$('st-smsg');
+  if(act==='refund'&&!twice(b,'REFUND '+x.amount+'?'))return;
+  m.className='msg';m.textContent='Working...';
+  try{ST=await (await api('/api/store/sale',{json:{id:x.id,action:act}})).json();drawStore();m.className='msg ok';m.textContent=act==='refund'?'Refunded '+x.amount+' to '+x.email+'.':'Receipt sent again to '+x.email+'.';}catch(e){m.className='msg bad';m.textContent=e.message;}}
+async function stSub(p,kind,box){
+  if(kind==='edit'){box.innerHTML=`<div class="grid2"><label class="field"><span>Name</span><input data-f="name" value="${esc(p.name)}"></label><label class="field"><span>Price (${esc(p.currency.toUpperCase())})</span><input data-f="price" inputmode="decimal" value="${(p.price/(p.currency==='jpy'?1:100)).toFixed(p.currency==='jpy'?0:2)}" ${p.membership?'disabled':''}></label></div>${p.membership?'<div class="muted" style="font-size:13px">Membership prices are set per tier on Gumroad.</div>':''}<div class="btns" style="justify-content:flex-start"><button class="btn pri" data-save>SAVE</button><span class="msg" data-m></span></div>`;
+    box.querySelector('[data-save]').onclick=async()=>{const m=box.querySelector('[data-m]');m.className='msg';m.textContent='Saving...';
+      try{const j={id:p.id,action:'update',name:box.querySelector('[data-f=name]').value};if(!p.membership)j.price=box.querySelector('[data-f=price]').value;stOpen=null;ST=await (await api('/api/store/product',{json:j})).json();drawStore();$('st-pmsg').className='msg ok';$('st-pmsg').textContent='Saved.';}catch(e){stOpen=p.id+':edit';m.className='msg bad';m.textContent=e.message;}};return;}
+  if(kind==='reviews'){box.innerHTML='<div class="muted">Loading...</div>';
+    try{const r=(await (await api('/api/store/reviews?product='+encodeURIComponent(p.id))).json()).reviews;box.innerHTML=r.map(x=>`<div><b>${'★'.repeat(x.stars||0)}${'☆'.repeat(5-(x.stars||0))}</b> <span class="muted">${esc(x.by)} · ${esc((x.when||'').slice(0,10))}</span><div>${esc(x.text)}</div></div>`).join('')||'<div class="muted">No written reviews yet.</div>';}catch(e){box.innerHTML=`<div class="msg bad">${esc(e.message)}</div>`;}return;}
+  const draw=cs=>{box.innerHTML=(cs.map(c=>`<div class="row" style="align-items:center"><span><b>${esc(c.name)}</b> · ${esc(c.off)} off<small>used ${c.used} time${c.used===1?'':'s'}${c.limit?' of '+c.limit:''}${c.all_products?' · works on all products':''}</small></span><button class="btn" data-cd="${esc(c.id)}">REMOVE</button></div>`).join('')||'<div class="muted">No discount codes for this product yet.</div>')
+      +`<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end"><label class="field" style="flex:1;min-width:140px"><span>New code</span><input data-f="name" placeholder="SPRING20" autocomplete="off"></label><label class="field" style="width:110px"><span>Amount off</span><input data-f="amount" inputmode="decimal" placeholder="20"></label><label class="field" style="width:150px"><span>Kind</span><select data-f="kind"><option value="p">Percent</option><option value="m">Money (${esc(p.currency.toUpperCase())})</option></select></label><label class="field" style="width:130px"><span>Uses (blank = no limit)</span><input data-f="limit" inputmode="numeric"></label><button class="btn pri" data-add>CREATE CODE</button></div><div class="msg" data-m></div>`;
+    const m=box.querySelector('[data-m]'),f=k=>box.querySelector('[data-f='+k+']').value.trim();
+    box.querySelectorAll('[data-cd]').forEach(b=>b.onclick=async()=>{if(!twice(b,'REMOVE?'))return;try{draw((await (await api('/api/store/codes',{json:{product:p.id,delete:b.dataset.cd}})).json()).codes);}catch(e){m.className='msg bad';m.textContent=e.message;}});
+    box.querySelector('[data-add]').onclick=async()=>{m.className='msg';m.textContent='Creating...';try{const cs=(await (await api('/api/store/codes',{json:{product:p.id,name:f('name'),amount:f('amount'),percent:f('kind')==='p',limit:f('limit')}})).json()).codes;draw(cs);const m2=box.querySelector('[data-m]');m2.className='msg ok';m2.textContent='Code created.';}catch(e){m.className='msg bad';m.textContent=e.message;}};};
+  box.innerHTML='<div class="muted">Loading...</div>';
+  try{draw((await (await api('/api/store/codes?product='+encodeURIComponent(p.id))).json()).codes);}catch(e){box.innerHTML=`<div class="msg bad">${esc(e.message)}</div>`;}
+}
+$('st-go').onclick=async()=>{const m=$('st-cmsg');m.className='msg';m.textContent='Connecting and reading your sales. This can take a minute the first time...';
+  try{ST=await (await api('/api/store/connect',{json:{token:$('st-token').value}})).json();$('st-token').value='';m.textContent='';drawStore();}catch(e){m.className='msg bad';m.textContent=e.message;}};
+$('st-check').onclick=async()=>{const b=$('st-check');b.disabled=true;b.textContent='CHECKING...';try{ST=await (await api('/api/store/check',{method:'POST'})).json();drawStore();}catch(e){$('st-err').textContent=e.message;}b.disabled=false;b.textContent='CHECK NOW';};
+$('st-off').onclick=async()=>{if(!twice($('st-off'),'DISCONNECT STORE?'))return;ST=await (await api('/api/store',{method:'DELETE'})).json();drawStore();};
 // ---- projects ----
 const ago=t=>{if(!t)return 'never';const d=(Date.now()/1000-t);return d<3600?Math.max(1,Math.round(d/60))+' min ago':(d<86400?Math.round(d/3600)+' h ago':Math.round(d/86400)+' days ago');};
 async function loadProjects(){
@@ -1401,6 +1499,7 @@ async function loadProjects(){
 }
 // ---- commands help ----
 const CMDS=[
+  ['Gumroad store',[['how are my gumroad sales','Today and the last 30 days'],['how much did I sell this week',''],['how much did I make this month',''],['unpublish My Ebook on gumroad','Hides a product from buyers'],['publish My Ebook on gumroad',''],['make a 20% discount code for My Ebook','Add "called SPRING20" to choose the name']]],
   ['WhatsApp',[['read my whatsapps','Reads out new incoming messages'],['send a whatsapp to Llewellyn saying I will be there at 5','Goes straight out to a saved contact'],['send this to Llewellyn on whatsapp','Attach a photo or file with the + button first'],['send a test whatsapp to Llewellyn Terblanche',''],['send me a test whatsapp','Needs your own number on the Phone page'],['open my whatsapp','']]],
   ['Phone',[['ring my phone','Rings at full volume, even on silent'],['where is my phone','Last known position with a map link'],['how is my phone','Battery, storage, Wi-Fi'],['unlock my phone','Needs an unlock code saved on the Phone page'],['put my phone to sleep','Screen off and locked'],['take a screenshot of my phone',''],['open maps on my phone','Any installed app'],['what is on my phone screen','Needs Full phone control'],['tap Chats on my phone','Needs Full phone control'],['press back on my phone','Needs Full phone control']]],
   ['Briefings',[['good morning','Runs your morning routine'],['what is the weather',''],['give me the news',''],['how are the markets','Rand, gold, shares, crypto']]],
@@ -1415,7 +1514,7 @@ function drawCommands(){
   document.querySelectorAll('[data-use]').forEach(b=>b.onclick=()=>{go('control');$('say').value=b.dataset.use;$('say').focus();});
 }
 function drawMore(){
-  const items=[['videos','Videos','Make and watch videos'],['files','Files','Browse your folders'],['memory','Memory','What she remembers'],['routines','Routines','Morning briefing, news, weather'],['skills','Skills','Extra abilities and connectors'],['commands','Commands','Everything you can say'],['settings','Settings','Look, brain, voice, keys']];
+  const items=[['store','Store','Gumroad sales, products, codes'],['videos','Videos','Make and watch videos'],['files','Files','Browse your folders'],['memory','Memory','What she remembers'],['routines','Routines','Morning briefing, news, weather'],['skills','Skills','Extra abilities and connectors'],['commands','Commands','Everything you can say'],['settings','Settings','Look, brain, voice, keys']];
   if(S&&S.user.is_admin)items.push(['family','Family','Logins, update, backup']);
   $('moregrid').innerHTML=items.map(i=>`<button class="mbtn" data-go="${i[0]}"><b>${i[1]}</b><span>${i[2]}</span></button>`).join('')+`<button class="mbtn" id="out2"><b>Sign out</b><span>${S?esc(S.user.name):''}</span></button>`;
   $('out2').onclick=()=>$('out').click();
