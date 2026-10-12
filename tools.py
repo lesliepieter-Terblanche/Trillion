@@ -42,7 +42,9 @@ SPECS = [
        "and only becomes usable after the owner approves it on the Skills page.",
        {"name": S, "description": S, "instructions": S}),
     fn("connector_tools", "List what one of the user's connectors can do (its tools and their arguments). "
-       "Call this before connector_call.", {"connector": S}),
+       "Call this before connector_call. A connector with many tools first returns only their names: call again with "
+       "find set to a few words (for example: javascript, website, decompile) to get the matching tools in full.",
+       {"connector": S, "find": S}, ["connector"]),
     fn("connector_call", "Use one tool of a connector. Get the exact tool name and arguments from connector_tools first.",
        {"connector": S, "tool": S, "arguments": {"type": "object"}}, ["connector", "tool"]),
     fn("phone_status", "Get the user's own mobile phone status: battery, charging, storage, Wi-Fi, model, screen on or off.", {}),
@@ -520,13 +522,29 @@ def t_draft_skill(user, name, description, instructions):
             "note": "Tell the user it is waiting for the owner's approval on the Skills page."}
 
 
-def t_connector_tools(user, connector):
+MANY_TOOLS = 30
+
+
+def t_connector_tools(user, connector, find=""):
     import extend
     row = extend.find_connector(user["id"], connector)
     if not row:
         return {"error": f"No switched-on connector called {connector}.",
                 "available": [r["name"] for r in extend.enabled_connectors(user["id"])]}
-    return {"connector": row["name"], "tools": extend.brief_tools(extend.client(row).tools())}
+    tools = extend.client(row).tools()
+    words = [w for w in re.findall(r"[a-z0-9]{3,}", str(find or "").lower())]
+    if words:      # a long list narrowed down: tools whose name or description has the words, best matches first
+        hay = lambda t: (t.get("name", "") + " " + (t.get("description") or "")).lower()
+        scored = sorted(((sum(w in hay(t) for w in words) + sum(w in t.get("name", "").lower() for w in words), i, t)
+                         for i, t in enumerate(tools)), key=lambda x: (-x[0], x[1]))
+        hits = [t for n, _, t in scored if n][:12]
+        return {"connector": row["name"], "find": find, "tools": extend.brief_tools(hits),
+                "note": "" if hits else "No tool matched those words. Try other words, or leave find empty for the list of names."}
+    if len(tools) > MANY_TOOLS:   # too many to describe at once for a local brain: names first
+        return {"connector": row["name"], "count": len(tools), "names": [t.get("name") for t in tools],
+                "note": "This connector has many tools. Call connector_tools again with find set to a few words "
+                        "to get the matching ones with their arguments."}
+    return {"connector": row["name"], "tools": extend.brief_tools(tools)}
 
 
 def t_connector_call(user, connector, tool, arguments=None):

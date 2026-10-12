@@ -30,6 +30,7 @@ def init():
     # 0.4.1: the Windows control connector needs the word "serve" on its command
     core.x("UPDATE connectors SET command='uvx windows-mcp serve' WHERE command='uvx windows-mcp'")
     starter_pack()
+    add_rea_once()
     try:
         install_packs()
     except Exception:
@@ -38,6 +39,21 @@ def init():
         all_skills_on_once()
     except Exception:
         pass
+
+
+def add_rea_once():
+    """The owner asked for REA (12 Oct 2026): add it for him once. A marker keeps it from coming back if he removes it."""
+    marker = core.DATA / "rea_connector_v1.done"
+    if marker.exists():
+        return
+    owner = core.q("SELECT * FROM users WHERE is_admin=1 ORDER BY id LIMIT 1", one=True)
+    if not owner:
+        return
+    cat = next(c for c in CATALOG if c["key"] == "rea")
+    if cat["name"] not in {r["name"] for r in core.q("SELECT name FROM connectors")}:
+        add_connector(cat["name"], cat["description"], cat["command"], owner["id"])
+        core.log(owner["id"], "Connector added: Reverse engineering (REA)", "done")
+    marker.write_text("added", encoding="utf-8")
 
 
 def starter_pack():
@@ -272,6 +288,11 @@ CATALOG = [
     {"key": "thinking", "name": "Sequential thinking",
      "description": "A scratchpad for planning multi-step jobs one step at a time. (Official MCP server)",
      "command": "npx -y @modelcontextprotocol/server-sequential-thinking", "needs": "Node.js"},
+    {"key": "rea", "name": "Reverse engineering (REA)",
+     "description": "Looks inside apps and websites without their source code: JavaScript and Electron apps, .NET programs, "
+                    "web pages and, with Ghidra installed, native programs. Explains how a feature works and shows the evidence. "
+                    "(REA, MIT licence)",
+     "command": "npx -y rea-agents@6.4.0 mcp", "needs": "Node.js 22.19 or newer"},
     {"key": "windows", "name": "Windows control",
      "description": "Operates Windows itself: open apps, click, type, read what is on screen. (Windows-MCP)",
      "command": "uvx windows-mcp serve", "needs": "uv"},
