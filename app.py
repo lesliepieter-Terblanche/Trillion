@@ -51,6 +51,7 @@ video.init()
 attach.init()
 import gumroad
 import watch
+import siteread
 gumroad.init()
 routines.init()
 # 0.7.28: Bible study belongs to Lewellyn's login. His morning and evening routines read the day's verse aloud, a different
@@ -989,6 +990,18 @@ def run_agent(user, text, files=None):
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="failed" if "error" in res else "completed", detail=reply[:200])
         return {"reply": reply, "task_id": tid, "provider": "FreeVideo", "show": "" if "error" in res else "videos"}
+    site_req = siteread.request(text) if not files else None
+    if site_req and not asking:
+        try:
+            j = siteread.start(user, site_req["url"], site_req["outputs"], text, site_req["max_pages"], site_req["show"])
+            reply, ok_ = siteread.started_reply(j), True
+        except siteread.SiteError as e:
+            reply, ok_ = str(e), False
+        finally:
+            BUSY[uid] = False
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="completed" if ok_ else "failed", detail=reply[:200])
+        return {"reply": reply, "task_id": tid, "provider": "built-in", "show": "sites" if ok_ else ""}
     if wants_ebook(text, files) and not asking:
         try:
             res = tools.execute(user, "create_ebook", ebook_request(text, files), task_id=tid)
@@ -1284,6 +1297,39 @@ def store_create(p: dict = Body(...), user=Depends(store_user)):
                                                  currency=cur or None, summary=p.get("summary")))
     core.log(user["id"], f"Gumroad: created {r['product']['name']}" + (" and put it on sale" if r["published"] else " as a draft"), "done")
     return {"message": created_sentence(r), "result": r, "store": gumroad.overview(user)}
+
+
+@app.get("/api/sites")
+def sites_list(user=Depends(auth)):
+    return {"jobs": siteread.jobs(user), "choices": list(siteread.PAGE_CHOICES), "default": siteread.DEFAULT_PAGES}
+
+
+@app.post("/api/sites")
+def sites_start(p: dict = Body(...), user=Depends(auth)):
+    try:
+        return siteread.start(user, p.get("url"), p.get("outputs") or [], str(p.get("focus") or "")[:1000],
+                              p.get("max_pages") or siteread.DEFAULT_PAGES, bool(p.get("show")))
+    except siteread.SiteError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/sites/{jid}")
+def sites_one(jid: int, user=Depends(auth)):
+    j = siteread.job(user, jid)
+    if not j:
+        raise HTTPException(404, "Not found")
+    return j
+
+
+@app.post("/api/sites/{jid}/stop")
+def sites_stop(jid: int, user=Depends(auth)):
+    return {"ok": siteread.stop(user, jid)}
+
+
+@app.delete("/api/sites/{jid}")
+def sites_forget(jid: int, user=Depends(auth)):
+    siteread.forget(user, jid)
+    return {"ok": True}
 
 
 @app.get("/api/watch")

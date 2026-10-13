@@ -35,6 +35,10 @@ SPECS = [
     fn("save_note", "Save something worth remembering to the second brain. domain is PERSONAL or WORK.",
        {"title": S, "body": S, "domain": S}, ["title", "body"]),
     fn("search_memory", "Search the second brain for things saved earlier.", {"query": S}),
+    fn("read_website", "Open a website in a browser on the PC, read the whole site page by page, analyse it, and make files from "
+       "it: outputs can include pptx (presentation), docx (report document) and xlsx (spreadsheet of pages). focus is what the "
+       "user wants to learn or the purpose of the files. Runs in the background; tell the user it has started.",
+       {"url": S, "outputs": {"type": "array", "items": S}, "focus": S, "max_pages": {"type": "integer"}}, ["url"]),
     fn("check_website", "Check whether a website is up and how fast it answers.", {"url": S}),
     fn("system_status", "Get the PC's current processor, memory, disk and graphics card readings.", {}),
     fn("use_skill", "Load the full instructions of one of the user's installed skills. Call this before doing "
@@ -149,6 +153,7 @@ def describe(name, a):
         "phone_type": "Typing on the phone", "phone_press": f"Pressing {g('key')}", "phone_swipe": f"Swiping {g('direction')}",
         "phone_shell": f"Run on the phone: {g('command')}",
         "phone_locate": "Locating the phone", "phone_ring": "Ringing the phone",
+        "read_website": f"Reading the website {g('url')}",
         "watch_alert": f"Alert on the watch: {g('text')[:80]}",
         "phone_screenshot": "Taking a phone screenshot",
         "create_video": "Creating a video",
@@ -674,6 +679,15 @@ def t_phone_locate(user):
 def t_phone_ring(user):
     import phone
     return phone.ring(user)
+
+
+def t_read_website(user, url, outputs=None, focus="", max_pages=40):
+    import siteread
+    try:
+        j = siteread.start(user, url, outputs or siteread.wants(focus or ""), focus, max_pages)
+    except siteread.SiteError as e:
+        return {"error": str(e)}
+    return {"started": True, "note": siteread.started_reply(j)}
 
 
 def t_watch_alert(user, text, title="Trillion"):
