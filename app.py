@@ -55,6 +55,7 @@ import watch
 import siteread
 import siteclone
 import apps
+import storage
 gumroad.init()
 routines.init()
 # 0.7.28: Bible study belongs to Lewellyn's login. His morning and evening routines read the day's verse aloud, a different
@@ -1390,6 +1391,67 @@ def apps_docker(p: dict = Body(...), user=Depends(admin)):
     raise HTTPException(400, "Unknown")
 
 
+@app.post("/api/apps/safety")
+def apps_safety(p: dict = Body(...), request: Request = None, user=Depends(admin)):
+    """The owner's choices: how much memory Docker may use, and whether the apps open on the home network."""
+    try:
+        old = apps.prefs()
+        new = apps.save_prefs(p.get("private"), p.get("memory"))
+        out = {"prefs": new, "notes": []}
+        if p.get("memory") is not None:
+            out["file"] = apps.write_wslconfig(new["memory"])
+            if p.get("restart"):
+                apps.restart_docker()
+                out["notes"].append("Docker is restarting with the new memory limit. The apps come back by themselves in a minute or two.")
+            else:
+                out["notes"].append("Saved. It takes effect the next time Docker restarts (or the PC restarts).")
+        if p.get("private") is not None and new["private"] != old["private"]:
+            res = apps.apply_access(app_host(request))
+            out["notes"].append(("Only this PC and your Tailscale devices can open the apps now." if new["private"]
+                                 else "Any device on your home network can open the apps now.")
+                                + (f" Updated: {', '.join(res['done'])}." if res["done"] else "")
+                                + (f" Could not update: {'; '.join(res['failed'])}." if res["failed"] else ""))
+        return out
+    except apps.AppError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/storage")
+def storage_get(months: int = 12, user=Depends(admin)):
+    months = months if months in (3, 6, 12, 24, 36) else 12
+    return dict(storage.scan(months), job=dict(storage.JOB), history=storage.history())
+
+
+@app.get("/api/storage/job")
+def storage_job(user=Depends(admin)):
+    return dict(storage.JOB)
+
+
+@app.post("/api/storage/move")
+def storage_move(p: dict = Body(...), user=Depends(admin)):
+    try:
+        storage.start_move(p.get("groups") or [], str(p.get("target") or ""), int(p.get("months") or 12))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+
+@app.post("/api/storage/undo")
+def storage_undo(p: dict = Body(...), user=Depends(admin)):
+    try:
+        return storage.undo(str(p.get("id") or ""))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/storage/root")
+def storage_root(p: dict = Body(...), user=Depends(admin)):
+    try:
+        return {"root": storage.set_root(str(p.get("target") or ""))}
+    except (ValueError, OSError) as e:
+        raise HTTPException(400, str(e))
+
+
 @app.post("/api/apps/{key}/install")
 def apps_install(key: str, request: Request, user=Depends(admin)):
     try:
@@ -1961,7 +2023,7 @@ def image_file(name: str, user=Depends(auth)):
     """A picture she made for this login (only from that login's own Trillion Images folder)."""
     if not re.fullmatch(r"[\w.-]+\.png", name):
         raise HTTPException(404, "No such picture")
-    path = core.user_home(user) / "Trillion Images" / name
+    path = core.out_dir(user, "Trillion Images") / name
     if not path.exists():
         raise HTTPException(404, "No such picture")
     return FileResponse(str(path), media_type="image/png")

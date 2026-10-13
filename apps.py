@@ -30,6 +30,7 @@ PROJECT = "trillion-{}"
 
 APPS = {
     "postiz": {
+        "disk": 5,
         "name": "Postiz", "port": 4007, "group": "Marketing",
         "what": "Schedule posts and videos to TikTok, Facebook, Instagram, YouTube, X, LinkedIn and more from one calendar.",
         "repo": "gitroomhq/postiz-docker-compose", "sha": "dd4969e5e694cd009619a0d53cff14c21104580b", "get": "zip",
@@ -40,6 +41,7 @@ APPS = {
                 "Postiz's own guide walks through each one; ask me and I will help.",
     },
     "listmonk": {
+        "disk": 1,
         "name": "Listmonk", "port": 9000, "group": "Marketing",
         "what": "Email newsletters and mailing lists: collect buyers and readers, send launches and updates.",
         "repo": "knadh/listmonk", "sha": "99b492d0869dd7e5c7c1a498927450e07f005667", "get": "raw",
@@ -50,6 +52,7 @@ APPS = {
         "note": "To actually send email, add your email provider's SMTP details in Listmonk under Settings, SMTP.",
     },
     "umami": {
+        "disk": 1.5,
         "name": "Umami", "port": 3002, "group": "Marketing",
         "what": "Private visitor statistics for your websites: visitors, pages, where they came from.",
         "repo": "umami-software/umami", "sha": "ec0ff50388c264ed8ce46f00967e92f7e71476ae", "get": "raw",
@@ -59,6 +62,7 @@ APPS = {
                   "Add each website and paste the tracking code Umami gives you into the site.",
     },
     "invoiceninja": {
+        "disk": 3,
         "name": "Invoice Ninja", "port": 8012, "group": "Accounting",
         "what": "Quotes, invoices, payments, expenses and a client portal. Works in rand and with VAT.",
         "repo": "invoiceninja/dockerfiles", "sha": "543448f7f9f1ce322661003b469332b886b954bc", "get": "zip",
@@ -69,6 +73,7 @@ APPS = {
         "note": "To email invoices, add your SMTP details in Invoice Ninja under Settings, Email Settings.",
     },
     "serpbear": {
+        "disk": 1,
         "name": "SerpBear", "port": 3003, "group": "Marketing",
         "what": "Tracks where your websites rank on Google for the search words you choose, every day.",
         "repo": "towfiqi/serpbear", "sha": "a1328fb4142dde40e0011c646339c4d4dbabdaca", "get": "raw",
@@ -78,6 +83,7 @@ APPS = {
         "note": "SerpBear needs a free scraping service key (it suggests several) under Settings, Scraper, before it can check Google.",
     },
     "chatwoot": {
+        "disk": 4,
         "name": "Chatwoot", "port": 3010, "group": "Customers",
         "what": "One inbox for customer messages from your website chat, WhatsApp, Facebook, Instagram and email.",
         "repo": "chatwoot/chatwoot", "sha": "5e0afa9363b45e5dd727bbd90568fc667610a188", "get": "raw",
@@ -86,6 +92,7 @@ APPS = {
         "signup": "Open Chatwoot and create the first account (it becomes the owner). Add an agent for each login under Settings, Agents.",
     },
     "n8n": {
+        "disk": 1.5,
         "name": "n8n", "port": 5678, "group": "Automation",
         "what": "Connect apps with 'when this happens, do that' workflows, for example a new sale adds the buyer to your list.",
         "get": "own", "ram": "about 400 MB",
@@ -94,6 +101,7 @@ APPS = {
         "note": "n8n is free to use for your own business under its 'Sustainable Use' licence.",
     },
     "activepieces": {
+        "disk": 3,
         "name": "Activepieces", "port": 8085, "group": "Automation",
         "what": "Easier, picture-based automations between hundreds of apps, for when n8n feels too technical.",
         "repo": "activepieces/activepieces", "sha": "03e0f4deb84775cab53f36f426670294c31ce9e2", "get": "raw",
@@ -103,6 +111,10 @@ APPS = {
     },
 }
 GROUPS = ["Marketing", "Customers", "Accounting", "Automation"]
+# the one port each app is opened on: (compose service, port inside the container)
+PUBLISH = {"postiz": ("postiz", 5000), "listmonk": ("app", 9000), "umami": ("umami", 3000), "invoiceninja": ("nginx", 80),
+           "serpbear": ("app", 3000), "chatwoot": ("rails", 3000), "n8n": ("n8n", 5678), "activepieces": ("app", 80)}
+MEM_CHOICES = (0, 6, 8, 10, 12, 16)
 _JOBS, _LOCK = {}, threading.Lock()
 _CACHE = {"t": 0, "v": None}
 
@@ -195,6 +207,116 @@ def running_projects():
     return found
 
 
+# ---------- the owner's safety settings ----------
+def prefs():
+    o = core.q("SELECT * FROM users WHERE is_admin=1 ORDER BY id LIMIT 1", one=True)
+    st = core.settings(o) if o else {}
+    return {"private": st.get("apps_private", True), "memory": int(st.get("docker_mem_gb", 12) or 0)}
+
+
+def save_prefs(private=None, memory=None):
+    o = core.q("SELECT * FROM users WHERE is_admin=1 ORDER BY id LIMIT 1", one=True)
+    st = core.settings(o)
+    if private is not None:
+        st["apps_private"] = bool(private)
+    if memory is not None:
+        if int(memory) not in MEM_CHOICES:
+            raise AppError("Choose 6, 8, 10, 12 or 16 GB, or no limit.")
+        st["docker_mem_gb"] = int(memory)
+    core.save_settings(o["id"], st)
+    return prefs()
+
+
+def wslconfig_path():
+    return Path(os.environ.get("TRILLION_WSLCONFIG") or (Path.home() / ".wslconfig"))
+
+
+def write_wslconfig(gb):
+    """Cap the memory Docker's Linux part may take. Other settings in the file are kept as they are."""
+    p = wslconfig_path()
+    lines = p.read_text(encoding="utf-8").splitlines() if p.exists() else []
+    out, in_wsl2, done, saw = [], False, False, False
+    for ln in lines:
+        h = re.match(r"^\s*\[(.+?)\]\s*$", ln)
+        if h:
+            if in_wsl2 and not done and gb:
+                out.append(f"memory={gb}GB")
+                done = True
+            in_wsl2 = h.group(1).strip().lower() == "wsl2"
+            saw = saw or in_wsl2
+            out.append(ln)
+            continue
+        if in_wsl2 and re.match(r"^\s*memory\s*=", ln, re.I):
+            if gb and not done:
+                out.append(f"memory={gb}GB")
+                done = True
+            continue
+        out.append(ln)
+    if in_wsl2 and not done and gb:
+        out.append(f"memory={gb}GB")
+        done = True
+    if not saw and gb:
+        out += (["", "[wsl2]"] if out else ["[wsl2]"]) + [f"memory={gb}GB"]
+    p.write_text("\n".join(out).strip() + "\n", encoding="utf-8")
+    return str(p)
+
+
+def current_cap():
+    p = wslconfig_path()
+    if not p.exists():
+        return 0
+    in_wsl2 = False
+    for ln in p.read_text(encoding="utf-8").splitlines():
+        h = re.match(r"^\s*\[(.+?)\]", ln)
+        if h:
+            in_wsl2 = h.group(1).strip().lower() == "wsl2"
+        m = re.match(r"^\s*memory\s*=\s*(\d+)\s*GB", ln, re.I)
+        if in_wsl2 and m:
+            return int(m.group(1))
+    return 0
+
+
+def restart_docker():
+    """Make a new memory cap take effect: Docker's Linux part restarts, and the apps come back by themselves."""
+    wsl = shutil.which("wsl")
+    if wsl:
+        subprocess.run([wsl, "--shutdown"], capture_output=True, timeout=60, creationflags=NO_WINDOW)
+    time.sleep(2)
+    return start_docker_desktop()
+
+
+def tailscale_exe():
+    p = shutil.which("tailscale")
+    if p:
+        return p
+    c = r"C:\Program Files\Tailscale\tailscale.exe"
+    return c if os.path.exists(c) else None
+
+
+def share_on_tailscale(port, on=True):
+    """Make an app that only listens on this PC reachable from your own Tailscale devices, and nowhere else."""
+    exe = tailscale_exe()
+    if not exe:
+        return False
+    args = [exe, "serve", "--bg", f"--http={port}", f"http://127.0.0.1:{port}"] if on else [exe, "serve", f"--http={port}", "off"]
+    try:
+        r = subprocess.run(args, capture_output=True, text=True, timeout=30, creationflags=NO_WINDOW)
+        return r.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def publish(key):
+    port = APPS[key]["port"]
+    inner = PUBLISH[key][1]
+    return f'"127.0.0.1:{port}:{inner}"' if prefs()["private"] else f'"{port}:{inner}"'
+
+
+def docker_drive_free():
+    import storage
+    return storage.free_on(os.environ.get("LOCALAPPDATA") or Path.home())
+
+
 # ---------- files and settings ----------
 def folder(key):
     f = HOME / key
@@ -275,6 +397,7 @@ def configure(key, dest, host):
       FRONTEND_URL: {yaml_str(url)}
       NEXT_PUBLIC_BACKEND_URL: {yaml_str(url + '/api')}
       JWT_SECRET: {yaml_str(secret(key, 'jwt', rnd))}
+    ports: !reset [{publish(key)}]
   temporal:
     ports: !reset []
   temporal-ui:
@@ -282,14 +405,16 @@ def configure(key, dest, host):
 """
     elif key == "listmonk":
         set_env(dest / ".env", {"LISTMONK_ADMIN_USER": "admin", "LISTMONK_ADMIN_PASSWORD": secret(key, "admin_password", lambda: rnd(10))})
-        over = """services:
+        over = f"""services:
+  app:
+    ports: !reset [{publish(key)}]
   db:
     ports: !reset []
 """
     elif key == "umami":
         over = f"""services:
   umami:
-    ports: !reset ["{a['port']}:3000"]
+    ports: !reset [{publish(key)}]
     environment:
       APP_SECRET: {yaml_str(secret(key, 'app_secret', rnd))}
       TWO_FACTOR_ENCRYPTION_KEY: {yaml_str(secret(key, '2fa', lambda: rnd(32)))}
@@ -307,12 +432,16 @@ def configure(key, dest, host):
   app:
     pull_policy: always
   nginx:
-    ports: !reset ["{a['port']}:80"]
+    ports: !reset [{publish(key)}]
 """
     elif key == "serpbear":
         set_env(dest / ".env", {"USER": "admin", "PASSWORD": secret(key, "admin_password", lambda: rnd(10)),
                                 "SECRET": secret(key, "secret", rnd), "APIKEY": secret(key, "api_key", rnd),
                                 "PORT": str(a["port"]), "NEXT_PUBLIC_APP_URL": url})
+        over = f"""services:
+  app:
+    ports: !reset [{publish(key)}]
+"""
     elif key == "chatwoot":
         pg, rd = secret(key, "db", rnd), secret(key, "redis", rnd)
         set_env(dest / ".env", {"SECRET_KEY_BASE": secret(key, "secret_key_base", lambda: rnd(64)), "FRONTEND_URL": url,
@@ -321,7 +450,7 @@ def configure(key, dest, host):
                                 "ENABLE_ACCOUNT_SIGNUP": "false"})
         over = f"""services:
   rails:
-    ports: !reset ["{a['port']}:3000"]
+    ports: !reset [{publish(key)}]
   postgres:
     ports: !reset []
     environment:
@@ -335,7 +464,7 @@ def configure(key, dest, host):
     image: docker.n8n.io/n8nio/n8n:latest
     restart: unless-stopped
     ports:
-      - "{a['port']}:5678"
+      - {publish(key)}
     environment:
       - N8N_HOST={host}
       - N8N_PORT=5678
@@ -357,7 +486,7 @@ volumes:
         over = f"""services:
   app:
     container_name: trillion-activepieces-app
-    ports: !reset ["{a['port']}:80"]
+    ports: !reset [{publish(key)}]
   worker:
     deploy:
       replicas: 1
@@ -404,6 +533,11 @@ def install(key, host):
             raise AppError("Docker is not installed yet. Press Install Docker first.")
         if not st["running"]:
             raise AppError("Docker is installed but not running. Press Start Docker and wait until it says it is running.")
+        free = docker_drive_free()
+        need = APPS[key]["disk"] + 5
+        if free is not None and free < need * 1024 ** 3:
+            raise AppError(f"Not enough space on C: for {APPS[key]['name']}: it needs about {APPS[key]['disk']} GB plus room to work, "
+                           f"and C: has {free / 1024 ** 3:.1f} GB free. Free up space on the Files page (Free up C:) first.")
         _set(key, status="installing", detail="Getting the install files", host=host, log="")
         t = threading.Thread(target=_install, args=(key, host), daemon=True)
         _JOBS[key] = t
@@ -434,8 +568,13 @@ def _install(key, host):
         if code != 0:
             raise AppError("Docker could not start it. " + _tail(out))
         _set(key, detail="Waiting for it to answer")
+        shared = share_on_tailscale(a["port"]) if prefs()["private"] else None
+        if shared is False:
+            _set(key, detail="Running on this PC. Tailscale could not share it with your phone; see the Apps page.")
         if wait_up(key):
-            _set(key, status="installed", installed=time.time(), detail="Running")
+            _set(key, status="installed", installed=time.time(),
+                 detail=("Running on this PC only: Tailscale would not share it with your phone. Open the Tailscale app on the PC, "
+                         "sign in, then press Remove and Install again.") if shared is False else "Running")
             owner = core.q("SELECT id FROM users WHERE is_admin=1 ORDER BY id LIMIT 1", one=True)
             if owner:
                 core.log(owner["id"], f"{a['name']} is installed and running", "done")
@@ -490,9 +629,11 @@ def action(key, what):
         new = "stopped"
     elif what == "remove":                    # the app goes, its saved data stays for a later install
         code, out = compose(key, "down", timeout=300)
+        share_on_tailscale(APPS[key]["port"], on=False)
         new = "none"
     elif what == "erase":                     # the app and everything it saved
         code, out = compose(key, "down", "-v", timeout=300)
+        share_on_tailscale(APPS[key]["port"], on=False)
         if code == 0:
             shutil.rmtree(HOME / key, ignore_errors=True)
         new = "none"
@@ -504,6 +645,24 @@ def action(key, what):
     _set(key, status=new, detail={"start": "Running", "stop": "Stopped", "remove": "Removed; its data is kept",
                                   "erase": "Removed with all its data"}[what])
     return True
+
+
+def apply_access(host):
+    """After the owner changes who may open the apps: rewrite each installed app's ports and restart it."""
+    done, failed = [], []
+    for r in core.q("SELECT * FROM apps WHERE status IN ('installed','stopped','running')"):
+        key = r["key"]
+        try:
+            configure(key, folder(key), r["host"] or host)
+            code, out = compose(key, "up", "-d", timeout=900)
+            if code != 0:
+                raise AppError(_tail(out))
+            share_on_tailscale(APPS[key]["port"], on=prefs()["private"])
+            done.append(APPS[key]["name"])
+        except AppError as e:
+            failed.append(f"{APPS[key]['name']}: {e}")
+    _CACHE["t"] = 0
+    return {"done": done, "failed": failed}
 
 
 def listing(user, host):
@@ -528,7 +687,12 @@ def listing(user, host):
             item["log"] = r.get("log") or ""
             item["admin"] = admin_details(key)
         out.append(item)
-    return {"docker": st, "apps": out, "groups": GROUPS}
+    res = {"docker": st, "apps": out, "groups": GROUPS}
+    if user["is_admin"]:
+        free = docker_drive_free()
+        res["safety"] = dict(prefs(), cap_now=current_cap(), choices=list(MEM_CHOICES),
+                             c_free=free, tailscale=bool(tailscale_exe()))
+    return res
 
 
 def admin_details(key):

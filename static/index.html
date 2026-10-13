@@ -355,6 +355,8 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
 @media(min-width:1001px) and (max-width:1600px){nav button{padding:0 7px;letter-spacing:.04em;font-size:12.5px}}
 @media(min-width:1001px) and (max-width:1366px){nav button{padding:0 4px;letter-spacing:.02em;font-size:12px}header .logo small{display:none}}
 #ap-docker .pill{align-self:flex-start}
+.stg-drives{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}.stg-drive{border:1px solid var(--edge2);padding:12px;display:flex;flex-direction:column;gap:6px}
+#stg{gap:22px}
 </style>
 </head>
 <body>
@@ -558,6 +560,20 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
   <div class="muted" id="fpath"></div>
   <div id="flist"></div>
   <div class="muted">To copy, move, rename, create or delete, just ask Trillion in the bar below. Deleting always waits for your approval.</div>
+  <div class="panel" id="stg" hidden><b>Drives and space</b>
+    <div id="stg-drives" class="stg-drives"></div>
+    <div><b style="font-size:15px">Where Trillion saves finished files</b>
+      <div class="muted" style="font-size:13px">Videos, ebooks, pictures, websites and uploads, for every login.</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:8px"><label class="field" style="flex:1;min-width:220px"><span>Folder</span><input id="stg-root" placeholder="D:\Trillion"></label>
+      <button class="btn" id="stg-rootsave">SAVE</button><button class="btn" id="stg-rootc">BACK TO C:</button></div><div class="msg" id="stg-rootmsg"></div></div>
+    <div><b style="font-size:15px">Free up C:</b>
+      <div class="muted" style="font-size:13px">Moves files to another drive. Nothing is deleted, every file is written down first, and UNDO puts everything back exactly where it was. Windows, programs and app settings are never touched.</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:8px"><label class="field"><span>Old means not changed in</span><select id="stg-months"><option value="6">6 months</option><option value="12" selected>12 months</option><option value="24">2 years</option><option value="36">3 years</option></select></label>
+      <button class="btn" id="stg-scan">CHECK WHAT CAN MOVE</button></div>
+      <div id="stg-groups" style="display:flex;flex-direction:column;gap:10px;margin-top:10px"></div>
+      <div id="stg-go" hidden style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:10px"><label class="field" style="flex:1;min-width:220px"><span>Move to</span><input id="stg-target" placeholder="D:\Trillion"></label><button class="btn pri" id="stg-move">MOVE TICKED FILES</button></div>
+      <div class="msg" id="stg-msg"></div><div id="stg-hist"></div></div>
+  </div>
 </div>
 
 <div class="view" id="v-memory">
@@ -606,6 +622,7 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
   <h2>Apps</h2>
   <div class="muted">Business apps that run on this PC beside Trillion. The owner installs each one once; then every login connects its own account, and you can ask me to use them.</div>
   <div class="panel" id="ap-docker"></div>
+  <div class="panel" id="ap-safety" hidden></div>
   <div id="ap-list" style="display:flex;flex-direction:column;gap:26px"></div>
 </div>
 
@@ -841,7 +858,7 @@ const api=async(u,o={})=>{if(o.json!==undefined){o.method=o.method||'POST';o.hea
 const hm=t=>new Date(t*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false});
 let hold=0,S=null,sending=false,speakNext=false,settingsLoaded=false,cwd='';
 
-const LOADERS={apps:()=>loadApps(),sites:()=>{loadSites();loadClones();},bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);},memory:()=>loadNotes(''),videos:()=>loadVideos(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
+const LOADERS={apps:()=>loadApps(),sites:()=>{loadSites();loadClones();},bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);loadStorage();},memory:()=>loadNotes(''),videos:()=>loadVideos(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
 let VIEW='control';
 function go(v){
   VIEW=v;try{if(v!=='settings'&&mtTimer)micTestStop();}catch(e){}
@@ -1930,6 +1947,7 @@ async function loadApps(){try{AP=await (await api('/api/apps')).json();}catch(e)
     ${!admin&&!d.running?'<div class="muted" style="font-size:13px">Ask the owner to set Docker up.</div>':''}<div class="msg" id="ap-dmsg"></div>`;
   document.querySelectorAll('[data-dk]').forEach(b=>b.onclick=async()=>{const m=$('ap-dmsg');try{const r=await (await api('/api/apps/docker',{json:{do:b.dataset.dk}})).json();m.className='msg ok';m.textContent=r.note;}catch(e){m.className='msg bad';m.textContent=e.message;}});
   if($('ap-refresh'))$('ap-refresh').onclick=loadApps;
+  drawSafety();
   $('ap-list').innerHTML=AP.groups.map(g=>{const items=AP.apps.filter(a=>a.group===g);if(!items.length)return'';
     return `<div><div class="muted" style="font-size:12px;letter-spacing:.14em;text-transform:uppercase;margin-bottom:10px">${g}</div><div class="ap-grid">${items.map(apCard).join('')}</div></div>`;}).join('');
   $('ap-list').querySelectorAll('[data-apa]').forEach(b=>b.onclick=()=>apDo(b.dataset.key,b.dataset.apa,b));
@@ -1941,14 +1959,14 @@ function apCard(a){const admin=S&&S.user.is_admin,up=a.status==='running'||a.sta
   if(admin){if(a.status==='none'||a.status==='failed')acts+=btn('install',a.status==='failed'?'TRY AGAIN':'INSTALL',1);
     if(a.status==='stopped')acts+=btn('start','START',1);if(a.status==='running')acts+=btn('stop','STOP');
     if(['running','stopped','installed','failed'].includes(a.status)&&a.status!=='none')acts+=btn('remove',apConfirm[a.key+'remove']?'TAP AGAIN TO REMOVE':'REMOVE');}
-  const open=up?`<a class="btn pri" style="display:inline-flex;align-items:center;text-decoration:none" href="${esc(a.url)}" target="_blank" rel="noopener">OPEN</a>`:'';
+  const open=up?`<a class="btn pri" style="display:inline-flex;align-items:center;text-decoration:none" href="${esc(/^(localhost|127\.)/.test(location.hostname)?'http://localhost:'+a.port:a.url)}" target="_blank" rel="noopener">OPEN</a>`:'';
   const conn=!up?'':(a.auto?(a.connected?'<div class="msg ok" style="font-size:13px">Ready for every login. Ask me about it in chat.</div>':''):
     (a.connected?`<div class="msg ok" style="font-size:13px">Connected for you${a.can_chat?'. Ask me to use it in chat.':'.'} <button class="linkbtn" data-apa="disconnect" data-key="${a.key}">disconnect</button></div>`:
     `<details class="ap-conn"><summary>Connect your account</summary><div class="muted" style="font-size:13px">${esc(a.signup)}</div><form data-apc="${a.key}" style="display:flex;flex-direction:column;gap:8px">${a.connect.map(c=>`<label class="field"><span>${esc(c.label)}</span><input name="${c.field}" ${/password|token|key/.test(c.field)?'type="password"':''} autocomplete="off">${c.hint?`<span class="muted" style="font-size:12px">${esc(c.hint)}</span>`:''}</label>`).join('')}<div><button class="btn pri" type="submit">CONNECT</button> <span class="msg" data-apm="${a.key}"></span></div></form></details>`));
   const adm=admin&&a.admin&&Object.keys(a.admin).length&&up?`<div class="muted" style="font-size:13px">First sign-in: <b>${esc(a.admin.user||'')}</b> / <span class="ap-secret" title="Click to show">${esc(a.admin.password||'')}</span></div>`:'';
   return `<div class="panel ap-card"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><b style="font-size:17px">${esc(a.name)}</b><span class="pill ${a.status==='running'?'on':(a.status==='failed'?'warn':'')}">${AP_STATUS[a.status]||a.status}</span></div>
     <div style="font-size:14px">${esc(a.what)}</div>
-    ${a.status==='installing'||a.status==='failed'||(a.detail&&a.status!=='running'&&a.status!=='none')?`<div class="msg ${a.status==='failed'?'bad':'muted'}" style="font-size:13px">${esc(a.detail)}</div>`:''}
+    ${a.status==='installing'||a.status==='failed'||(a.detail&&a.status!=='none'&&a.detail!=='Running')?`<div class="msg ${a.status==='failed'?'bad':'muted'}" style="font-size:13px">${esc(a.detail)}</div>`:''}
     ${a.status==='none'?`<div class="muted" style="font-size:12px">Uses ${esc(a.ram)} of memory while running. Port ${a.port}.</div>`:''}
     ${a.note&&up?`<div class="muted" style="font-size:12px">${esc(a.note)}</div>`:''}${adm}
     <div class="btns" style="justify-content:flex-start">${open}${acts}</div>${conn}<div class="msg" data-apx="${a.key}"></div></div>`;}
@@ -1958,6 +1976,39 @@ async function apDo(key,what,b){const m=document.querySelector(`[data-apx="${key
   try{await api(`/api/apps/${key}/${what}`,{json:{}});await loadApps();}catch(e){m.className='msg bad';m.textContent=e.message;}}
 async function apConnect(key,f){const m=document.querySelector(`[data-apm="${key}"]`);const v={};new FormData(f).forEach((x,k)=>v[k]=x);
   m.className='msg muted';m.textContent='Checking...';try{await api(`/api/apps/${key}/connect`,{json:v});await loadApps();}catch(e){m.className='msg bad';m.textContent=e.message;}}
+
+// ---------- drives and space ----------
+let STG=null,stgT=null,stgUndo={};
+const gb=n=>n==null?'?':(n/1073741824).toFixed(n>=10737418240?0:1)+' GB';
+async function loadStorage(){if(!S||!S.user.is_admin)return;$('stg').hidden=false;
+  try{STG=await (await api('/api/storage?months='+$('stg-months').value)).json();}catch(e){return;}
+  $('stg-drives').innerHTML=STG.drives.map(d=>{const used=1-d.free/d.total;return `<div class="stg-drive"><b>${esc(d.letter)}:</b> <span class="muted">${d.kind?esc(d.kind):''}${d.system?' · Windows':''}</span><div class="srbar"><i style="width:${Math.round(used*100)}%;${used>.9?'background:var(--red)':''}"></i></div><span class="muted" style="font-size:12px">${gb(d.free)} free of ${gb(d.total)}</span></div>`;}).join('');
+  $('stg-root').value=STG.target||'';const other=STG.drives.find(d=>!d.system);if(!$('stg-target').value)$('stg-target').value=STG.target||(other?other.letter+':\\Trillion':'');
+  stgGroups();stgHist();stgPoll();}
+function stgGroups(){const G=STG.groups;$('stg-groups').innerHTML=Object.entries(G).map(([k,g])=>`<label class="tickrow stg-g"><input type="checkbox" data-sg="${k}" ${g.count?'':'disabled'}><span><b>${esc(g.label)}</b> <span class="pill">${g.count} files · ${gb(g.bytes)}</span><br><span class="muted" style="font-size:13px">${esc(g.what)}</span>${g.biggest.length?`<details><summary class="muted" style="font-size:13px;cursor:pointer">Biggest files</summary><div class="muted" style="font-size:12px;line-height:1.6">${g.biggest.map(b=>`${esc(b.path)} · ${gb(b.bytes)} · ${b.date}`).join('<br>')}</div></details>`:''}</span></label>`).join('');
+  $('stg-go').hidden=!Object.values(G).some(g=>g.count);}
+function stgHist(){$('stg-hist').innerHTML=(STG.history||[]).length?'<div class="muted" style="font-size:13px;margin-top:10px">Earlier moves</div>'+STG.history.map(h=>`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px;padding:6px 0">${new Date(h.when*1000).toLocaleString()} · ${h.files} files to ${esc(h.target)} ${h.undone?'<span class="pill">undone</span>':`<button class="btn" data-su="${h.id}" style="min-height:36px;font-size:12px">${stgUndo[h.id]?'TAP AGAIN TO UNDO':'UNDO'}</button>`}</div>`).join(''):'';
+  $('stg-hist').querySelectorAll('[data-su]').forEach(b=>b.onclick=async()=>{const id=b.dataset.su;if(!stgUndo[id]){stgUndo[id]=1;setTimeout(()=>delete stgUndo[id],5000);stgHist();return;}
+    const m=$('stg-msg');m.className='msg muted';m.textContent='Putting the files back...';try{const r=await (await api('/api/storage/undo',{json:{id}})).json();m.className='msg ok';m.textContent=`Put back ${r.back} files`+(r.missing?`; ${r.missing} were no longer on the other drive.`:'.');loadStorage();}catch(e){m.className='msg bad';m.textContent=e.message;}});}
+async function stgPoll(){clearTimeout(stgT);let j;try{j=await (await api('/api/storage/job')).json();}catch(e){return;}
+  const m=$('stg-msg');if(j.running){m.className='msg ok';m.textContent=`${j.detail} (${j.done} of ${j.total})`;stgT=setTimeout(stgPoll,1500);}
+  else if(j.id||j.error){m.className='msg '+(j.error?'bad':'ok');m.textContent=j.detail;}}
+$('stg-scan').onclick=()=>{$('stg-msg').textContent='';loadStorage();};$('stg-months').onchange=loadStorage;
+$('stg-move').onclick=async()=>{const g=[...document.querySelectorAll('[data-sg]:checked')].map(x=>x.dataset.sg);const m=$('stg-msg');
+  try{await api('/api/storage/move',{json:{groups:g,target:$('stg-target').value.trim(),months:+$('stg-months').value}});m.className='msg ok';m.textContent='Moving...';setTimeout(stgPoll,800);setTimeout(loadStorage,4000);}catch(e){m.className='msg bad';m.textContent=e.message;}};
+$('stg-rootsave').onclick=async()=>{const m=$('stg-rootmsg');try{const r=await (await api('/api/storage/root',{json:{target:$('stg-root').value.trim()}})).json();m.className='msg ok';m.textContent=r.root?'New finished files will be saved in '+r.root+'. Existing ones stay where they are; move them with Free up C:.':'Back to the usual folders on C:.';}catch(e){m.className='msg bad';m.textContent=e.message;}};
+$('stg-rootc').onclick=async()=>{$('stg-root').value='';$('stg-rootsave').click();};
+function drawSafety(){const f=AP&&AP.safety;if(!f){$('ap-safety').hidden=true;return;}$('ap-safety').hidden=false;
+  $('ap-safety').innerHTML=`<b>Safety settings</b>
+    <label class="field"><span>Memory Docker may use (your PC has 32 GB; the brain and Windows need the rest)</span><select id="sf-mem" style="max-width:200px">${f.choices.map(g=>`<option value="${g}" ${g===f.memory?'selected':''}>${g?g+' GB':'No limit (half the PC)'}</option>`).join('')}</select></label>
+    <div class="muted" style="font-size:12px">${f.cap_now?'Limit set now: '+f.cap_now+' GB.':'No limit is set yet.'}</div>
+    <div class="btns" style="justify-content:flex-start"><button class="btn" id="sf-memsave">SAVE (TAKES EFFECT ON NEXT RESTART)</button><button class="btn" id="sf-memnow">SAVE AND RESTART DOCKER NOW</button></div>
+    <label class="tickrow"><input type="checkbox" id="sf-private" ${f.private?'checked':''}><span><b>Only this PC and my Tailscale devices can open the apps</b><br><span class="muted">Untick to let any device on your home Wi-Fi open them too. Each app still has its own sign-in.${f.tailscale?'':' Tailscale was not found, so with this on the apps open on this PC only.'}</span></span></label>
+    <div class="muted" style="font-size:12px">C: has ${gb(f.c_free)} free. Each app checks there is room before it installs.</div>
+    <div class="msg" id="sf-msg"></div>`;
+  const send=async(body)=>{const m=$('sf-msg');m.className='msg muted';m.textContent='Saving...';try{const r=await (await api('/api/apps/safety',{json:body})).json();m.className='msg ok';m.textContent=r.notes.join(' ');loadApps();}catch(e){m.className='msg bad';m.textContent=e.message;}};
+  $('sf-memsave').onclick=()=>send({memory:+$('sf-mem').value});$('sf-memnow').onclick=()=>send({memory:+$('sf-mem').value,restart:true});
+  $('sf-private').onchange=()=>send({private:$('sf-private').checked});}
 </script>
 </body>
 </html>

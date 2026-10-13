@@ -582,7 +582,7 @@ def create(llm, user, prompt, chapters=5, progress=None, sources=None, images=No
                      if made_n else "I could not add pictures: the picture service did not answer. The book is laid out without them.")
 
     slug = re.sub(r"[^a-z0-9]+", "-", book["title"].lower()).strip("-")[:40] or "ebook"
-    folder = core.user_home(user) / "Trillion Ebooks"
+    folder = core.out_dir(user, "Trillion Ebooks")
     folder.mkdir(parents=True, exist_ok=True)
     out = folder / f"{slug}-{stamp}.pdf"
     try:

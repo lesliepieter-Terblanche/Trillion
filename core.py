@@ -155,13 +155,25 @@ def user_home(user):
     return p
 
 
+def out_dir(user, name):
+    """Where a finished file of this kind is saved: the drive the owner chose, or the usual place."""
+    import storage
+    return storage.out_dir(user, name)
+
+
 def user_roots(user):
     r = settings(user).get("roots") or []
     if user["is_admin"] and not r:
         r = ["*"]
     if "*" in r and not user["is_admin"]:
         r = [x_ for x_ in r if x_ != "*"]
-    return r or [str(user_home(user))]
+    r = r or [str(user_home(user))]
+    if "*" not in r:
+        import storage
+        extra = storage.user_folder(user)               # finished files saved on another drive are still theirs
+        if extra:
+            r = r + [str(extra)]
+    return r
 
 
 # ---------- encrypted keys ----------

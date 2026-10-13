@@ -995,7 +995,7 @@ def _run(user, jid):
     try:
         stamp = datetime.datetime.now().strftime("%Y-%m-%d %H%M")
         name = j["domain"] if j["mode"] == "copy" else re.sub(r'[<>:"/\\|?*]+', "", brief["brand"]).strip() or "New site"
-        folder = core.user_home(user) / "Trillion Websites" / ("Copies" if j["mode"] == "copy" else "New sites") / f"{name} {stamp}"
+        folder = core.out_dir(user, "Trillion Websites") / ("Copies" if j["mode"] == "copy" else "New sites") / f"{name} {stamp}"
         folder.mkdir(parents=True, exist_ok=True)
         _set(jid, folder=str(folder))
         if j["mode"] == "copy":

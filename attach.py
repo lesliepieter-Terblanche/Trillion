@@ -45,7 +45,7 @@ def kind_of(name):
 
 
 def folder(user):
-    p = core.user_home(user) / "Trillion Uploads"
+    p = core.out_dir(user, "Trillion Uploads")
     p.mkdir(parents=True, exist_ok=True)
     return p
 

@@ -643,7 +643,7 @@ def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progre
     p = plan(llm, user, prompt, seconds, n_scenes, bool(el_key))
     stamp = time.strftime("%Y%m%d-%H%M%S")
     slug = re.sub(r"[^a-z0-9]+", "-", p["title"].lower()).strip("-")[:40] or "video"
-    folder = core.user_home(user) / "Trillion Videos"
+    folder = core.out_dir(user, "Trillion Videos")
     folder.mkdir(parents=True, exist_ok=True)
     out = folder / f"{slug}-{stamp}.mp4"
 

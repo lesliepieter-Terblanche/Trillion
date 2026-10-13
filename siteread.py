@@ -513,7 +513,7 @@ def analyse(llm, user, pages, info, checks, focus="", say=None, stopped=lambda: 
 # ---------- jobs ----------
 def folder_for(user, domain):
     stamp = datetime.datetime.now().strftime("%Y-%m-%d %H%M")
-    f = core.user_home(user) / "Trillion Websites" / f"{domain} {stamp}"
+    f = core.out_dir(user, "Trillion Websites") / f"{domain} {stamp}"
     f.mkdir(parents=True, exist_ok=True)
     return f
 

@@ -871,7 +871,7 @@ def t_create_image(user, prompt, shape="square"):
                 if not data:
                     last = "Google answered without a picture (the request may have been refused)"
                     break
-                folder = core.user_home(user) / "Trillion Images"
+                folder = core.out_dir(user, "Trillion Images")
                 folder.mkdir(parents=True, exist_ok=True)
                 slug = re.sub(r"[^a-z0-9]+", "-", prompt.lower()).strip("-")[:40] or "picture"
                 path = folder / f"{slug}-{time.strftime('%Y%m%d-%H%M%S')}.png"

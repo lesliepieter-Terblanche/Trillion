@@ -177,7 +177,7 @@ def create(llm, user, prompt, seconds=5, fmt="vertical", progress=None):
     say("Collecting the clip")
     stamp = time.strftime("%Y%m%d-%H%M%S")
     slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:40] or "ai-clip"
-    folder = core.user_home(user) / "Trillion Videos"
+    folder = core.out_dir(user, "Trillion Videos")
     folder.mkdir(parents=True, exist_ok=True)
     out = folder / f"{slug}-ai-{stamp}{os.path.splitext(item['filename'])[1].lower()}"
     try:
