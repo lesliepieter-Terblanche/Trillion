@@ -240,6 +240,9 @@ def start_move(groups, target, months=12):
 
 def _move(groups, target, months):
     mid = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    for k, v in (("done", 0), ("total", 0), ("bytes", 0), ("skipped", 0), ("error", ""), ("detail", "Getting ready")):
+        JOB.setdefault(k, v)
+    JOB["running"] = True
     MOVES.mkdir(parents=True, exist_ok=True)
     rec = {"id": mid, "when": time.time(), "target": str(target), "groups": groups, "files": [], "junctions": [], "downloads": None,
            "storage_root_before": owner_settings().get("storage_root") or "", "undone": False}

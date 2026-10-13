@@ -56,6 +56,7 @@ import siteread
 import siteclone
 import apps
 import storage
+import backup
 gumroad.init()
 routines.init()
 # 0.7.28: Bible study belongs to Lewellyn's login. His morning and evening routines read the day's verse aloud, a different
@@ -1413,6 +1414,51 @@ def apps_safety(p: dict = Body(...), request: Request = None, user=Depends(admin
                                 + (f" Could not update: {'; '.join(res['failed'])}." if res["failed"] else ""))
         return out
     except apps.AppError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/backup")
+def backup_get(user=Depends(admin)):
+    st = core.settings(user)
+    return {"job": dict(backup.JOB), "backups": backup.find_backups(), "target": st.get("backup_target") or backup.default_target(),
+            "weekly": bool(st.get("backup_weekly")), "last": st.get("last_backup"), "report": backup.report(),
+            "apps_waiting": bool(backup.pending_apps()), "tailscale": TAILSCALE.get("v") or {}}
+
+
+@app.post("/api/backup")
+def backup_make(p: dict = Body(...), user=Depends(admin)):
+    try:
+        backup.start(str(p.get("target") or ""), p.get("apps", True) is not False)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+
+@app.post("/api/backup/settings")
+def backup_settings(p: dict = Body(...), user=Depends(admin)):
+    st = core.settings(user)
+    if "weekly" in p:
+        st["backup_weekly"] = bool(p["weekly"])
+    if p.get("target"):
+        st["backup_target"] = str(p["target"])
+    core.save_settings(user["id"], st)
+    return {"ok": True}
+
+
+@app.post("/api/backup/restore")
+def backup_restore(p: dict = Body(...), user=Depends(admin)):
+    try:
+        backup.request_restore(str(p.get("path") or ""))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "note": "Restoring. Trillion restarts in a few seconds; sign in again when the page comes back."}
+
+
+@app.post("/api/backup/apps")
+def backup_apps_restore(request: Request, user=Depends(admin)):
+    try:
+        return backup.restore_apps(app_host(request))
+    except (ValueError, apps.AppError) as e:
         raise HTTPException(400, str(e))
 
 
@@ -2931,7 +2977,7 @@ def admin_update(user=Depends(admin)):
 
 
 @app.get("/api/admin/backup")
-def backup(user=Depends(admin)):
+def admin_backup_zip(user=Depends(admin)):
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for f in core.DATA.rglob("*"):
@@ -2996,6 +3042,11 @@ def background():
                             core.log(u["id"], f"{site} looks down", "waiting")
                             watch.alert(u, "site", "Website down", f"{site} is not answering. Trillion checks it every 3 minutes.")
             now = datetime.datetime.now()
+            try:
+                if backup.due(now) and not backup.JOB.get("running"):
+                    backup.start(backup.owner_settings().get("backup_target"))
+            except Exception:
+                pass
             if now.hour == 23 and now.minute >= 30:
                 for u in core.q("SELECT * FROM users"):
                     s = core.settings(u)

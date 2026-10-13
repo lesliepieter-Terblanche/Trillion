@@ -824,6 +824,15 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
   <div class="setsec" data-sec="other"><div class="panel"><b>Kept on their own pages</b>
     <div class="moregrid"><button class="mbtn" data-go="phone"><b>Phone</b><span>Link, permissions, your number</span></button><button class="mbtn" data-go="routines"><b>Routines</b><span>Morning briefing, news, weather</span></button><button class="mbtn" data-go="skills"><b>Skills and connectors</b><span>Extra abilities</span></button><button class="mbtn" data-go="family" id="setfam" hidden><b>Family and update</b><span>Logins, folders, backup</span></button></div>
   </div></div>
+  <div class="panel" id="bk" hidden><b>Backup and restore</b>
+    <div class="muted" style="font-size:13px">A full copy of Trillion that survives a clean Windows install: every login, password, setting, note and chat, your finished files on C:, the phone pairing, and the business apps' data. Keep it on another drive. After reinstalling Windows and Trillion, press RESTORE here and everything is back where it was.</div>
+    <div id="bk-report"></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end"><label class="field" style="flex:1;min-width:220px"><span>Backup folder (not on C:)</span><input id="bk-target" placeholder="D:\Trillion Backup"></label>
+      <button class="btn pri" id="bk-go">BACK UP NOW</button></div>
+    <label class="tickrow"><input type="checkbox" id="bk-weekly"><span><b>Back up by itself every Sunday night</b><br><span class="muted">The newest three backups are kept.</span></span></label>
+    <div class="msg" id="bk-msg"></div>
+    <div id="bk-list" style="display:flex;flex-direction:column;gap:8px"></div>
+  </div>
 </div>
 
 <div class="view" id="v-family">
@@ -858,7 +867,7 @@ const api=async(u,o={})=>{if(o.json!==undefined){o.method=o.method||'POST';o.hea
 const hm=t=>new Date(t*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false});
 let hold=0,S=null,sending=false,speakNext=false,settingsLoaded=false,cwd='';
 
-const LOADERS={apps:()=>loadApps(),sites:()=>{loadSites();loadClones();},bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);loadStorage();},memory:()=>loadNotes(''),videos:()=>loadVideos(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
+const LOADERS={apps:()=>loadApps(),sites:()=>{loadSites();loadClones();},bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);loadStorage();},memory:()=>loadNotes(''),videos:()=>loadVideos(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();loadBackup();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
 let VIEW='control';
 function go(v){
   VIEW=v;try{if(v!=='settings'&&mtTimer)micTestStop();}catch(e){}
@@ -2009,6 +2018,31 @@ function drawSafety(){const f=AP&&AP.safety;if(!f){$('ap-safety').hidden=true;re
   const send=async(body)=>{const m=$('sf-msg');m.className='msg muted';m.textContent='Saving...';try{const r=await (await api('/api/apps/safety',{json:body})).json();m.className='msg ok';m.textContent=r.notes.join(' ');loadApps();}catch(e){m.className='msg bad';m.textContent=e.message;}};
   $('sf-memsave').onclick=()=>send({memory:+$('sf-mem').value});$('sf-memnow').onclick=()=>send({memory:+$('sf-mem').value,restart:true});
   $('sf-private').onchange=()=>send({private:$('sf-private').checked});}
+
+// ---------- backup and restore ----------
+let BK=null,bkT=null,bkSure={};
+async function loadBackup(){if(!S||!S.user.is_admin)return;$('bk').hidden=false;try{BK=await (await api('/api/backup')).json();}catch(e){return;}
+  if(!$('bk-target').value)$('bk-target').value=BK.target||'';$('bk-weekly').checked=BK.weekly;
+  const R=BK.report;let rep='';
+  if(R&&R.error)rep=`<div class="msg bad">The last restore did not finish: ${esc(R.error)}</div>`;
+  else if(R){const ts=R.tailscale_before||{};rep=`<div class="panel" style="gap:6px;border-color:var(--a)"><b>Restored from ${esc(R.from)}</b>
+    <div class="muted" style="font-size:13px">${(R.steps||[]).concat(R.links||[]).map(esc).join('<br>')}</div>
+    ${R.old_home!==R.new_home?`<div class="muted" style="font-size:13px">Saved paths changed from ${esc(R.old_home)} to ${esc(R.new_home)}.</div>`:''}
+    <div style="font-size:14px"><b>To keep every link working:</b> in the Tailscale admin page, remove the old PC, then name this PC <b>${esc(ts.name||'the same as before')}</b> and set its address to <b>${esc(ts.ip||'the old 100.x address')}</b>.</div>
+    ${BK.apps_waiting?'<div class="btns" style="justify-content:flex-start"><button class="btn pri" id="bk-apps">PUT THE BUSINESS APPS BACK</button></div><div class="muted" style="font-size:12px">Install and start Docker on the Apps page first.</div>':''}
+    <div class="muted" style="font-size:12px">The data from before the restore was kept in ${esc(R.aside||'')}.</div></div>`;}
+  $('bk-report').innerHTML=rep;
+  if($('bk-apps'))$('bk-apps').onclick=async()=>{const m=$('bk-msg');m.className='msg muted';m.textContent='Putting the apps back. This can take a while...';
+    try{const r=await (await api('/api/backup/apps',{json:{}})).json();m.className='msg '+(r.failed.length?'bad':'ok');m.textContent=(r.done.length?'Back: '+r.done.join(', ')+'. ':'')+(r.failed.length?'Not done: '+r.failed.join('; '):'');loadBackup();}catch(e){m.className='msg bad';m.textContent=e.message;}};
+  $('bk-list').innerHTML=BK.backups.length?'<div class="muted" style="font-size:13px">Backups found</div>'+BK.backups.map((b,i)=>`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:14px;border:1px solid var(--edge2);padding:10px"><span style="flex:1;min-width:200px"><b>${new Date(b.when*1000).toLocaleString()}</b> <span class="muted">from ${esc(b.pc||'?')} · ${gb(b.bytes)}${b.apps.length?' · apps: '+b.apps.join(', '):''}</span><br><span class="muted" style="font-size:12px">${esc(b.path)}</span></span><button class="btn" data-bkr="${i}" style="min-height:38px;font-size:12px">${bkSure[i]?'TAP AGAIN: REPLACE EVERYTHING':'RESTORE'}</button></div>`).join(''):'<div class="muted" style="font-size:13px">No backups found yet.</div>';
+  $('bk-list').querySelectorAll('[data-bkr]').forEach(b=>b.onclick=async()=>{const i=+b.dataset.bkr;if(!bkSure[i]){bkSure[i]=1;setTimeout(()=>{delete bkSure[i];},6000);loadBackup();return;}
+    const m=$('bk-msg');try{const r=await (await api('/api/backup/restore',{json:{path:BK.backups[i].path}})).json();m.className='msg ok';m.textContent=r.note;setTimeout(()=>location.reload(),15000);}catch(e){m.className='msg bad';m.textContent=e.message;}});
+  bkPoll();}
+function bkPoll(){clearTimeout(bkT);const j=BK&&BK.job;const m=$('bk-msg');if(!j)return;
+  if(j.running){m.className='msg ok';m.textContent=j.detail;bkT=setTimeout(async()=>{try{BK.job=await (await api('/api/backup')).json().then(x=>x.job);}catch(e){}bkPoll();},2000);}
+  else if(j.detail&&!m.textContent){m.className='msg '+(j.error?'bad':'ok');m.textContent=j.detail;}}
+$('bk-go').onclick=async()=>{const m=$('bk-msg');try{await api('/api/backup',{json:{target:$('bk-target').value.trim()}});m.className='msg ok';m.textContent='Backing up...';setTimeout(loadBackup,1000);}catch(e){m.className='msg bad';m.textContent=e.message;}};
+$('bk-weekly').onchange=async()=>{try{await api('/api/backup/settings',{json:{weekly:$('bk-weekly').checked,target:$('bk-target').value.trim()}});}catch(e){}};
 </script>
 </body>
 </html>

@@ -68,10 +68,20 @@ SKILLS AND CONNECTORS (Skills page)
   owner adds one and chooses which logins may use it. Connectors need Node.js: run Setup again
   once if "Cannot find the program npx" appears.
 
-MOVING TO THE NEW SSD
-1. Family page > DOWNLOAD BACKUP. Save the zip off this drive.
-2. On the fresh Windows: unzip Trillion, run Setup, then unzip the backup into the "data" folder.
-
-NOT IN THIS VERSION YET
-"Hey Trillion" wake word, phone control, network devices, Google Workspace, mailboxes,
-WhatsApp, Emergent website management, competitor tracking, video creation, social posting.
+MOVING TO A NEW DRIVE OR A CLEAN WINDOWS INSTALL
+Before you wipe C:
+1. Settings > Backup and restore > BACK UP NOW, to a folder on another drive (for example D:\Trillion Backup).
+   It holds every login, password, setting, note and chat, your finished files on C:, the phone pairing,
+   and the business apps' data. Files already on D: are left where they are.
+2. Write down nothing: the backup itself records the PC name, the Tailscale name and address, the
+   Downloads location and every folder that was moved to D:.
+After the clean install:
+1. Install Trillion again (1 - Setup.bat, 3 - Connect to GitHub.bat) and sign in as the owner.
+2. Settings > Backup and restore: the backup on D: is listed. Press RESTORE (tap twice). Trillion restarts,
+   puts everything back and changes every saved path to the new Windows user folder.
+3. Install Tailscale and sign in. In the Tailscale admin page remove the old PC, give this PC the old name,
+   and set its address to the old 100.x address (both are shown after the restore). Every link on the
+   phones and laptop then keeps working.
+4. If you use the business apps: Apps page > Install Docker, Start Docker, then Settings > PUT THE
+   BUSINESS APPS BACK. They return with their data.
+5. Keep the drive letter of the second drive the same (D:), so the moved folders link up again.

@@ -9,6 +9,8 @@ from cryptography.fernet import Fernet
 BASE = Path(__file__).resolve().parent
 DATA = Path(os.environ.get("TRILLION_DATA", BASE / "data"))
 DATA.mkdir(parents=True, exist_ok=True)
+import backup as _backup                                # a restore asked for before the last restart goes in first
+_backup.apply_pending(DATA, BASE)
 DB = DATA / "trillion.db"
 OLLAMA = os.environ.get("TRILLION_OLLAMA", "http://127.0.0.1:11434")
 
