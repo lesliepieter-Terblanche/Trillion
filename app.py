@@ -54,6 +54,7 @@ import gumroad
 import watch
 import siteread
 import siteclone
+import apps
 gumroad.init()
 routines.init()
 # 0.7.28: Bible study belongs to Lewellyn's login. His morning and evening routines read the day's verse aloud, a different
@@ -682,6 +683,30 @@ NEEDS_TOOLS = re.compile(
     r"today|tomorrow|yesterday|latest|current|news|weather|price|my)\b", re.I)
 
 
+SOCIAL_RE = re.compile(r"\b(post|share|schedule|publish|upload)\b[^.?!]{0,40}\b(tiktok|facebook|instagram|youtube|linkedin|pinterest|threads|socials?|social media|all (my )?channels)\b", re.I)
+SOCIAL_CAP = re.compile(r"\b(?:saying|caption(?:ed)?|with the (?:caption|text))\s*[:\-]?\s*[\"“']?(.+?)[\"”']?\s*$", re.I | re.S)
+SOCIAL_WHEN = re.compile(r"\b(?:at|on)\s+((?:today|tomorrow|\d{4}-\d{2}-\d{2})?\s*(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b", re.I)
+
+
+def when_to_iso(words):
+    """'tomorrow 6pm', '18:30', '2026-10-14 9am' -> '2026-10-14T18:00' in South African time."""
+    w = words.lower().strip()
+    day = datetime.date.today()
+    if "tomorrow" in w:
+        day += datetime.timedelta(days=1)
+    m = re.search(r"(\d{4})-(\d{2})-(\d{2})", w)
+    if m:
+        day = datetime.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        w = w[m.end():]
+    t = re.search(r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", w)
+    h, mi = (int(t.group(1)), int(t.group(2) or 0)) if t else (9, 0)
+    if t and t.group(3) == "pm" and h < 12:
+        h += 12
+    if t and t.group(3) == "am" and h == 12:
+        h = 0
+    return f"{day.isoformat()}T{h:02d}:{mi:02d}"
+
+
 def tools_for(user, text):
     """Hand the brain only the tools this request could need: fewer choices, fewer wrong ones."""
     uid = user["id"]
@@ -696,6 +721,7 @@ def tools_for(user, text):
         skip |= {"connector_tools", "connector_call"}
     if not user["is_admin"]:
         skip.add("run_command")
+    skip |= {t for t, k in apps.TOOL_APP.items() if not apps.usable(user, k)}       # only apps this login has connected
     return [s_ for s_ in tools.SPECS if s_["function"]["name"] not in skip]
 
 
@@ -992,6 +1018,23 @@ def run_agent(user, text, files=None):
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="failed" if "error" in res else "completed", detail=reply[:200])
         return {"reply": reply, "task_id": tid, "provider": "FreeVideo", "show": "" if "error" in res else "videos"}
+    soc = SOCIAL_RE.search(text) if files and apps.usable(user, "postiz") else None
+    if soc and not asking:
+        nets = [n.lower() for n in re.findall(r"\b(tiktok|facebook|instagram|youtube|linkedin|pinterest|threads|x)\b", text, re.I)]
+        cap = SOCIAL_CAP.search(text)
+        when = SOCIAL_WHEN.search(text)
+        args = {"text": (cap.group(1).strip() if cap else ""), "networks": nets, "files": [f["id"] for f in files]}
+        if when:
+            args["when"] = when_to_iso(when.group(1))
+        try:
+            res = tools.execute(user, "social_post", args, task_id=tid)
+        finally:
+            BUSY[uid] = False
+        reply = ("It is waiting for your OK on the dashboard: " + tools.describe("social_post", args) + "." if res.get("status") == "waiting_for_approval"
+                 else res.get("error") or "Done.")
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="waiting" if res.get("status") == "waiting_for_approval" else ("failed" if "error" in res else "completed"), detail=reply[:200])
+        return {"reply": reply, "task_id": tid, "provider": "built-in"}
     clone_req = siteclone.request(text) if not files else None
     if clone_req and not asking:
         try:
@@ -1321,6 +1364,57 @@ def store_create(p: dict = Body(...), user=Depends(store_user)):
                                                  currency=cur or None, summary=p.get("summary")))
     core.log(user["id"], f"Gumroad: created {r['product']['name']}" + (" and put it on sale" if r["published"] else " as a draft"), "done")
     return {"message": created_sentence(r), "result": r, "store": gumroad.overview(user)}
+
+
+def app_host(request):
+    """The address phones and the laptop reach this PC by: its Tailscale address when there is one."""
+    ts = TAILSCALE.get("v") or {}
+    return ts.get("ip") or ts.get("dns") or (request.url.hostname if request.url.hostname not in ("127.0.0.1", "localhost") else "localhost")
+
+
+@app.get("/api/apps")
+def apps_list(request: Request, user=Depends(auth)):
+    return apps.listing(user, app_host(request))
+
+
+@app.post("/api/apps/docker")
+def apps_docker(p: dict = Body(...), user=Depends(admin)):
+    try:
+        if p.get("do") == "install":
+            apps.install_docker()
+            return {"ok": True, "note": "Docker Desktop is installing. Windows may ask for permission and a restart; then press Start Docker."}
+        if p.get("do") == "start":
+            return {"ok": apps.start_docker_desktop(), "note": "Docker is starting. It takes a minute or two."}
+    except apps.AppError as e:
+        raise HTTPException(400, str(e))
+    raise HTTPException(400, "Unknown")
+
+
+@app.post("/api/apps/{key}/install")
+def apps_install(key: str, request: Request, user=Depends(admin)):
+    try:
+        apps.install(key, app_host(request))
+    except apps.AppError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+
+@app.post("/api/apps/{key}/{what}")
+def apps_action(key: str, what: str, p: dict = Body(default={}), user=Depends(auth)):
+    try:
+        if what == "connect":
+            apps.connect(user, key, p)
+            return {"ok": True}
+        if what == "disconnect":
+            apps.disconnect(user, key)
+            return {"ok": True}
+        if not user["is_admin"]:
+            raise HTTPException(403, "Only the owner can start, stop or remove apps.")
+        if what in ("start", "stop", "remove", "erase"):
+            return {"ok": apps.action(key, what)}
+    except apps.AppError as e:
+        raise HTTPException(400, str(e))
+    raise HTTPException(400, "Unknown")
 
 
 @app.get("/api/clones")

@@ -348,6 +348,13 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
 .cl-modes button.on{border-color:var(--a);box-shadow:inset 0 0 0 1px var(--a)}.cl-modes span{color:var(--dim);font-size:13px}
 .clframe{border:1px solid var(--edge2);height:520px;overflow:hidden;background:#fff}.clframe iframe{width:100%;height:100%;border:0}
 @media(max-width:640px){.cl-modes{grid-template-columns:1fr}.clframe{height:420px}}
+.ap-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}.ap-card{gap:10px}
+.ap-conn summary{cursor:pointer;color:var(--a);font-size:14px;padding:6px 0}.ap-secret{filter:blur(4px);cursor:pointer}.ap-secret:hover,.ap-secret:active{filter:none}
+.linkbtn{background:none;border:0;color:var(--dim);text-decoration:underline;cursor:pointer;font:inherit;padding:0}
+@media(max-width:640px){.ap-grid{grid-template-columns:1fr}}
+@media(min-width:1001px) and (max-width:1600px){nav button{padding:0 7px;letter-spacing:.04em;font-size:12.5px}}
+@media(min-width:1001px) and (max-width:1366px){nav button{padding:0 4px;letter-spacing:.02em;font-size:12px}header .logo small{display:none}}
+#ap-docker .pill{align-self:flex-start}
 </style>
 </head>
 <body>
@@ -360,6 +367,7 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <button data-v="videos">VIDEOS</button>
     <button data-v="files">FILES</button>
     <button data-v="sites">WEBSITES</button>
+    <button data-v="apps">APPS</button>
     <button data-v="bible" id="navbible" hidden>BIBLE</button>
     <button data-v="store" id="navstore" hidden>STORE<span id="storebadge"></span></button>
     <button data-v="memory">MEMORY</button>
@@ -594,6 +602,13 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <div id="bb-notes"></div></div>
   <div class="muted" style="font-size:13px" id="bb-about"></div>
 </div>
+<div class="view" id="v-apps">
+  <h2>Apps</h2>
+  <div class="muted">Business apps that run on this PC beside Trillion. The owner installs each one once; then every login connects its own account, and you can ask me to use them.</div>
+  <div class="panel" id="ap-docker"></div>
+  <div id="ap-list" style="display:flex;flex-direction:column;gap:26px"></div>
+</div>
+
 <div class="view" id="v-sites">
   <h2>Websites</h2>
   <div class="muted">Give me a website. I open it in a browser on the PC, read it page by page, analyse it, and make a presentation, a report or a spreadsheet from it.</div>
@@ -826,7 +841,7 @@ const api=async(u,o={})=>{if(o.json!==undefined){o.method=o.method||'POST';o.hea
 const hm=t=>new Date(t*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false});
 let hold=0,S=null,sending=false,speakNext=false,settingsLoaded=false,cwd='';
 
-const LOADERS={sites:()=>{loadSites();loadClones();},bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);},memory:()=>loadNotes(''),videos:()=>loadVideos(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
+const LOADERS={apps:()=>loadApps(),sites:()=>{loadSites();loadClones();},bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);},memory:()=>loadNotes(''),videos:()=>loadVideos(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
 let VIEW='control';
 function go(v){
   VIEW=v;try{if(v!=='settings'&&mtTimer)micTestStop();}catch(e){}
@@ -1795,6 +1810,7 @@ const CMDS=[
   ['Briefings',[['good morning','Runs your morning routine'],['what is the weather',''],['give me the news',''],['how are the markets','Rand, gold, shares, crypto']]],
   ['Websites',[['read the website tackletrail.co.za and make a presentation','Opens it in a browser on the PC, reads every page, analyses it'],['analyse truehome.co.za and write a report on how they price their listings','Say what to look for and the report answers it'],['open the browser and go through vapeessence.co.za, make a spreadsheet','Shows the browser on the PC screen while it reads'],['read the website gumroad.com, 80 pages','Reads up to 150 pages; 40 if you do not say']]],
   ['Cloning websites',[['clone tackletrail.co.za','A full working copy of your own site: files, folders and a zip to upload'],['rebuild the layout of example.com for TackleTrail, guided fishing trips in Durban','A new site in that style with your own name and words'],['make me a site like example.com for VapeEssence','Same as rebuild']]],
+  ['Business apps',[['post this to tiktok and facebook tomorrow at 6pm saying New ebook out now!','Attach the video or picture first; waits for your OK'],['how many visitors did my sites get this week','From Umami'],['add jan@example.com to my buyers list','Listmonk'],['invoice Durban Tackle R4500 for website design','Makes a draft in Invoice Ninja'],['which invoices are unpaid',''],['where do my sites rank on google','SerpBear'],['any new customer messages','Chatwoot'],['switch my new sale workflow off','n8n']]],
   ['Pictures',[['create a picture of a modern family home at sunset','Needs your Google Gemini key under Settings, Keys'],['make a wide banner for TrueHome with a city skyline','']]],
   ['Videos',[['create a 20 second cinematic video about our newest listings','Takes a few minutes'],['open the video','Shows the newest one']]],
   ['Files and documents',[['create a folder called Invoices in my Documents',''],['create a Word document called Welcome with a short welcome note',''],['create an Excel sheet of my monthly budget',''],['find all pdf files in my Downloads',''],['open my Documents folder','']]],
@@ -1806,7 +1822,7 @@ function drawCommands(){
   document.querySelectorAll('[data-use]').forEach(b=>b.onclick=()=>{go('control');$('say').value=b.dataset.use;$('say').focus();});
 }
 function drawMore(){
-  const items=[...(S&&S.bible_on?[['bible','Bible study','Daily verse, reader, notes, helper']]:[]),...(S&&S.store_on?[['store','Store','Gumroad sales, products, codes']]:[]),['videos','Videos','Make and watch videos'],['files','Files','Browse your folders'],['sites','Websites','Read a site, make a deck or report'],['memory','Memory','What she remembers'],['routines','Routines','Morning briefing, news, weather'],['skills','Skills','Extra abilities and connectors'],['commands','Commands','Everything you can say'],['settings','Settings','Look, brain, voice, keys']];
+  const items=[...(S&&S.bible_on?[['bible','Bible study','Daily verse, reader, notes, helper']]:[]),...(S&&S.store_on?[['store','Store','Gumroad sales, products, codes']]:[]),['videos','Videos','Make and watch videos'],['files','Files','Browse your folders'],['sites','Websites','Read a site, make a deck or report'],['apps','Apps','Social posting, email lists, invoices, inbox, automations'],['memory','Memory','What she remembers'],['routines','Routines','Morning briefing, news, weather'],['skills','Skills','Extra abilities and connectors'],['commands','Commands','Everything you can say'],['settings','Settings','Look, brain, voice, keys']];
   if(S&&S.user.is_admin)items.push(['family','Family','Logins, update, backup']);
   $('moregrid').innerHTML=items.map(i=>`<button class="mbtn" data-go="${i[0]}"><b>${i[1]}</b><span>${i[2]}</span></button>`).join('')+`<button class="mbtn" id="out2"><b>Sign out</b><span>${S?esc(S.user.name):''}</span></button>`;
   $('out2').onclick=()=>$('out').click();
@@ -1902,6 +1918,46 @@ $('cl-go').onclick=async()=>{const m=$('cl-msg');const body={mode:clMode,url:$('
   else Object.assign(body,{brand:$('cl-brand').value.trim()||(CL&&CL.brand)||'',about:$('cl-about').value.trim(),contact:$('cl-contact').value.trim(),max_pages:+$('cl-rpages').value,my_colour:$('cl-mycol').checked,ai_pictures:$('cl-ai').checked});
   try{const j=await (await api('/api/clones',{json:body})).json();m.className='msg ok';m.textContent=clMode==='copy'?'Started. Copying '+j.domain+'.':'Started. Measuring '+j.domain+'.';
     clOpen=j.id;$('cl-url').value='';loadClones(true);}catch(e){m.className='msg bad';m.textContent=e.message;}};
+
+// ---------- apps ----------
+let AP=null,apT=null,apConfirm={};
+const AP_STATUS={none:'Not installed',installing:'Installing',installed:'Installed',running:'Running',stopped:'Stopped',failed:'Install failed'};
+async function loadApps(){try{AP=await (await api('/api/apps')).json();}catch(e){$('ap-list').innerHTML=`<div class="msg bad">${esc(e.message)}</div>`;return;}
+  const admin=S&&S.user.is_admin,d=AP.docker;
+  $('ap-docker').innerHTML=`<b>Docker</b> <span class="pill ${d.running?'on':'warn'}">${d.running?'running':(d.installed?'not running':'not installed')}</span>
+    <div class="muted" style="font-size:13px">${d.running?'Docker runs the apps. '+(d.version?'Version '+esc(d.version)+'.':''):(d.installed?'Docker is installed but not running.':'The apps need Docker Desktop (free for personal use and small businesses). It needs the WSL2 part of Windows and usually one restart.')}</div>
+    ${admin&&!d.running?`<div class="btns" style="justify-content:flex-start">${d.installed?'<button class="btn pri" data-dk="start">START DOCKER</button>':'<button class="btn pri" data-dk="install">INSTALL DOCKER</button>'}<button class="btn" id="ap-refresh">REFRESH</button></div>`:''}
+    ${!admin&&!d.running?'<div class="muted" style="font-size:13px">Ask the owner to set Docker up.</div>':''}<div class="msg" id="ap-dmsg"></div>`;
+  document.querySelectorAll('[data-dk]').forEach(b=>b.onclick=async()=>{const m=$('ap-dmsg');try{const r=await (await api('/api/apps/docker',{json:{do:b.dataset.dk}})).json();m.className='msg ok';m.textContent=r.note;}catch(e){m.className='msg bad';m.textContent=e.message;}});
+  if($('ap-refresh'))$('ap-refresh').onclick=loadApps;
+  $('ap-list').innerHTML=AP.groups.map(g=>{const items=AP.apps.filter(a=>a.group===g);if(!items.length)return'';
+    return `<div><div class="muted" style="font-size:12px;letter-spacing:.14em;text-transform:uppercase;margin-bottom:10px">${g}</div><div class="ap-grid">${items.map(apCard).join('')}</div></div>`;}).join('');
+  $('ap-list').querySelectorAll('[data-apa]').forEach(b=>b.onclick=()=>apDo(b.dataset.key,b.dataset.apa,b));
+  $('ap-list').querySelectorAll('[data-apc]').forEach(f=>f.onsubmit=e=>{e.preventDefault();apConnect(f.dataset.apc,f);});
+  clearTimeout(apT);if(AP.apps.some(a=>a.status==='installing')&&$('v-apps').classList.contains('on'))apT=setTimeout(loadApps,4000);}
+function apCard(a){const admin=S&&S.user.is_admin,up=a.status==='running'||a.status==='installed';
+  const btn=(w,l,pri)=>`<button class="btn${pri?' pri':''}" data-apa="${w}" data-key="${a.key}">${l}</button>`;
+  let acts='';
+  if(admin){if(a.status==='none'||a.status==='failed')acts+=btn('install',a.status==='failed'?'TRY AGAIN':'INSTALL',1);
+    if(a.status==='stopped')acts+=btn('start','START',1);if(a.status==='running')acts+=btn('stop','STOP');
+    if(['running','stopped','installed','failed'].includes(a.status)&&a.status!=='none')acts+=btn('remove',apConfirm[a.key+'remove']?'TAP AGAIN TO REMOVE':'REMOVE');}
+  const open=up?`<a class="btn pri" style="display:inline-flex;align-items:center;text-decoration:none" href="${esc(a.url)}" target="_blank" rel="noopener">OPEN</a>`:'';
+  const conn=!up?'':(a.auto?(a.connected?'<div class="msg ok" style="font-size:13px">Ready for every login. Ask me about it in chat.</div>':''):
+    (a.connected?`<div class="msg ok" style="font-size:13px">Connected for you${a.can_chat?'. Ask me to use it in chat.':'.'} <button class="linkbtn" data-apa="disconnect" data-key="${a.key}">disconnect</button></div>`:
+    `<details class="ap-conn"><summary>Connect your account</summary><div class="muted" style="font-size:13px">${esc(a.signup)}</div><form data-apc="${a.key}" style="display:flex;flex-direction:column;gap:8px">${a.connect.map(c=>`<label class="field"><span>${esc(c.label)}</span><input name="${c.field}" ${/password|token|key/.test(c.field)?'type="password"':''} autocomplete="off">${c.hint?`<span class="muted" style="font-size:12px">${esc(c.hint)}</span>`:''}</label>`).join('')}<div><button class="btn pri" type="submit">CONNECT</button> <span class="msg" data-apm="${a.key}"></span></div></form></details>`));
+  const adm=admin&&a.admin&&Object.keys(a.admin).length&&up?`<div class="muted" style="font-size:13px">First sign-in: <b>${esc(a.admin.user||'')}</b> / <span class="ap-secret" title="Click to show">${esc(a.admin.password||'')}</span></div>`:'';
+  return `<div class="panel ap-card"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><b style="font-size:17px">${esc(a.name)}</b><span class="pill ${a.status==='running'?'on':(a.status==='failed'?'warn':'')}">${AP_STATUS[a.status]||a.status}</span></div>
+    <div style="font-size:14px">${esc(a.what)}</div>
+    ${a.status==='installing'||a.status==='failed'||(a.detail&&a.status!=='running'&&a.status!=='none')?`<div class="msg ${a.status==='failed'?'bad':'muted'}" style="font-size:13px">${esc(a.detail)}</div>`:''}
+    ${a.status==='none'?`<div class="muted" style="font-size:12px">Uses ${esc(a.ram)} of memory while running. Port ${a.port}.</div>`:''}
+    ${a.note&&up?`<div class="muted" style="font-size:12px">${esc(a.note)}</div>`:''}${adm}
+    <div class="btns" style="justify-content:flex-start">${open}${acts}</div>${conn}<div class="msg" data-apx="${a.key}"></div></div>`;}
+async function apDo(key,what,b){const m=document.querySelector(`[data-apx="${key}"]`);
+  if(what==='remove'&&!apConfirm[key+'remove']){apConfirm[key+'remove']=1;setTimeout(()=>{delete apConfirm[key+'remove'];},5000);b.textContent='TAP AGAIN TO REMOVE';return;}
+  delete apConfirm[key+'remove'];m.className='msg muted';m.textContent=what==='install'?'Starting the install...':'Working...';
+  try{await api(`/api/apps/${key}/${what}`,{json:{}});await loadApps();}catch(e){m.className='msg bad';m.textContent=e.message;}}
+async function apConnect(key,f){const m=document.querySelector(`[data-apm="${key}"]`);const v={};new FormData(f).forEach((x,k)=>v[k]=x);
+  m.className='msg muted';m.textContent='Checking...';try{await api(`/api/apps/${key}/connect`,{json:v});await loadApps();}catch(e){m.className='msg bad';m.textContent=e.message;}}
 </script>
 </body>
 </html>
