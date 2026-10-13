@@ -5,6 +5,7 @@ from pathlib import Path
 import httpx
 
 import core
+import watch
 
 
 def fn(name, desc, props, required=None):
@@ -55,6 +56,8 @@ SPECS = [
        "number. Always needs the user's approval on the dashboard before it is sent.", {"contact": S, "message": S}),
     fn("phone_locate", "Find where the user's own phone is: its last known position with a map link.", {}),
     fn("phone_ring", "Make the user's own phone play a loud sound so it can be found nearby.", {}),
+    fn("watch_alert", "Show a short alert on the user's watch (it arrives as a notification on their phone, which the watch "
+       "mirrors). Use when they ask to be told something on their watch.", {"title": S, "text": S}, ["text"]),
     fn("phone_read_screen", "Read what is on the user's phone screen right now: the visible texts, buttons and fields. "
        "Do this before tapping so you know what is there.", {}),
     fn("phone_tap", "Tap something on the user's phone screen. Give the visible text of the button (target), or x and y.",
@@ -146,6 +149,7 @@ def describe(name, a):
         "phone_type": "Typing on the phone", "phone_press": f"Pressing {g('key')}", "phone_swipe": f"Swiping {g('direction')}",
         "phone_shell": f"Run on the phone: {g('command')}",
         "phone_locate": "Locating the phone", "phone_ring": "Ringing the phone",
+        "watch_alert": f"Alert on the watch: {g('text')[:80]}",
         "phone_screenshot": "Taking a phone screenshot",
         "create_video": "Creating a video",
         "create_ai_clip": "Generating an AI clip",
@@ -204,6 +208,7 @@ def execute(user, name, args, task_id=None, approved=False, direct=False):
             core.x("INSERT INTO approvals(user_id,task_id,tool,args,summary,created) VALUES(?,?,?,?,?,?)",
                    (uid, task_id, name, json.dumps(args), summary, time.time()))
             core.log(uid, f"Waiting on you: {summary}", "waiting")
+            watch.alert(user, "approval", "Trillion needs your OK", summary)
             return {"status": "waiting_for_approval",
                     "note": "Not done yet. The user must approve this on the dashboard."}
         if name in ("create_video", "create_ai_clip", "create_ebook"):
@@ -669,6 +674,11 @@ def t_phone_locate(user):
 def t_phone_ring(user):
     import phone
     return phone.ring(user)
+
+
+def t_watch_alert(user, text, title="Trillion"):
+    r = watch.send(user, title or "Trillion", text)
+    return {"ok": True, "note": "Posted on the phone; the watch shows it if phone notifications are mirrored."} if r["ok"] else {"error": r["error"]}
 
 
 def t_phone_screenshot(user):

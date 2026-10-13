@@ -50,6 +50,7 @@ bible.init()
 video.init()
 attach.init()
 import gumroad
+import watch
 gumroad.init()
 routines.init()
 # 0.7.28: Bible study belongs to Lewellyn's login. His morning and evening routines read the day's verse aloud, a different
@@ -1283,6 +1284,27 @@ def store_create(p: dict = Body(...), user=Depends(store_user)):
                                                  currency=cur or None, summary=p.get("summary")))
     core.log(user["id"], f"Gumroad: created {r['product']['name']}" + (" and put it on sale" if r["published"] else " as a draft"), "done")
     return {"message": created_sentence(r), "result": r, "store": gumroad.overview(user)}
+
+
+@app.get("/api/watch")
+def watch_get(user=Depends(auth)):
+    return watch.state(user)
+
+
+@app.post("/api/watch")
+def watch_set(p: dict = Body(...), user=Depends(auth)):
+    watch.save_prefs(user, p)
+    return watch.state(core.q("SELECT * FROM users WHERE id=?", (user["id"],), one=True))
+
+
+@app.post("/api/watch/test")
+def watch_test(user=Depends(auth)):
+    if not core.settings(user).get("phone_serial"):
+        raise HTTPException(400, "Link your phone first on this page. The watch shows what arrives on the phone.")
+    r = watch.send(user, "Trillion", f"Test alert for {user['name']}. If you see this on your watch, alerts work.", test=True)
+    if not r["ok"]:
+        raise HTTPException(400, r["error"])
+    return {"ok": True}
 
 
 @app.post("/api/store/every")
@@ -2698,6 +2720,7 @@ def background():
                         SITES[site] = res = tools.site_check(site)
                         if prev and prev["ok"] and not res["ok"]:
                             core.log(u["id"], f"{site} looks down", "waiting")
+                            watch.alert(u, "site", "Website down", f"{site} is not answering. Trillion checks it every 3 minutes.")
             now = datetime.datetime.now()
             if now.hour == 23 and now.minute >= 30:
                 for u in core.q("SELECT * FROM users"):

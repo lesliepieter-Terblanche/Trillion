@@ -490,6 +490,17 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     </div>
     <div class="panel"><b>Link</b><div id="phonebox" style="display:flex;flex-direction:column;gap:14px"><div class="muted">Looking for your phone...</div></div></div>
   </div>
+  <div class="panel" id="wt-panel"><b>Watch alerts</b>
+    <div class="muted" style="font-size:13px">She posts a short notification on your phone and your watch shows it, the same way it shows WhatsApps. Nothing is installed on the watch. Alerts go to your own phone only.</div>
+    <div class="msg" id="wt-state"></div>
+    <label class="tickrow"><input type="checkbox" id="wt-on"><span><b>Send alerts to my watch</b></span></label>
+    <div id="wt-kinds" style="display:flex;flex-direction:column;gap:6px;padding-left:6px"></div>
+    <label class="tickrow"><input type="checkbox" id="wt-quiet"><span><b>Quiet hours</b><br><span class="muted">No alerts between these times.</span></span></label>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><label class="field"><span>From</span><input type="time" id="wt-from" style="max-width:140px"></label><label class="field"><span>To</span><input type="time" id="wt-to" style="max-width:140px"></label></div>
+    <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="wt-save">SAVE WATCH ALERTS</button><button class="btn" id="wt-test">SEND A TEST ALERT</button></div>
+    <div class="msg" id="wt-msg"></div>
+    <details><summary class="muted" style="cursor:pointer">Nothing on the watch?</summary><div class="muted" style="font-size:13px;line-height:1.6">1. On the phone, open the Galaxy Wearable app, then Watch settings, Notifications, App notifications. Choose All apps and switch on <b>Shell</b> (that is the name Android gives alerts sent from the PC).<br>2. In the same Notifications screen, switch on <b>Show phone notifications on watch while using phone</b>, otherwise the watch stays quiet while the phone screen is on.<br>3. Check the phone shows the test alert at all. If it does not, the phone may block notifications from Shell: long-press the alert or open Settings, Notifications, and allow Shell.</div></details>
+  </div>
   <datalist id="contacts"></datalist>
 </div>
 
@@ -1522,8 +1533,21 @@ async function loadPhonePage(){
   if(!S)return;fillPhoneSettings();const full=!!S.user.settings.phone_full_control;
   $('pp-cmds').innerHTML=PPC.filter(c=>!c[2]||full).map((c,i)=>`<button type="button" data-pc="${esc(c[1])}">${esc(c[0])}</button>`).join('')+(full?'':'<span class="muted" style="font-size:13px;align-self:center">Tick Full phone control below for Home, Back, volume and reading the screen.</span>');
   $('pp-cmds').querySelectorAll('[data-pc]').forEach(b=>b.onclick=()=>runHere(b.dataset.pc,$('pp-cmdmsg')));
-  ppUse();render();loadPhone();ulLoad();loadWA(true);loadContacts($('pp-cmsg'));
+  ppUse();render();loadPhone();ulLoad();loadWA(true);loadContacts($('pp-cmsg'));wtLoad();
 }
+async function wtLoad(){try{wtDraw(await (await api('/api/watch')).json());}catch(e){}}
+function wtDraw(w){$('wt-on').checked=w.on;$('wt-quiet').checked=w.quiet;$('wt-from').value=w.from;$('wt-to').value=w.to;
+  $('wt-kinds').innerHTML=Object.entries(w.labels).map(([k,l])=>`<label class="tickrow"><input type="checkbox" data-wk="${k}" ${w.kinds[k]?'checked':''}><span>${esc(l)}</span></label>`).join('');
+  const m=$('wt-state'),L=w.last;
+  if(!w.linked){m.className='msg bad';m.textContent='Link your phone first (Link panel above). The watch shows what arrives on the phone.';}
+  else if(L&&!L.ok){m.className='msg bad';m.textContent='Last alert did not go through: '+L.msg;}
+  else if(L){m.className='msg ok';m.textContent='Last alert sent '+hm(L.t)+': '+L.title;}
+  else{m.className='msg muted';m.textContent=w.on?(w.quiet_now?'On. Quiet hours right now.':'On.'):'Off.';}}
+$('wt-save').onclick=async()=>{const m=$('wt-msg');try{const k={};document.querySelectorAll('[data-wk]').forEach(b=>k[b.dataset.wk]=b.checked);
+  const w=await (await api('/api/watch',{method:'POST',json:{on:$('wt-on').checked,quiet:$('wt-quiet').checked,from:$('wt-from').value,to:$('wt-to').value,kinds:k}})).json();
+  wtDraw(w);m.className='msg ok';m.textContent='Saved. Watch alerts are '+(w.on?'ON':'off')+'.';}catch(e){m.className='msg bad';m.textContent=e.message;}};
+$('wt-test').onclick=async()=>{const m=$('wt-msg');m.className='msg muted';m.textContent='Sending...';try{await api('/api/watch/test',{method:'POST',json:{}});
+  m.className='msg ok';m.textContent='Sent. Look at your watch (or the phone). If it is only on the phone, see "Nothing on the watch?" below.';wtLoad();}catch(e){m.className='msg bad';m.textContent=e.message;}};
 function ulDraw(u){const m=$('ul-state');m.className='msg '+(u.failed?'bad':(u.set?'ok':'muted'));
   m.textContent=u.failed?'The saved code did not work last time. Unlock the phone yourself and save the code again.':(u.set?'A '+(u.kind==='pin'?'PIN':u.kind)+' is saved. '+(u.auto?'She unlocks by herself when needed.':'She unlocks only when you ask.'):'No unlock code saved.');
   if(u.set)$('ul-kind').value=u.kind;$('ul-auto').checked=!!u.auto;ulKind();}

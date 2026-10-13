@@ -14,6 +14,7 @@ from xml.etree import ElementTree as ET
 import httpx
 
 import core
+import watch
 
 UA = {"User-Agent": "Trillion-home-assistant/0.5 (personal, non-commercial use)"}
 HOME_CURRENCY = "ZAR"
@@ -796,6 +797,7 @@ def run(user, routine, sites=None):
     brief = {"id": r["id"], "routine": r["name"], "ts": time.time(), "title": f"{hello}, {user['name']}", "date": date,
              "cards": [{k: v for k, v in c.items() if k != "say"} for c in cards]}
     core.x("UPDATE routines SET last_run=?, last_brief=? WHERE id=?", (brief["ts"], json.dumps(brief), r["id"]))
+    watch.briefing(user, r["name"], cards)
     return {"reply": reply, "brief": brief}
 
 

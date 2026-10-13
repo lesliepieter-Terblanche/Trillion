@@ -14,6 +14,7 @@ from urllib.parse import quote
 import httpx
 
 import core
+import watch
 
 BASE = os.environ.get("TRILLION_GUMROAD", "https://api.gumroad.com/v2").rstrip("/")
 INFO = os.environ.get("TRILLION_GUMROAD_INFO", "https://gumroad.com/oauth/token/info")    # tells which permissions a token has
@@ -268,6 +269,7 @@ def _sync(user, everything=False):
         if new and not first:
             for name, amount in names[:5]:
                 core.log(uid, f"Gumroad sale: {name}" + (f" for {amount}" if amount else ""), "done")
+            watch.sales(user, names)
         return new
     except GumroadError as e:
         _save(uid, synced=time.time(), error=str(e))

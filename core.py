@@ -209,11 +209,20 @@ def add_task(uid, title, status="in_progress", domain="PERSONAL"):
              (uid, title[:120], status, domain, t, t))
 
 
+ON_TASK_END = []      # called with (task id, status) when a job ends; the watch alerts listen here
+
+
 def set_task(tid, status=None, detail=None):
     if status is not None:
         x("UPDATE tasks SET status=?, updated=? WHERE id=?", (status, time.time(), tid))
     if detail is not None:
         x("UPDATE tasks SET detail=?, updated=? WHERE id=?", (detail[:200], time.time(), tid))
+    if status in ("completed", "failed"):
+        for fn in ON_TASK_END:
+            try:
+                fn(tid, status)
+            except Exception:
+                pass
 
 
 def today():
