@@ -1,5 +1,6 @@
 """Trillion: a local agent OS for one PC and one family. Run with Start-Trillion.bat."""
 import io, json, os, re, time, threading, datetime, zipfile
+from urllib.parse import urlparse as urlparse_
 
 import httpx
 from fastapi import FastAPI, Request, Response, HTTPException, Depends, Body
@@ -52,6 +53,7 @@ attach.init()
 import gumroad
 import watch
 import siteread
+import siteclone
 gumroad.init()
 routines.init()
 # 0.7.28: Bible study belongs to Lewellyn's login. His morning and evening routines read the day's verse aloud, a different
@@ -990,6 +992,28 @@ def run_agent(user, text, files=None):
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="failed" if "error" in res else "completed", detail=reply[:200])
         return {"reply": reply, "task_id": tid, "provider": "FreeVideo", "show": "" if "error" in res else "videos"}
+    clone_req = siteclone.request(text) if not files else None
+    if clone_req and not asking:
+        try:
+            if clone_req["mode"] == "copy" and not clone_req["permission"] and not siteclone.is_own(user, clone_req["url"]):
+                dom = siteread.host_key(urlparse_(siteread.normalise_url(clone_req["url"])).hostname)
+                reply, ok_ = (f"{dom} is not one of your sites, so I will not make an exact copy of it: its words, pictures and "
+                              "logos belong to its owner. Two ways forward: if the owner gave you permission, say \"clone "
+                              f"{dom}, I have permission\". Or I can build your own site in its layout and style, with your "
+                              f"words: say \"rebuild the layout of {dom} for <your business name>\" and tell me what the business does."), False
+            else:
+                brief = {"brand": clone_req["brand"], "about": clone_req["about"]}
+                j = siteclone.start(user, clone_req["mode"], clone_req["url"], brief,
+                                    clone_req["max_pages"] or (siteclone.DEFAULT_COPY_PAGES if clone_req["mode"] == "copy" else 4),
+                                    clone_req["permission"])
+                reply, ok_ = siteclone.started_reply(j), True
+        except siteread.SiteError as e:
+            reply, ok_ = str(e), False
+        finally:
+            BUSY[uid] = False
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="completed" if ok_ else "failed", detail=reply[:200])
+        return {"reply": reply, "task_id": tid, "provider": "built-in", "show": "sites" if ok_ else ""}
     site_req = siteread.request(text) if not files else None
     if site_req and not asking:
         try:
@@ -1297,6 +1321,54 @@ def store_create(p: dict = Body(...), user=Depends(store_user)):
                                                  currency=cur or None, summary=p.get("summary")))
     core.log(user["id"], f"Gumroad: created {r['product']['name']}" + (" and put it on sale" if r["published"] else " as a draft"), "done")
     return {"message": created_sentence(r), "result": r, "store": gumroad.overview(user)}
+
+
+@app.get("/api/clones")
+def clones_list(user=Depends(auth)):
+    return {"jobs": siteclone.jobs(user), "own": sorted(siteclone.own_domains(user)), "brand": core.settings(user).get("brand") or "",
+            "gemini": bool(core.get_secret(user["id"], "gemini"))}
+
+
+@app.post("/api/clones")
+def clones_start(p: dict = Body(...), user=Depends(auth)):
+    try:
+        return siteclone.start(user, p.get("mode") or "copy", p.get("url"),
+                               {"brand": p.get("brand"), "about": p.get("about"), "contact": p.get("contact")},
+                               p.get("max_pages") or (siteclone.DEFAULT_COPY_PAGES if p.get("mode") != "rebuild" else 4),
+                               bool(p.get("permission")), bool(p.get("my_colour")), bool(p.get("ai_pictures")))
+    except siteread.SiteError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/clones/{jid}")
+def clones_one(jid: int, user=Depends(auth)):
+    j = siteclone.job(user, jid)
+    if not j:
+        raise HTTPException(404, "Not found")
+    return j
+
+
+@app.post("/api/clones/{jid}/stop")
+def clones_stop(jid: int, user=Depends(auth)):
+    return {"ok": siteclone.stop(user, jid)}
+
+
+@app.delete("/api/clones/{jid}")
+def clones_forget(jid: int, user=Depends(auth)):
+    siteclone.forget(user, jid)
+    return {"ok": True}
+
+
+@app.get("/clone/{token}/{path:path}")
+def clone_preview(token: str, path: str = ""):
+    """A private preview link for one clone. The page runs walled off (sandboxed): it cannot see Trillion,
+    its sign-in or any other page, so a copied site's own scripts can do no harm here."""
+    p = siteclone.preview_file(token, path)
+    if not p:
+        raise HTTPException(404, "Not found")
+    return FileResponse(p, headers={"Content-Security-Policy": "sandbox allow-scripts allow-forms allow-popups",
+                                    "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer",
+                                    "Cache-Control": "no-store"})
 
 
 @app.get("/api/sites")

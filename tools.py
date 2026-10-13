@@ -39,6 +39,10 @@ SPECS = [
        "it: outputs can include pptx (presentation), docx (report document) and xlsx (spreadsheet of pages). focus is what the "
        "user wants to learn or the purpose of the files. Runs in the background; tell the user it has started.",
        {"url": S, "outputs": {"type": "array", "items": S}, "focus": S, "max_pages": {"type": "integer"}}, ["url"]),
+    fn("clone_website", "Clone a website into website files and folders. mode copy = a full working copy (only the user's own "
+       "site, or one whose owner gave permission: set permission true only if the user said so). mode rebuild = a new site for "
+       "the user's own business in the layout and style of url, with new words; brand is the business name and about what it does.",
+       {"url": S, "mode": S, "brand": S, "about": S, "permission": {"type": "boolean"}, "max_pages": {"type": "integer"}}, ["url", "mode"]),
     fn("check_website", "Check whether a website is up and how fast it answers.", {"url": S}),
     fn("system_status", "Get the PC's current processor, memory, disk and graphics card readings.", {}),
     fn("use_skill", "Load the full instructions of one of the user's installed skills. Call this before doing "
@@ -153,6 +157,7 @@ def describe(name, a):
         "phone_type": "Typing on the phone", "phone_press": f"Pressing {g('key')}", "phone_swipe": f"Swiping {g('direction')}",
         "phone_shell": f"Run on the phone: {g('command')}",
         "phone_locate": "Locating the phone", "phone_ring": "Ringing the phone",
+        "clone_website": f"{'Copying' if g('mode') == 'copy' else 'Rebuilding the style of'} {g('url')}",
         "read_website": f"Reading the website {g('url')}",
         "watch_alert": f"Alert on the watch: {g('text')[:80]}",
         "phone_screenshot": "Taking a phone screenshot",
@@ -679,6 +684,16 @@ def t_phone_locate(user):
 def t_phone_ring(user):
     import phone
     return phone.ring(user)
+
+
+def t_clone_website(user, url, mode="copy", brand="", about="", permission=False, max_pages=None):
+    import siteclone, siteread
+    try:
+        j = siteclone.start(user, mode, url, {"brand": brand, "about": about},
+                            max_pages or (siteclone.DEFAULT_COPY_PAGES if mode == "copy" else 4), bool(permission))
+    except siteread.SiteError as e:
+        return {"error": str(e)}
+    return {"started": True, "note": siteclone.started_reply(j)}
 
 
 def t_read_website(user, url, outputs=None, focus="", max_pages=40):

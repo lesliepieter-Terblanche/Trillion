@@ -344,6 +344,10 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
 .srstats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.srstats div{border:1px solid var(--edge);padding:12px;display:flex;flex-direction:column;gap:4px}
 .srstats b{font-size:28px}.srstats span{color:var(--dim);font-size:12px}.srstats .g{color:var(--green)}.srstats .y{color:#fbbf24}.srstats .r{color:var(--red)}
 @media(max-width:640px){.srstats{grid-template-columns:repeat(2,1fr)}}
+.cl-modes{display:grid;grid-template-columns:1fr 1fr;gap:10px}.cl-modes button{display:flex;flex-direction:column;gap:4px;text-align:left;background:none;border:1px solid var(--edge2);color:inherit;padding:14px;cursor:pointer;font:inherit}
+.cl-modes button.on{border-color:var(--a);box-shadow:inset 0 0 0 1px var(--a)}.cl-modes span{color:var(--dim);font-size:13px}
+.clframe{border:1px solid var(--edge2);height:520px;overflow:hidden;background:#fff}.clframe iframe{width:100%;height:100%;border:0}
+@media(max-width:640px){.cl-modes{grid-template-columns:1fr}.clframe{height:420px}}
 </style>
 </head>
 <body>
@@ -608,8 +612,33 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="sr-go">READ THE SITE</button></div>
     <div class="msg" id="sr-msg"></div>
   </div>
+  <div class="panel"><b>Clone a website</b>
+    <div class="cl-modes"><button type="button" data-clm="copy" class="on"><b>Copy a site</b><span>A full working copy: every page, picture and style, as files and folders</span></button>
+      <button type="button" data-clm="rebuild"><b>Rebuild in a style</b><span>A new site for your business in the layout and look of another one</span></button></div>
+    <label class="field"><span id="cl-urllab">Website to copy</span><input id="cl-url" placeholder="tackletrail.co.za" autocomplete="off" inputmode="url"></label>
+    <div id="cl-copy">
+      <div class="muted" style="font-size:13px" id="cl-own"></div>
+      <label class="tickrow"><input type="checkbox" id="cl-perm"><span><b>I have the owner's permission to copy this site</b><br><span class="muted">Needed for any site that is not one of yours. Its words, pictures and logos belong to its owner.</span></span></label>
+      <label class="field"><span>Pages to copy, at most</span><select id="cl-pages" style="max-width:160px"><option>20</option><option selected>60</option><option>150</option><option>300</option></select></label>
+    </div>
+    <div id="cl-rebuild" hidden>
+      <div class="muted" style="font-size:13px">I measure its layout, colours, fonts and the order of its sections, then build new pages from my own templates with your name and words written for your business. Nothing of the other site's text, pictures, logos or code goes in.</div>
+      <label class="field"><span>Your business name</span><input id="cl-brand" placeholder="TackleTrail"></label>
+      <label class="field"><span>What your business does</span><textarea id="cl-about" rows="2" placeholder="Guided fishing and hiking trips on the KwaZulu-Natal coast, for families and beginners"></textarea></label>
+      <label class="field"><span>Contact details for the site (optional)</span><input id="cl-contact" placeholder="082 123 4567; info@tackletrail.co.za; Durban"></label>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end">
+        <label class="field"><span>Pages</span><select id="cl-rpages" style="max-width:120px"><option>1</option><option>2</option><option>3</option><option selected>4</option><option>5</option><option>6</option></select></label>
+        <label class="tickrow"><input type="checkbox" id="cl-mycol"><span><b>Use my brand colour</b><br><span class="muted">Instead of their button colour</span></span></label>
+        <label class="tickrow"><input type="checkbox" id="cl-ai"><span><b>Make photos with AI</b><br><span class="muted" id="cl-aihint">Uses your Gemini key. Otherwise neat placeholders to swap for your own photos.</span></span></label>
+      </div>
+    </div>
+    <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="cl-go">COPY THE SITE</button></div>
+    <div class="msg" id="cl-msg"></div>
+  </div>
+  <div id="cl-open"></div>
   <div id="sr-open"></div>
   <div class="panel"><b>Earlier readings</b><div id="sr-list" style="display:flex;flex-direction:column;gap:10px"></div></div>
+  <div class="panel"><b>Earlier clones</b><div id="cl-list" style="display:flex;flex-direction:column;gap:10px"></div></div>
 </div>
 
 <div class="view" id="v-store">
@@ -797,7 +826,7 @@ const api=async(u,o={})=>{if(o.json!==undefined){o.method=o.method||'POST';o.hea
 const hm=t=>new Date(t*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false});
 let hold=0,S=null,sending=false,speakNext=false,settingsLoaded=false,cwd='';
 
-const LOADERS={sites:()=>loadSites(),bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);},memory:()=>loadNotes(''),videos:()=>loadVideos(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
+const LOADERS={sites:()=>{loadSites();loadClones();},bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);},memory:()=>loadNotes(''),videos:()=>loadVideos(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
 let VIEW='control';
 function go(v){
   VIEW=v;try{if(v!=='settings'&&mtTimer)micTestStop();}catch(e){}
@@ -1765,6 +1794,7 @@ const CMDS=[
   ['Phone',[['ring my phone','Rings at full volume, even on silent'],['where is my phone','Last known position with a map link'],['how is my phone','Battery, storage, Wi-Fi'],['unlock my phone','Needs an unlock code saved on the Phone page'],['put my phone to sleep','Screen off and locked'],['take a screenshot of my phone',''],['open maps on my phone','Any installed app'],['what is on my phone screen','Needs Full phone control'],['tap Chats on my phone','Needs Full phone control'],['press back on my phone','Needs Full phone control']]],
   ['Briefings',[['good morning','Runs your morning routine'],['what is the weather',''],['give me the news',''],['how are the markets','Rand, gold, shares, crypto']]],
   ['Websites',[['read the website tackletrail.co.za and make a presentation','Opens it in a browser on the PC, reads every page, analyses it'],['analyse truehome.co.za and write a report on how they price their listings','Say what to look for and the report answers it'],['open the browser and go through vapeessence.co.za, make a spreadsheet','Shows the browser on the PC screen while it reads'],['read the website gumroad.com, 80 pages','Reads up to 150 pages; 40 if you do not say']]],
+  ['Cloning websites',[['clone tackletrail.co.za','A full working copy of your own site: files, folders and a zip to upload'],['rebuild the layout of example.com for TackleTrail, guided fishing trips in Durban','A new site in that style with your own name and words'],['make me a site like example.com for VapeEssence','Same as rebuild']]],
   ['Pictures',[['create a picture of a modern family home at sunset','Needs your Google Gemini key under Settings, Keys'],['make a wide banner for TrueHome with a city skyline','']]],
   ['Videos',[['create a 20 second cinematic video about our newest listings','Takes a few minutes'],['open the video','Shows the newest one']]],
   ['Files and documents',[['create a folder called Invoices in my Documents',''],['create a Word document called Welcome with a short welcome note',''],['create an Excel sheet of my monthly budget',''],['find all pdf files in my Downloads',''],['open my Documents folder','']]],
@@ -1835,6 +1865,43 @@ $('sr-go').onclick=async()=>{const m=$('sr-msg');const outs=[...document.querySe
   if(!outs.length){m.className='msg bad';m.textContent='Tick at least one thing to make.';return;}
   try{const j=await (await api('/api/sites',{json:{url:$('sr-url').value.trim(),focus:$('sr-focus').value.trim(),outputs:outs,max_pages:+$('sr-pages').value,show:$('sr-show').checked}})).json();
     m.className='msg ok';m.textContent='Started. Reading '+j.domain+'.';srOpen=j.id;$('sr-url').value='';$('sr-focus').value='';loadSites(true);}catch(e){m.className='msg bad';m.textContent=e.message;}};
+
+// ---------- cloning ----------
+let CL=null,clOpen=null,clT=null,clMode='copy';
+function clSetMode(m){clMode=m;document.querySelectorAll('[data-clm]').forEach(b=>b.classList.toggle('on',b.dataset.clm===m));
+  $('cl-copy').hidden=m!=='copy';$('cl-rebuild').hidden=m!=='rebuild';$('cl-urllab').textContent=m==='copy'?'Website to copy':'Website whose style you like';
+  $('cl-go').textContent=m==='copy'?'COPY THE SITE':'BUILD MY SITE';}
+document.querySelectorAll('[data-clm]').forEach(b=>b.onclick=()=>clSetMode(b.dataset.clm));
+const kb=n=>n>1048576?(n/1048576).toFixed(1)+' MB':Math.max(1,Math.round(n/1024))+' KB';
+async function loadClones(keep){try{CL=await (await api('/api/clones')).json();}catch(e){return;}
+  $('cl-own').textContent=CL.own.length?'Your sites (no permission needed): '+CL.own.join(', '):'';
+  if(!$('cl-brand').value&&CL.brand)$('cl-brand').placeholder=CL.brand;
+  if(!CL.gemini){$('cl-ai').disabled=true;$('cl-aihint').textContent='Needs a Google Gemini key under Settings, Keys. Without it you get neat placeholders.';}
+  const run=CL.jobs.find(j=>j.status==='running');
+  if(!keep&&!clOpen&&run)clOpen=run.id;
+  $('cl-list').innerHTML=CL.jobs.length?CL.jobs.map(j=>`<button type="button" class="srrow${j.id===clOpen?' on':''}" data-cl="${j.id}"><b>${esc(j.mode==='copy'?'Copy of '+j.domain:(j.brief.brand||'New site')+' in the style of '+j.domain)}</b><span class="muted">${new Date(j.created*1000).toLocaleDateString()} ${hm(j.created)} · ${j.pages} pages</span><span class="pill ${j.status==='done'?'on':(j.status==='failed'?'warn':'')}">${j.status==='running'?'working':j.status}</span></button>`).join(''):'<div class="muted">Nothing cloned yet.</div>';
+  $('cl-list').querySelectorAll('[data-cl]').forEach(b=>b.onclick=()=>{clOpen=+b.dataset.cl;loadClones(true);});
+  if(clOpen)clShow(clOpen);else $('cl-open').innerHTML='';
+  clearTimeout(clT);if(run&&$('v-sites').classList.contains('on'))clT=setTimeout(()=>loadClones(true),3000);}
+async function clShow(id){let j;try{j=await (await api('/api/clones/'+id)).json();}catch(e){$('cl-open').innerHTML='';return;}
+  const R=j.result||{};const title=j.mode==='copy'?'Copy of '+j.domain:(j.brief.brand||'New site')+' in the style of '+j.domain;
+  let h=`<div class="panel"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><b style="font-size:18px">${esc(title)}</b><span class="btns">${j.status==='running'?'<button class="btn" id="cl-stop">STOP</button>':'<button class="btn" id="cl-del">REMOVE FROM LIST</button>'}</span></div>`;
+  if(j.status==='running')h+=`<div class="msg ok" style="font-size:15px">${esc(j.detail||'Working')}</div><div class="muted" style="font-size:13px">You can leave this page. I will say when it is done.</div>`;
+  else if(!j.preview)h+=`<div class="msg bad">${esc(j.detail)}</div>`;
+  else{h+=`<div class="btns" style="justify-content:flex-start"><a class="btn pri" style="display:inline-flex;align-items:center;text-decoration:none" href="${j.preview}" target="_blank" rel="noopener">OPEN PREVIEW</a><a class="btn" style="display:inline-flex;align-items:center;text-decoration:none" href="/api/download?path=${encodeURIComponent(R.zip)}">DOWNLOAD ZIP</a></div>
+    <div class="srstats"><div><b>${R.pages}</b><span>pages</span></div><div><b>${R.files}</b><span>files</span></div><div><b>${kb(R.bytes||0)}</b><span>size</span></div><div><b>${j.mode==='copy'?(R.snapshots||0):(R.ai_pictures||0)}</b><span>${j.mode==='copy'?'saved as they looked':'AI photos'}</span></div></div>
+    <div class="muted" style="font-size:13px">Saved in ${esc(j.folder)}. The README there explains how to open it and put it online.</div>
+    ${j.mode==='rebuild'?`<div class="msg" style="font-size:14px">Before you publish: read every page, swap in your own photos (site\\images, same file names), and fill in the blanks for quotes and prices.</div>`:''}
+    <div class="clframe"><iframe src="${j.preview}" sandbox="allow-scripts allow-forms" title="Preview" loading="lazy"></iframe></div>
+    <div class="muted" style="font-size:13px">${(R.list||[]).slice(0,40).map(x=>`<a href="${j.preview}${esc(x[1])}" target="_blank" rel="noopener" style="margin-right:12px">${esc(j.mode==='copy'?(x[1].replace(/index\.html$/,'')||'/'):x[0])}</a>`).join('')}</div>`;}
+  h+='</div>';$('cl-open').innerHTML=h;
+  if($('cl-stop'))$('cl-stop').onclick=async()=>{await api('/api/clones/'+id+'/stop',{json:{}});loadClones(true);};
+  if($('cl-del'))$('cl-del').onclick=async()=>{await api('/api/clones/'+id,{method:'DELETE'});clOpen=null;loadClones();};}
+$('cl-go').onclick=async()=>{const m=$('cl-msg');const body={mode:clMode,url:$('cl-url').value.trim()};
+  if(clMode==='copy'){body.permission=$('cl-perm').checked;body.max_pages=+$('cl-pages').value;}
+  else Object.assign(body,{brand:$('cl-brand').value.trim()||(CL&&CL.brand)||'',about:$('cl-about').value.trim(),contact:$('cl-contact').value.trim(),max_pages:+$('cl-rpages').value,my_colour:$('cl-mycol').checked,ai_pictures:$('cl-ai').checked});
+  try{const j=await (await api('/api/clones',{json:body})).json();m.className='msg ok';m.textContent=clMode==='copy'?'Started. Copying '+j.domain+'.':'Started. Measuring '+j.domain+'.';
+    clOpen=j.id;$('cl-url').value='';loadClones(true);}catch(e){m.className='msg bad';m.textContent=e.message;}};
 </script>
 </body>
 </html>
