@@ -511,6 +511,20 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     </div>
     <div class="panel"><b>Link</b><div id="phonebox" style="display:flex;flex-direction:column;gap:14px"><div class="muted">Looking for your phone...</div></div></div>
   </div>
+  <div class="panel" id="mt-panel"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><b>Meeting mode</b><span class="pill" id="mt-pill">off</span></div>
+    <div class="muted" style="font-size:13px">While you are in a meeting, I answer your WhatsApps on your phone with a short "in a meeting, will get back to you", decline calls with a message, turn voice notes into words, and give you a summary afterwards. Groups are never answered. You can also just say "I'm in a meeting until 11".</div>
+    <div class="msg" id="mt-state"></div>
+    <div class="btns" style="justify-content:flex-start" id="mt-btns"></div>
+    <details><summary class="muted" style="cursor:pointer;font-size:14px">Meeting mode settings</summary>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+      <label class="field"><span>What to tell people you are doing</span><input id="mt-reason" placeholder="in a meeting"></label>
+      <label class="field"><span>Tone</span><select id="mt-tone" style="max-width:200px"><option value="friendly">Friendly</option><option value="formal">Professional</option></select></label>
+      <label class="tickrow"><input type="checkbox" id="mt-calls"><span><b>Decline calls and send a message</b></span></label>
+      <label class="tickrow"><input type="checkbox" id="mt-voice"><span><b>Listen to voice notes</b><br><span class="muted">So the reply and the summary know what was said.</span></span></label>
+      <label class="field"><span>Let these people through (no auto-reply, they tap your watch instead). Names, separated by commas.</span><textarea id="mt-vip" rows="2" placeholder="Brandon, Lewellyn, My boss"></textarea></label>
+      <div><button class="btn pri" id="mt-save">SAVE</button> <span class="msg" id="mt-smsg"></span></div></div></details>
+    <details id="mt-lastbox" hidden><summary class="muted" style="cursor:pointer;font-size:14px">Last meeting summary</summary><div id="mt-last" style="white-space:pre-wrap;font-size:14px;margin-top:8px"></div></details>
+  </div>
   <div class="panel" id="wt-panel"><b>Watch alerts</b>
     <div class="muted" style="font-size:13px">She posts a short notification on your phone and your watch shows it, the same way it shows WhatsApps. Nothing is installed on the watch. Alerts go to your own phone only.</div>
     <div class="msg" id="wt-state"></div>
@@ -1632,7 +1646,7 @@ async function loadPhonePage(){
   if(!S)return;fillPhoneSettings();const full=!!S.user.settings.phone_full_control;
   $('pp-cmds').innerHTML=PPC.filter(c=>!c[2]||full).map((c,i)=>`<button type="button" data-pc="${esc(c[1])}">${esc(c[0])}</button>`).join('')+(full?'':'<span class="muted" style="font-size:13px;align-self:center">Tick Full phone control below for Home, Back, volume and reading the screen.</span>');
   $('pp-cmds').querySelectorAll('[data-pc]').forEach(b=>b.onclick=()=>runHere(b.dataset.pc,$('pp-cmdmsg')));
-  ppUse();render();loadPhone();ulLoad();loadWA(true);loadContacts($('pp-cmsg'));wtLoad();
+  ppUse();render();loadPhone();ulLoad();loadWA(true);loadContacts($('pp-cmsg'));wtLoad();mtLoad();
 }
 async function wtLoad(){try{wtDraw(await (await api('/api/watch')).json());}catch(e){}}
 function wtDraw(w){$('wt-on').checked=w.on;$('wt-quiet').checked=w.quiet;$('wt-from').value=w.from;$('wt-to').value=w.to;
@@ -1831,6 +1845,7 @@ async function loadProjects(){
 const CMDS=[
   ['Bible study',[['verse of the day','The morning verse, or the evening verse after 5 pm'],['read John 3:16',''],['read Psalms 23',''],['search the bible for living water',''],['explain Romans 8:28','She answers from the passage and its context'],['what does the bible say about forgiveness','']]],
   ['Gumroad store',[['how are my gumroad sales','Today and the last 30 days'],['how much did I sell this week',''],['how much did I make this month',''],['unpublish My Ebook on gumroad','Hides a product from buyers'],['publish My Ebook on gumroad',''],['make a 20% discount code for My Ebook','Add "called SPRING20" to choose the name'],['post a product called My Ebook for $19','Attach the file with + first. Say "create" instead of "post" to save a draft']]],
+  ['Meeting mode',[['I\'m in a meeting until 11','I answer your WhatsApps and decline calls with a message'],['I\'m in a meeting for 2 hours',''],['I\'m out of the meeting','Ends it and gives you the summary']]],
   ['WhatsApp',[['read my whatsapps','Reads out new incoming messages'],['send a whatsapp to Llewellyn saying I will be there at 5','Goes straight out to a saved contact'],['send this to Llewellyn on whatsapp','Attach a photo or file with the + button first'],['send a test whatsapp to Llewellyn Terblanche',''],['send me a test whatsapp','Needs your own number on the Phone page'],['open my whatsapp','']]],
   ['Phone',[['ring my phone','Rings at full volume, even on silent'],['where is my phone','Last known position with a map link'],['how is my phone','Battery, storage, Wi-Fi'],['unlock my phone','Needs an unlock code saved on the Phone page'],['put my phone to sleep','Screen off and locked'],['take a screenshot of my phone',''],['open maps on my phone','Any installed app'],['what is on my phone screen','Needs Full phone control'],['tap Chats on my phone','Needs Full phone control'],['press back on my phone','Needs Full phone control']]],
   ['Briefings',[['good morning','Runs your morning routine'],['what is the weather',''],['give me the news',''],['how are the markets','Rand, gold, shares, crypto']]],
@@ -2043,6 +2058,20 @@ function bkPoll(){clearTimeout(bkT);const j=BK&&BK.job;const m=$('bk-msg');if(!j
   else if(j.detail&&!m.textContent){m.className='msg '+(j.error?'bad':'ok');m.textContent=j.detail;}}
 $('bk-go').onclick=async()=>{const m=$('bk-msg');try{await api('/api/backup',{json:{target:$('bk-target').value.trim()}});m.className='msg ok';m.textContent='Backing up...';setTimeout(loadBackup,1000);}catch(e){m.className='msg bad';m.textContent=e.message;}};
 $('bk-weekly').onchange=async()=>{try{await api('/api/backup/settings',{json:{weekly:$('bk-weekly').checked,target:$('bk-target').value.trim()}});}catch(e){}};
+
+// ---------- meeting mode ----------
+async function mtLoad(){try{mtDraw(await (await api('/api/meeting')).json());}catch(e){}}
+function mtDraw(m){$('mt-pill').textContent=m.on?'on':'off';$('mt-pill').className='pill'+(m.on?' on':'');
+  const st=$('mt-state');
+  if(!m.linked){st.className='msg bad';st.textContent='Link your phone first (Link panel on this page).';}
+  else if(m.on){st.className='msg ok';st.textContent=(m.until?'On until '+hm(m.until):'On until you switch it off')+'. '+m.so_far+' thing'+(m.so_far===1?'':'s')+' came in so far.'+(m.auto_unlock?'':' Your phone must be unlocked for replies: save the unlock code below and tick Unlock by herself.');}
+  else{st.className='msg muted';st.textContent='Off.';}
+  const b=(k,l,pri)=>`<button class="btn${pri?' pri':''}" data-mt="${k}">${l}</button>`;
+  $('mt-btns').innerHTML=m.on?b('end','END MEETING',1):b('30m','30 MIN')+b('1h','1 HOUR',1)+b('2h','2 HOURS')+b('open','UNTIL I SAY');
+  $('mt-btns').querySelectorAll('[data-mt]').forEach(x=>x.onclick=async()=>{const k=x.dataset.mt;try{mtDraw(await (await api('/api/meeting',{json:k==='end'?{on:false}:{on:true,for:k}})).json());}catch(e){st.className='msg bad';st.textContent=e.message;}});
+  const p=m.prefs;$('mt-reason').value=p.reason;$('mt-tone').value=p.tone;$('mt-calls').checked=p.calls;$('mt-voice').checked=p.voice;$('mt-vip').value=p.vip.join(', ');
+  $('mt-lastbox').hidden=!m.last;if(m.last)$('mt-last').textContent=m.last.summary;}
+$('mt-save').onclick=async()=>{const s_=$('mt-smsg');try{mtDraw(await (await api('/api/meeting/prefs',{json:{reason:$('mt-reason').value.trim(),tone:$('mt-tone').value,calls:$('mt-calls').checked,voice:$('mt-voice').checked,vip:$('mt-vip').value}})).json());s_.className='msg ok';s_.textContent='Saved.';}catch(e){s_.className='msg bad';s_.textContent=e.message;}};
 </script>
 </body>
 </html>

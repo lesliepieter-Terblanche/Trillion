@@ -57,6 +57,7 @@ import siteclone
 import apps
 import storage
 import backup
+import meeting
 gumroad.init()
 routines.init()
 # 0.7.28: Bible study belongs to Lewellyn's login. His morning and evening routines read the day's verse aloud, a different
@@ -858,6 +859,25 @@ def run_agent(user, text, files=None):
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="completed", detail=reply)
         return {"reply": reply, "task_id": tid, "provider": "built-in"}
+    mt = meeting.parse(text)
+    if mt:
+        if mt[0] == "on":
+            meeting.start(user, until=mt[1])
+            st_ = core.settings(user)
+            reply = (f"Meeting mode is on until {meeting.hhmm(mt[1])}. I will answer your WhatsApps"
+                     + (", decline calls with a message" if meeting.prefs(user)["calls"] else "")
+                     + " and give you a summary when it ends. Say \"I'm out of the meeting\" to stop sooner.")
+            if not st_.get("phone_serial"):
+                reply = "Meeting mode is on, but no phone is linked, so I cannot answer WhatsApps. Link your phone on the Phone page."
+            elif not st_.get("phone_auto_unlock"):
+                reply += " Your phone must be unlocked for me to reply: save your unlock code on the Phone page and tick 'Unlock by herself'."
+        else:
+            summary = meeting.finish(user, quiet=True)
+            reply = "Meeting mode is off. " + (summary or "It was not on.")
+        BUSY[uid] = False
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="completed", detail=reply[:200])
+        return {"reply": reply, "task_id": tid, "provider": "built-in"}
     tm = THEME_RE.search(text) if len(text) < 80 else None
     if tm:
         name = {"dark": "night", "light": "day"}.get((tm.group(1) or tm.group(2)).lower(), (tm.group(1) or tm.group(2)).lower())
@@ -1604,6 +1624,27 @@ def sites_stop(jid: int, user=Depends(auth)):
 def sites_forget(jid: int, user=Depends(auth)):
     siteread.forget(user, jid)
     return {"ok": True}
+
+
+@app.get("/api/meeting")
+def meeting_get(user=Depends(auth)):
+    return meeting.state(user)
+
+
+@app.post("/api/meeting")
+def meeting_set(p: dict = Body(...), user=Depends(auth)):
+    if p.get("on"):
+        secs = meeting.DURATIONS.get(str(p.get("for") or "1h"), 3600)
+        meeting.start(user, seconds=secs)
+    else:
+        meeting.finish(user, quiet=True)
+    return meeting.state(user)
+
+
+@app.post("/api/meeting/prefs")
+def meeting_prefs(p: dict = Body(...), user=Depends(auth)):
+    meeting.save_prefs(user, p)
+    return meeting.state(user)
 
 
 @app.get("/api/watch")
@@ -2531,7 +2572,7 @@ def wa_poll(user):
     except Exception as e:
         WA_STATE[uid] = {"ok": False, "t": time.time(), "error": str(e)[:160]}
         return 0
-    fresh = 0
+    fresh, new_rows = 0, []
     for it in items:
         d = hashlib.sha1(f"{uid}|{it['chat']}|{it['sender']}|{it['text']}|{it['when'] or it['key']}".encode()).hexdigest()
         if core.q("SELECT 1 FROM wa_inbox WHERE dedupe=?", (d,), one=True):
@@ -2541,7 +2582,28 @@ def wa_poll(user):
         fresh += 1
         who = it["sender"] + (f" in {it['chat']}" if it["group"] else "")
         core.log(uid, f"WhatsApp from {who}: {it['text'][:80]}", "voice")
+        new_rows.append({"sender": it["sender"], "chat": it["chat"], "text": it["text"], "kind": it["kind"], "is_group": it["group"], "dedupe": d})
+    if new_rows and meeting.active(user):
+        meeting_answer(user, new_rows)
     return fresh
+
+
+def meeting_answer(user, rows):
+    """Meeting mode: answer what just came in, on the phone, without the user."""
+    def send(chat, text):          # meeting mode is the user's own standing say-so: no approval step
+        who, number = phone.resolve_contact(user, chat)
+        res = tools.t_phone_send_whatsapp(user, contact=number, message=text, _name=who)
+        core.log(user["id"], f"Meeting mode replied to {who}: {text[:100]}", "done")
+        return res.get("status") == "send_pressed"
+    BUSY[user["id"]] = True
+    try:
+        for r in rows:
+            did = meeting.handle(user, r, send, decline=lambda: meeting.phone_decline(user),
+                                 voice_text=lambda: meeting.phone_voice_text(user, transcribe))
+            if did and "answered" in did:
+                core.x("UPDATE wa_inbox SET replied=? WHERE dedupe=?", ("(meeting mode) " + did, r["dedupe"]))
+    finally:
+        BUSY[user["id"]] = False
 
 
 def wa_rows(uid, only_new=False, limit=60):
@@ -3064,12 +3126,18 @@ def background():
 
 def wa_background():
     """Every 20 seconds, for each login with a linked phone and the inbox switched on."""
+    polled = {}
     while True:
-        time.sleep(20)
+        time.sleep(4)
         try:
             for u in core.q("SELECT * FROM users"):
                 st = core.settings(u)
-                if st.get("phone_serial") and st.get("wa_inbox") and not BUSY.get(u["id"]):
+                in_meeting = bool(meeting.active(u))            # also ends a meeting whose time ran out
+                pace = 8 if in_meeting else 20                  # look more often in a meeting, so a ringing call is caught
+                if time.time() - polled.get(u["id"], 0) < pace:
+                    continue
+                if st.get("phone_serial") and (st.get("wa_inbox") or in_meeting) and not BUSY.get(u["id"]):
+                    polled[u["id"]] = time.time()
                     last = WA_STATE.get(u["id"]) or {}
                     if not last.get("ok", True) and time.time() - last.get("t", 0) < 90:
                         continue          # phone was unreachable a moment ago: do not hammer it
