@@ -370,6 +370,15 @@ PHONE_WORDS = re.compile(r"\b(phone|cell|mobile|what'?s ?(?:app|up)|contact|batt
 CLAIMS_PENDING = re.compile(r"\b(waiting for (?:your |my )?(?:ok|approval)|pending (?:your )?approval|"
                             r"(?:sent|queued|submitted|put) (?:it |this )?(?:up )?for (?:your )?approval|"
                             r"awaiting (?:your )?approval|approve it (?:on|in|from|via)|for your approval now)\b", re.I)
+# reverse-engineering an app on the phone - run the tool directly (the local brain tends to only talk about it)
+REA_PHONE_RE = re.compile(r"\b(?:reverse[-\s]?engineer|use rea on|run rea on|do rea on|rea on|decompile|analy[sz]e|look inside|"
+                          r"pull the apk of)\b\s+(?:the\s+)?(?P<app>.+?)(?:\s+app)?\s+(?:on|from)\s+(?:my|the|this)\s+phone\b", re.I)
+REA_TRAFFIC_RE = re.compile(r"\b(?:what\s+servers?\s+does|what\s+does|capture|monitor|sniff)\b\s+(?:the\s+)?(?P<app>.+?)"
+                            r"(?:\s+app)?\s+(?:connects?\s+to|talks?\s+to|sends?\s+to|network traffic|traffic)\b", re.I)
+REA_CONFIRM_RE = re.compile(r"^\s*(?:yes|yeah|yep|ok(?:ay)?|sure|go ahead|go for it|do it|proceed(?:\s+and\s+open\s+it)?|"
+                            r"continue|carry on|please do|lets do (?:it|this))\b", re.I)
+PREV_APP_RE = re.compile(r"(?:reverse[-\s]?engineer|apk (?:file )?of|\bopen\b|analy[sz]e)\s+(?:the\s+)?"
+                         r"(?P<app>[A-Za-z0-9][\w.&'-]+(?: [A-Za-z0-9][\w.&'-]*){0,3}?)\s+app\b", re.I)
 
 
 # ---------- the Gumroad store, asked about or managed in plain words ----------
@@ -1071,6 +1080,32 @@ def run_agent(user, text, files=None):
         core.set_task(tid, status="completed", detail=reply[:200])
         return {"reply": reply, "task_id": tid, "provider": "built-in", "show": "videos" if v else ""}
     asking = re.match(r"\s*(how|what|why|which|is|are|does|do|should|where|when|who)\b", text, re.I)   # a question, not an order
+    # reverse-engineer an app on the phone, or capture its traffic: run the tool directly (owner + linked phone)
+    if user["is_admin"] and core.settings(user).get("phone_serial") and not files:
+        rea_kind, rea_app = None, None
+        mt, ma = REA_TRAFFIC_RE.search(text), REA_PHONE_RE.search(text)
+        if mt:
+            rea_kind, rea_app = "traffic", mt.group("app")
+        elif ma:
+            rea_kind, rea_app = "app", ma.group("app")
+        elif REA_CONFIRM_RE.match(text) and len(text) < 40:
+            prev = core.q("SELECT content FROM messages WHERE user_id=? AND role='assistant' ORDER BY id DESC LIMIT 1", (uid,), one=True)
+            body = (prev["content"] if prev else "").lower()
+            pm = PREV_APP_RE.search(prev["content"] if prev else "")
+            if pm and ("reverse" in body or "apk" in body or "rea " in body or "reverse-engineer" in body):
+                rea_kind = "traffic" if ("traffic" in body or "connect to" in body or "servers" in body) else "app"
+                rea_app = pm.group("app")
+        if rea_app:
+            app_name = re.sub(r"\s+", " ", rea_app).strip(" .\"'").rstrip(".?!")[:60]
+            tool = "rea_phone_traffic" if rea_kind == "traffic" else "rea_phone_app"
+            try:
+                res = tools.execute(user, tool, {"app": app_name}, task_id=tid)
+            finally:
+                BUSY[uid] = False
+            reply = res.get("result") or res.get("error") or "Done."
+            core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+            core.set_task(tid, status="failed" if "error" in res else "completed", detail=reply[:200])
+            return {"reply": reply, "task_id": tid, "provider": "built-in"}
     if AICLIP_RE.search(text) and re.search(r"\b(create|make|generate|produce|render)\b", text, re.I) and not asking:
         try:
             res = tools.execute(user, "create_ai_clip", aiclip_request(text), task_id=tid)
