@@ -59,6 +59,7 @@ import storage
 import backup
 import meeting
 import nudge
+import voicecall
 gumroad.init()
 routines.init()
 # 0.7.28: Bible study belongs to Lewellyn's login. His morning and evening routines read the day's verse aloud, a different
@@ -860,6 +861,33 @@ def run_agent(user, text, files=None):
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="completed", detail=reply)
         return {"reply": reply, "task_id": tid, "provider": "built-in"}
+    cm = voicecall.parse(text)
+    if cm and not files:
+        vp = voicecall.prefs(user)
+        if cm.get("stop"):
+            for pl in voicecall.plans(user):
+                voicecall.delete_plan(user, pl["id"])
+            voicecall.save_prefs(user, {"on": False})
+            reply = "I will not call you any more. Urgent things still come as a notification and a ring. Switch calls on again on the Phone page."
+        elif not vp["target"]:
+            reply = "I cannot call you yet: set up calls on the Phone page first (install Linphone on your phone and choose it there)."
+        elif cm.get("now"):
+            BUSY[uid] = False
+            call_in_background(user, cm["topic"])
+            reply = "Calling you now on Linphone."
+        else:
+            voicecall.add_plan(user, cm["at"], cm["days"], cm["topic"], cm["once"])
+            if not vp["on"]:
+                voicecall.save_prefs(user, {"on": True})
+            when = {"daily": "every day", "weekdays": "every weekday", "weekends": "on weekends"}.get(cm["days"]) or \
+                "on " + ", ".join(["Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays", "Sundays"][int(d)] for d in cm["days"])
+            reply = (f"Done. I will call you {'tomorrow' if cm['once'] and cm['once'] != datetime.date.today().isoformat() else ('today' if cm['once'] else when)} "
+                     f"at {cm['at']}" + (" with a breakdown of your projects and anything waiting on you." if cm["topic"] == "projects"
+                                         else f" about {cm['topic']}.") + " Not during meeting mode.")
+        BUSY[uid] = False
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="completed", detail=reply[:200])
+        return {"reply": reply, "task_id": tid, "provider": "built-in"}
     if nudge.ASK.search(text) and len(text) < 90:
         reply = nudge.answer(user, SITES)
         BUSY[uid] = False
@@ -1633,6 +1661,99 @@ def sites_forget(jid: int, user=Depends(auth)):
     return {"ok": True}
 
 
+def project_briefing(user):
+    """What is going on, per business, as a short spoken update."""
+    uid, ds = user["id"], core.day_start()
+    yday = ds - 86400
+    facts = []
+    st = core.settings(user)
+    brand = st.get("brand") or user["name"]
+    done = core.q("SELECT title FROM tasks WHERE user_id=? AND status='completed' AND created>=? ORDER BY id DESC LIMIT 6", (uid, yday))
+    failed = core.q("SELECT title FROM tasks WHERE user_id=? AND status='failed' AND created>=? ORDER BY id DESC LIMIT 4", (uid, yday))
+    running = core.q("SELECT title FROM tasks WHERE user_id=? AND status='in_progress' ORDER BY id DESC LIMIT 4", (uid,))
+    facts.append(f"Business: {brand}" + (f", website {st['site']}" if st.get("site") else ""))
+    if st.get("site") and SITES.get(st["site"]):
+        facts.append("Website is " + ("up" if SITES[st["site"]].get("ok") else "DOWN"))
+    if done:
+        facts.append("Done since yesterday: " + "; ".join(r["title"][:60] for r in done))
+    if failed:
+        facts.append("Did not work: " + "; ".join(r["title"][:60] for r in failed))
+    if running:
+        facts.append("Still running: " + "; ".join(r["title"][:60] for r in running))
+    try:
+        if store_allowed(user) and gumroad.token(user):
+            facts.append("Store: " + gumroad.say_sales(user, "days30")[:200])
+    except Exception:
+        pass
+    for v in core.q("SELECT title FROM videos WHERE user_id=? AND created>=? LIMIT 3", (uid, yday)) if _has_table("videos") else []:
+        facts.append(f"New video: {v['title'][:60]}")
+    if user["is_admin"]:
+        for u in core.q("SELECT * FROM users WHERE id!=?", (uid,)):
+            s2 = core.settings(u)
+            n = core.q("SELECT COUNT(*) c FROM tasks WHERE user_id=? AND created>=?", (u["id"], yday), one=True)["c"]
+            facts.append(f"{s2.get('brand') or u['name']} ({u['name']}): {n} job{'s' if n != 1 else ''} since yesterday"
+                         + ("" if not s2.get("site") or not SITES.get(s2["site"]) or SITES[s2["site"]].get("ok") else ", website DOWN"))
+    waiting = nudge.collect(user, SITES)
+    if waiting:
+        facts.append("Waiting on you: " + "; ".join(i["text"][:90] for i in waiting[:6]))
+    plain = " ".join(facts)
+    try:
+        m = llm_chat(user, [
+            {"role": "system", "content": f"You are {st.get('assistant_name') or 'Trillion'}, phoning {user['name']} with a morning update. "
+             "Turn these facts into a spoken update of at most 120 words: warm, plain sentences, no lists, no symbols, no web "
+             "addresses. Start with what needs them, then each business in a sentence or two. Use only these facts."},
+            {"role": "user", "content": plain}], fast=True)
+        text = re.sub(r"[*#_`]|https?://\S+", "", (m.get("content") or "")).strip()
+        if len(text) > 40:
+            return text
+    except Exception:
+        pass
+    return plain
+
+
+def place_call(user, topic="projects", items=None):
+    """Phone the login's Linphone. Returns how it went; never raises."""
+    name = core.settings(user).get("assistant_name") or "Trillion"
+    if items:
+        opening = (f"Hi {user['name']}, it's {name}. " + (f"{len(items)} things need you. " if len(items) > 1 else "")
+                   + " ".join(i["text"] for i in items[:4]) + ". What would you like me to do?")
+    elif topic and topic != "projects":
+        opening = f"Hi {user['name']}, it's {name}. You asked me to call you about {topic}. Anything you want me to do?"
+    else:
+        opening = f"Good {'morning' if datetime.datetime.now().hour < 12 else 'day'} {user['name']}, it's {name}. " + project_briefing(user) + " Anything you want me to do?"
+
+    def answer(words):
+        if BUSY.get(user["id"]):
+            return "I am busy with another job right now. I have put your request in the chat."
+        try:
+            return run_agent(user, words).get("reply") or "Done."
+        except Exception as e:
+            return f"That did not work: {type(e).__name__}."
+    ts = TAILSCALE.get("v") or {}
+    try:
+        res = voicecall.conversation(user, opening, answer, my_ip=ts.get("ip") or None,
+                                     log=lambda w: core.log(user["id"], f'On the call you said: "{w[:120]}"', "voice"))
+    except voicecall.CallError as e:
+        res = {"result": "failed", "error": str(e), "heard": []}
+    except Exception as e:
+        res = {"result": "failed", "error": f"{type(e).__name__}: {e}", "heard": []}
+    core.log(user["id"], "Call to your phone: " + {"answered": "answered", "no answer": "not answered", "busy": "busy",
+                                                    "declined": "declined", "unreachable": "the phone could not be reached"}.get(res["result"], res.get("error", res["result"]))[:200],
+             "done" if res["result"] == "answered" else "waiting")
+    return res
+
+
+def call_in_background(user, topic="projects", items=None, fallback=None):
+    def go():
+        res = place_call(user, topic, items)
+        if res["result"] != "answered" and fallback:
+            try:
+                fallback()
+            except Exception:
+                pass
+    threading.Thread(target=go, daemon=True).start()
+
+
 @app.get("/api/nudge")
 def nudge_get(user=Depends(auth)):
     return nudge.state(user, SITES)
@@ -1654,6 +1775,45 @@ def nudge_done(p: dict = Body(...), user=Depends(auth)):
 def nudge_test(user=Depends(auth)):
     res = nudge.check(user, SITES, force=True) or {"sent": False, "items": 0}
     return dict(nudge.state(user, SITES), result=res)
+
+
+@app.get("/api/call")
+def call_get(user=Depends(auth)):
+    ts = TAILSCALE.get("v") or {}
+    return {"prefs": voicecall.prefs(user), "plans": voicecall.plans(user), "busy": bool(voicecall.BUSY.get(user["id"])),
+            "devices": [d for d in ts.get("devices", []) if d.get("ip")] if user["is_admin"] else [],
+            "tailscale": bool(ts.get("ip"))}
+
+
+@app.post("/api/call/prefs")
+def call_prefs(p: dict = Body(...), user=Depends(auth)):
+    try:
+        voicecall.save_prefs(user, p)
+    except voicecall.CallError as e:
+        raise HTTPException(400, str(e))
+    return call_get(core.q("SELECT * FROM users WHERE id=?", (user["id"],), one=True))
+
+
+@app.post("/api/call/plan")
+def call_plan(p: dict = Body(...), user=Depends(auth)):
+    try:
+        if p.get("delete"):
+            voicecall.delete_plan(user, p["delete"])
+        else:
+            voicecall.add_plan(user, str(p.get("at") or ""), str(p.get("days") or "daily"), str(p.get("topic") or "projects"))
+    except voicecall.CallError as e:
+        raise HTTPException(400, str(e))
+    return call_get(user)
+
+
+@app.post("/api/call/test")
+def call_test(user=Depends(auth)):
+    if not voicecall.prefs(user)["target"]:
+        raise HTTPException(400, "Choose your phone first.")
+    if voicecall.BUSY.get(user["id"]):
+        raise HTTPException(409, "A call is already on.")
+    res = place_call(user, "a test call. If you can hear me, say hello")
+    return res
 
 
 @app.get("/api/meeting")
@@ -3135,6 +3295,14 @@ def background():
                             watch.alert(u, "site", "Website down", f"{site} is not answering. Trillion checks it every 3 minutes.")
             now = datetime.datetime.now()
             for u in core.q("SELECT * FROM users"):
+                try:
+                    vp = voicecall.prefs(u)
+                    if vp["on"] and vp["target"] and not voicecall.BUSY.get(u["id"]) and not meeting.active(u):
+                        for plan in voicecall.due_plans(u, now)[:1]:
+                            voicecall.mark_ran(plan["id"], now.date().isoformat(), once=bool(plan["once_date"]))
+                            call_in_background(u, plan["topic"], fallback=lambda u=u: watch.send(u, "Trillion tried to call you", "Your planned call was not answered. The update is in the chat."))
+                except Exception:
+                    pass
                 try:
                     nudge.check(u, SITES, now)
                 except Exception:

@@ -511,6 +511,26 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     </div>
     <div class="panel"><b>Link</b><div id="phonebox" style="display:flex;flex-direction:column;gap:14px"><div class="muted">Looking for your phone...</div></div></div>
   </div>
+  <div class="panel" id="vc-panel"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><b>Calls from Trillion</b><span class="pill" id="vc-pill">off</span></div>
+    <div class="muted" style="font-size:13px">I phone you for free through the Linphone app over Tailscale: at times you choose with a breakdown of your projects, and when something urgent needs you. Answer and talk back: "approve it", "remind me at three", "send Johan a message saying..." Anything that needs your OK still waits for it.</div>
+    <details><summary class="muted" style="cursor:pointer;font-size:14px">Set it up (once)</summary><div class="muted" style="font-size:13px;line-height:1.7">
+      1. On your phone, install <b>Linphone</b> from the Play Store. When it asks for an account, skip it (no account needed).<br>
+      2. In Linphone: Settings, Network: set the <b>SIP port to 5060</b> (not random). Settings, Audio: leave <b>PCMU</b> switched on.<br>
+      3. In Linphone: Settings, Advanced: switch on <b>Keep alive service</b> / <b>Start at boot</b>. In Android's settings, set Linphone's battery use to <b>Unrestricted</b>, otherwise calls can be missed.<br>
+      4. Keep <b>Tailscale</b> on, on the phone. Choose the phone below and press TEST CALL. If Windows asks whether Python may use the network, allow it on private networks.</div></details>
+    <label class="field"><span>Your phone on Tailscale</span><select id="vc-dev" style="max-width:320px"></select></label>
+    <label class="field" id="vc-ipbox"><span>Or its Tailscale address</span><input id="vc-ip" placeholder="100.x.x.x" style="max-width:240px"></label>
+    <label class="field"><span>Linphone SIP port</span><input id="vc-port" style="max-width:120px"></label>
+    <label class="tickrow"><input type="checkbox" id="vc-on"><span><b>Call me</b><br><span class="muted">At the times below, and for urgent check-ins (if it is not answered, the phone rings instead).</span></span></label>
+    <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="vc-save">SAVE</button><button class="btn" id="vc-test">TEST CALL</button></div>
+    <div class="msg" id="vc-msg"></div>
+    <div><b style="font-size:15px">Planned calls</b><div id="vc-plans" style="display:flex;flex-direction:column;gap:6px;margin-top:6px"></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:8px"><label class="field"><span>Time</span><input type="time" id="vc-at" value="08:00" style="max-width:130px"></label>
+      <label class="field"><span>Days</span><select id="vc-days"><option value="weekdays">Weekdays</option><option value="daily">Every day</option><option value="weekends">Weekends</option></select></label>
+      <label class="field" style="flex:1;min-width:180px"><span>About</span><input id="vc-topic" placeholder="projects (a breakdown of everything)"></label>
+      <button class="btn" id="vc-add">ADD</button></div>
+      <div class="muted" style="font-size:12px">Or say "call me at 8am every weekday and give me a breakdown of current projects".</div></div>
+  </div>
   <div class="panel" id="mt-panel"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><b>Meeting mode</b><span class="pill" id="mt-pill">off</span></div>
     <div class="muted" style="font-size:13px">While you are in a meeting, I answer your WhatsApps on your phone with a short "in a meeting, will get back to you", decline calls with a message, turn voice notes into words, and give you a summary afterwards. Groups are never answered. You can also just say "I'm in a meeting until 11".</div>
     <div class="msg" id="mt-state"></div>
@@ -1656,7 +1676,7 @@ async function loadPhonePage(){
   if(!S)return;fillPhoneSettings();const full=!!S.user.settings.phone_full_control;
   $('pp-cmds').innerHTML=PPC.filter(c=>!c[2]||full).map((c,i)=>`<button type="button" data-pc="${esc(c[1])}">${esc(c[0])}</button>`).join('')+(full?'':'<span class="muted" style="font-size:13px;align-self:center">Tick Full phone control below for Home, Back, volume and reading the screen.</span>');
   $('pp-cmds').querySelectorAll('[data-pc]').forEach(b=>b.onclick=()=>runHere(b.dataset.pc,$('pp-cmdmsg')));
-  ppUse();render();loadPhone();ulLoad();loadWA(true);loadContacts($('pp-cmsg'));wtLoad();mtLoad();ngLoad();
+  ppUse();render();loadPhone();ulLoad();loadWA(true);loadContacts($('pp-cmsg'));wtLoad();mtLoad();ngLoad();vcLoad();
 }
 async function wtLoad(){try{wtDraw(await (await api('/api/watch')).json());}catch(e){}}
 function wtDraw(w){$('wt-on').checked=w.on;$('wt-quiet').checked=w.quiet;$('wt-from').value=w.from;$('wt-to').value=w.to;
@@ -1855,6 +1875,7 @@ async function loadProjects(){
 const CMDS=[
   ['Bible study',[['verse of the day','The morning verse, or the evening verse after 5 pm'],['read John 3:16',''],['read Psalms 23',''],['search the bible for living water',''],['explain Romans 8:28','She answers from the passage and its context'],['what does the bible say about forgiveness','']]],
   ['Gumroad store',[['how are my gumroad sales','Today and the last 30 days'],['how much did I sell this week',''],['how much did I make this month',''],['unpublish My Ebook on gumroad','Hides a product from buyers'],['publish My Ebook on gumroad',''],['make a 20% discount code for My Ebook','Add "called SPRING20" to choose the name'],['post a product called My Ebook for $19','Attach the file with + first. Say "create" instead of "post" to save a draft']]],
+  ['Calls from Trillion',[['call me at 8am every weekday and give me a breakdown of current projects','Free, through Linphone on your phone'],['call me','Rings you now with the update'],['call me tomorrow at 7:30 to remind me about the dentist',''],['stop calling me','Removes planned calls']]],
   ['Meeting mode',[['I\'m in a meeting until 11','I answer your WhatsApps and decline calls with a message'],['I\'m in a meeting for 2 hours',''],['I\'m out of the meeting','Ends it and gives you the summary'],['what\'s outstanding','Everything waiting on you, from approvals to call-backs']]],
   ['WhatsApp',[['read my whatsapps','Reads out new incoming messages'],['send a whatsapp to Llewellyn saying I will be there at 5','Goes straight out to a saved contact'],['send this to Llewellyn on whatsapp','Attach a photo or file with the + button first'],['send a test whatsapp to Llewellyn Terblanche',''],['send me a test whatsapp','Needs your own number on the Phone page'],['open my whatsapp','']]],
   ['Phone',[['ring my phone','Rings at full volume, even on silent'],['where is my phone','Last known position with a map link'],['how is my phone','Battery, storage, Wi-Fi'],['unlock my phone','Needs an unlock code saved on the Phone page'],['put my phone to sleep','Screen off and locked'],['take a screenshot of my phone',''],['open maps on my phone','Any installed app'],['what is on my phone screen','Needs Full phone control'],['tap Chats on my phone','Needs Full phone control'],['press back on my phone','Needs Full phone control']]],
@@ -2092,6 +2113,22 @@ function ngDraw(n){const p=n.prefs;$('ng-on').checked=p.on;$('ng-times').value=p
   $('ng-items').querySelectorAll('[data-ngd]').forEach(b=>b.onclick=async()=>{try{ngDraw(await (await api('/api/nudge/done',{json:{key:n.items[+b.dataset.ngd].key}})).json());}catch(e){}});}
 $('ng-save').onclick=async()=>{const m=$('ng-msg');try{ngDraw(await (await api('/api/nudge/prefs',{json:{on:$('ng-on').checked,times:$('ng-times').value,ring:$('ng-ring').checked,ring_from:$('ng-from').value,ring_to:$('ng-to').value}})).json());m.className='msg ok';m.textContent='Saved.';}catch(e){m.className='msg bad';m.textContent=e.message;}};
 $('ng-test').onclick=async()=>{const m=$('ng-msg');m.className='msg muted';m.textContent='Checking...';try{const r=await (await api('/api/nudge/test',{json:{}})).json();ngDraw(r);m.className='msg ok';m.textContent=r.result.items?'Sent '+r.result.items+' to your phone'+(r.result.phone?'':' (the phone did not answer; it is in the chat)')+'.':'Nothing is waiting on you.';}catch(e){m.className='msg bad';m.textContent=e.message;}};
+
+// ---------- calls from trillion ----------
+let VC=null;
+const VCDAYS={daily:'every day',weekdays:'weekdays',weekends:'weekends'};
+async function vcLoad(){try{vcDraw(await (await api('/api/call')).json());}catch(e){}}
+function vcDraw(c){VC=c;const p=c.prefs;$('vc-pill').textContent=p.on&&p.target?'on':'off';$('vc-pill').className='pill'+(p.on&&p.target?' on':'');
+  $('vc-dev').innerHTML='<option value="">Choose...</option>'+c.devices.map(d=>`<option value="${esc(d.ip)}" ${d.ip===p.target?'selected':''}>${esc(d.name)} (${esc(d.os||'')}) ${d.online?'':'· offline'}</option>`).join('');
+  $('vc-dev').closest('label').hidden=!c.devices.length;$('vc-ip').value=p.target;$('vc-port').value=p.port;$('vc-on').checked=p.on;
+  $('vc-plans').innerHTML=c.plans.length?c.plans.map(x=>`<div style="display:flex;gap:10px;align-items:center;border:1px solid var(--edge2);padding:6px 10px;font-size:14px"><span style="flex:1"><b>${esc(x.at)}</b> ${x.once_date?'on '+esc(x.once_date):esc(VCDAYS[x.days]||'on set days')} · ${esc(x.topic==='projects'?'project breakdown':x.topic)}</span><button class="btn" data-vcx="${x.id}" style="min-height:34px;font-size:12px">REMOVE</button></div>`).join(''):'<div class="muted" style="font-size:13px">None yet.</div>';
+  $('vc-plans').querySelectorAll('[data-vcx]').forEach(b=>b.onclick=async()=>{try{vcDraw(await (await api('/api/call/plan',{json:{delete:+b.dataset.vcx}})).json());}catch(e){}});}
+$('vc-dev').onchange=()=>{if($('vc-dev').value)$('vc-ip').value=$('vc-dev').value;};
+$('vc-save').onclick=async()=>{const m=$('vc-msg');try{vcDraw(await (await api('/api/call/prefs',{json:{target:$('vc-ip').value.trim(),port:+$('vc-port').value||5060,on:$('vc-on').checked}})).json());m.className='msg ok';m.textContent='Saved.';}catch(e){m.className='msg bad';m.textContent=e.message;}};
+$('vc-test').onclick=async()=>{const m=$('vc-msg');m.className='msg muted';m.textContent='Calling your phone... answer it in Linphone.';
+  try{const r=await (await api('/api/call/test',{json:{}})).json();const t={answered:'It worked.'+(r.heard&&r.heard.length?' I heard: "'+r.heard[0]+'"':''),'no answer':'It rang but was not answered.',busy:'The phone said busy.',declined:'The call was declined.',unreachable:'The phone could not be reached. Is Linphone open, Tailscale on, and the SIP port right?'}[r.result]||('It did not work: '+(r.error||r.result));
+    m.className='msg '+(r.result==='answered'?'ok':'bad');m.textContent=t;}catch(e){m.className='msg bad';m.textContent=e.message;}};
+$('vc-add').onclick=async()=>{const m=$('vc-msg');try{vcDraw(await (await api('/api/call/plan',{json:{at:$('vc-at').value,days:$('vc-days').value,topic:$('vc-topic').value.trim()||'projects'}})).json());m.className='msg ok';m.textContent='Added. Make sure "Call me" is ticked and saved.';}catch(e){m.className='msg bad';m.textContent=e.message;}};
 </script>
 </body>
 </html>

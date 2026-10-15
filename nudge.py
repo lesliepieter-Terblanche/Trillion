@@ -159,12 +159,24 @@ def tell(user, items, title, ring=False, now=None):
         except Exception:
             pass
         if ring and p["ring"] and _in(now, p["ring_from"], p["ring_to"]):
+            def ring_it():
+                try:
+                    import phone
+                    phone.ring(user, f"Trillion: {items[0]['text'][:50]}")
+                except Exception:
+                    pass
             try:
-                import phone
-                phone.ring(user, f"Trillion: {items[0]['text'][:50]}")
-                sent["rang"] = True
+                import voicecall
+                vp = voicecall.prefs(user)
             except Exception:
-                pass
+                vp = {"on": False}
+            if vp.get("on") and vp.get("target"):
+                import app as _app                        # call first; ring only if the call is not answered
+                _app.call_in_background(user, items=items, fallback=ring_it)
+                sent["called"] = True
+            else:
+                ring_it()
+            sent["rang"] = True
     if p["chat"]:
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (user["id"], "assistant", f"{title}\n{text}", time.time()))
         sent["chat"] = True
