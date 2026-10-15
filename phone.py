@@ -959,3 +959,26 @@ def go_wireless(user, address=""):
             "switched on on the phone, and try again.") if "refused" in last.lower() else \
            "The phone could not be reached on the network. Check that Tailscale is switched on on the phone."
     raise PhoneError(f"Could not connect wirelessly. {hint} (Last answer: {last[-140:]})")
+
+
+def pull_apk(user, name, dest):
+    """Copy an installed app's APK file(s) off this login's phone to the folder `dest`.
+    Returns {package, apk (the main base.apk), all (every file pulled), splits}."""
+    pkg = resolve_app(user, name)
+    out = sh(user, f"pm path {pkg}", timeout=30)
+    paths = [ln.split(":", 1)[1].strip() for ln in out.splitlines() if ln.startswith("package:")]
+    if not paths:
+        raise PhoneError(f"Could not find the installed files for {name} ({pkg}).")
+    serial = working_serial(user)
+    os.makedirs(dest, exist_ok=True)
+    pulled = []
+    for i, p in enumerate(paths):
+        fname = "base.apk" if p.endswith("base.apk") or len(paths) == 1 else f"split_{i}_{os.path.basename(p)}"
+        local = os.path.join(dest, fname)
+        code, _o = _run(["-s", serial, "pull", p, local], timeout=180)
+        if code == 0 and os.path.exists(local):
+            pulled.append(local)
+    if not pulled:
+        raise PhoneError("Could not copy the app's files off the phone. Is it still connected and unlocked?")
+    base = next((l for l in pulled if l.endswith("base.apk")), pulled[0])
+    return {"package": pkg, "apk": base, "all": pulled, "splits": len(pulled)}

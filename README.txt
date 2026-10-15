@@ -75,9 +75,10 @@ BUSINESS APPS (Apps page)
   Umami, Invoice Ninja and Chatwoot were removed on request; if any were installed, Trillion erases
   their containers, data, folders and saved keys the next time it starts with Docker running.
 - Reverse engineering (REA): a connector that looks inside apps, websites and programs without
-  their source (github.com/morluto/rea, MIT). Owner only. Every REA job waits for your OK first,
-  even on a phone call, and the approval shows on your phone over Tailscale. Heavy native-binary
-  jobs (a .exe/.dll, a Ghidra-level disassembly) are handed to Claude Code on your Pro plan, which
+  their source (github.com/morluto/rea, MIT). Owner only, and it runs without asking for approval.
+  To reverse-engineer an app on your phone, just say "use REA on <app> on my phone": Trillion pulls
+  the app's APK off the phone and hands it to Claude Code (no screenshots). Heavy native-binary jobs
+  (a .exe/.dll, an APK, a Ghidra-level disassembly) are handed to Claude Code on your Pro plan, which
   does the work and reports back in the chat and on your phone. For that handoff, Claude Code must
   be installed and signed in to your Pro plan on this PC; adjust its command under the REA
   connector if needed (default "claude -p").

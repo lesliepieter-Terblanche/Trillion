@@ -115,6 +115,70 @@ def _prompt(tool, arguments):
             "Finish with a short plain-language summary the owner can read on a phone.")
 
 
+def _dispatch_claude(user, prompt, cwd):
+    """Run Claude Code (Pro plan) once with this prompt in this folder. Returns {ok, text}."""
+    cmd = _claude_cmd(user)
+    env = dict(os.environ)
+    env.pop("ANTHROPIC_API_KEY", None)        # use the owner's Pro login, not pay-as-you-go API billing
+    env["ANONYMIZED_TELEMETRY"] = "false"
+    argv = shlex.split(cmd, posix=(os.name != "nt")) + [prompt]
+    try:
+        r = subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           timeout=CLAUDE_TIMEOUT, cwd=cwd, env=env,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except FileNotFoundError:
+        return {"ok": False, "text": "Claude Code is not installed on this PC, or the command is wrong. "
+                "Install Claude Code and sign in to your Pro plan, then set the command on the Connectors page "
+                f"(now '{cmd}')."}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "text": f"Claude Code did not finish within {CLAUDE_TIMEOUT // 60} minutes."}
+    except Exception as e:
+        return {"ok": False, "text": f"Could not run Claude Code: {type(e).__name__}: {e}"}
+    out = (r.stdout or "").strip()
+    if not out and r.returncode != 0:
+        return {"ok": False, "text": f"Claude Code reported an error. {(r.stderr or '').strip()[-400:]}".strip()}
+    return {"ok": True, "text": out or "Claude Code finished but said nothing."}
+
+
+def _report_back(user, label, res):
+    import core
+    report = res["text"][:6000]
+    head = f"Claude Code finished the reverse-engineering job ({label})" if res["ok"] else \
+           f"Claude Code could not finish the job ({label})"
+    core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)",
+           (user["id"], "assistant", f"{head}:\n\n{report}", time.time()))
+    core.log(user["id"], head, "done" if res["ok"] else "waiting")
+    try:
+        import watch
+        watch.alert(user, "job", "Trillion: REA job done" if res["ok"] else "Trillion: REA job failed", report[:300])
+    except Exception:
+        pass
+
+
+def phone_app(user, pull):
+    """Reverse-engineer a phone app whose APK was just pulled off the phone, on the owner's Pro plan via Claude Code.
+    `pull` is the result of phone.pull_apk. Returns at once; the report arrives in the chat and on the phone."""
+    if not user["is_admin"]:
+        return {"error": "REA is owner-only for now."}
+    import core
+    folder = os.path.dirname(pull["apk"])
+    uid = user["id"]
+
+    def work():
+        core.log(uid, f"Handed to Claude Code (Pro plan): REA on {pull['package']}", "info")
+        names = ", ".join(os.path.basename(p) for p in pull["all"])
+        prompt = ("You are Claude Code, reverse-engineering an Android app on the owner's own machine. The owner approved "
+                  "this through Trillion. The app's APK file(s) are in the current folder: " + names + f" (package {pull['package']}). "
+                  "Decompile and inspect it with whatever is available (jadx or apktool if installed; otherwise unzip the APK and read "
+                  "AndroidManifest.xml, the DEX strings, and resources). Explain how the app or the feature in question works and show the "
+                  "evidence you based it on. Finish with a short plain-language summary the owner can read on a phone.")
+        _report_back(user, pull["package"], _dispatch_claude(user, prompt, folder))
+
+    threading.Thread(target=work, daemon=True).start()
+    return {"result": f"Pulled {pull['package']} off your phone and handed it to Claude Code on your Pro plan. "
+            "It will do the work and report back here and on your phone when it is done.", "via": "Claude Code (Pro plan)"}
+
+
 def _run_claude(user, tool, arguments):
     cmd = _claude_cmd(user)
     prompt = _prompt(tool, arguments)

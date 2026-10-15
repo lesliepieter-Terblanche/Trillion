@@ -291,8 +291,8 @@ CATALOG = [
     {"key": "rea", "name": "Reverse engineering (REA)",
      "description": "Looks inside apps and websites without their source code: JavaScript and Electron apps, .NET programs, "
                     "web pages and, with Ghidra installed, native programs. Explains how a feature works and shows the evidence. "
-                    "Owner only. Every REA job waits for your OK first, even on a phone call; heavy native-binary jobs are handed "
-                    "to Claude Code on your Pro plan, which does the work and reports back. (REA, github.com/morluto/rea, MIT licence)",
+                    "Owner only. REA runs without asking for approval; heavy native-binary jobs are handed to Claude Code on your "
+                    "Pro plan, which does the work and reports back. (REA, github.com/morluto/rea, MIT licence)",
      "command": "npx -y rea-agents@6.4.0 mcp", "needs": "Node.js 22.19 or newer"},
     {"key": "windows", "name": "Windows control",
      "description": "Operates Windows itself: open apps, click, type, read what is on screen. (Windows-MCP)",

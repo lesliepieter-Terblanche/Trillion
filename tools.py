@@ -60,6 +60,9 @@ SPECS = [
        {"connector": S, "find": S}, ["connector"]),
     fn("connector_call", "Use one tool of a connector. Get the exact tool name and arguments from connector_tools first.",
        {"connector": S, "tool": S, "arguments": {"type": "object"}}, ["connector", "tool"]),
+    fn("rea_phone_app", "Reverse-engineer an app installed on the user's phone: pulls the app's APK off the phone and hands it to "
+       "Claude Code for analysis. Use this for 'use REA on <app> on my phone' instead of taking screenshots. app is the app's name "
+       "or package. Owner only; runs without asking for approval.", {"app": S}, ["app"]),
     fn("phone_status", "Get the user's own mobile phone status: battery, charging, storage, Wi-Fi, model, screen on or off.", {}),
     fn("phone_open_app", "Open an app on the user's own phone, for example WhatsApp, Chrome or Maps. The phone must be unlocked.",
        {"app": S}),
@@ -168,6 +171,7 @@ def describe(name, a):
         "use_skill": f"Reading the skill {g('name')}", "draft_skill": f"Drafting a playbook: {g('name')}",
         "connector_tools": f"Checking what {g('connector')} can do",
         "connector_call": f"Using {g('connector')}: {g('tool')}",
+        "rea_phone_app": f"Reverse-engineering the phone app {g('app')} (pulling its APK and handing it to Claude Code)",
         "gumroad_sales": "Reading Gumroad sales", "gumroad_publish": f"{'Publish' if a.get('published') else 'Unpublish'} {g('product')} on Gumroad",
         "gumroad_discount_code": f"Gumroad code {g('code')}: {g('percent')}% off {g('product')}",
         "gumroad_set_price": f"Change the Gumroad price of {a.get('_name') or g('product')} to {g('price')}",
@@ -208,8 +212,7 @@ def execute(user, name, args, task_id=None, approved=False, direct=False):
             return {"error": "Full phone control is switched off. Switch it on on the Phone page."}
         if name == "update_self" and not user["is_admin"]:
             return {"error": "Only the owner login can update Trillion."}
-        rea_job = name == "connector_call" and not approved and __import__("rea").is_rea_call(user, (args or {}).get("connector"))
-        if (name in NEEDS_APPROVAL or rea_job) and not approved:
+        if name in NEEDS_APPROVAL and not approved:
             if name == "delete_path":
                 resolve(user, args.get("path"))  # permission check before asking
             if name == "gumroad_set_price":       # settle exactly which product before asking
@@ -241,7 +244,7 @@ def execute(user, name, args, task_id=None, approved=False, direct=False):
                     out = t_phone_send_whatsapp(user, **args)
                     core.log(uid, describe(name, args), "done")
                     return out
-            if calling() and name not in MONEY and not rea_job:   # asked for on a call: no approval needed (but never REA or payments)
+            if calling() and name not in MONEY:           # asked for on a call: no approval needed (but never payments)
                 out = globals()["t_" + name](user, **args)
                 core.log(uid, describe(name, args) + " (asked for on a call)", "done")
                 return out
@@ -610,6 +613,20 @@ def t_connector_call(user, connector, tool, arguments=None):
         if rea.is_native_job(tool, arguments or {}):
             return rea.handoff(user, row, tool, arguments or {})
     return extend.client(row).call(tool, arguments or {})
+
+
+def t_rea_phone_app(user, app):
+    import os
+    import phone
+    import rea
+    if not user["is_admin"]:
+        return {"error": "REA is owner-only for now."}
+    dest = os.path.join(str(core.DATA), "rea_apks", re.sub(r"[^A-Za-z0-9._-]+", "_", str(app))[:40] or "app")
+    try:
+        pull = phone.pull_apk(user, app, dest)
+    except Exception as e:
+        return {"error": str(e) if type(e).__name__ == "PhoneError" else f"{type(e).__name__}: {e}"}
+    return rea.phone_app(user, pull)
 
 
 # ---------- the user's own phone ----------
