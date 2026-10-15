@@ -58,6 +58,7 @@ import apps
 import storage
 import backup
 import meeting
+import nudge
 gumroad.init()
 routines.init()
 # 0.7.28: Bible study belongs to Lewellyn's login. His morning and evening routines read the day's verse aloud, a different
@@ -859,6 +860,12 @@ def run_agent(user, text, files=None):
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="completed", detail=reply)
         return {"reply": reply, "task_id": tid, "provider": "built-in"}
+    if nudge.ASK.search(text) and len(text) < 90:
+        reply = nudge.answer(user, SITES)
+        BUSY[uid] = False
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="completed", detail=reply[:200])
+        return {"reply": reply, "task_id": tid, "provider": "built-in"}
     mt = meeting.parse(text)
     if mt:
         if mt[0] == "on":
@@ -1626,6 +1633,29 @@ def sites_forget(jid: int, user=Depends(auth)):
     return {"ok": True}
 
 
+@app.get("/api/nudge")
+def nudge_get(user=Depends(auth)):
+    return nudge.state(user, SITES)
+
+
+@app.post("/api/nudge/prefs")
+def nudge_prefs(p: dict = Body(...), user=Depends(auth)):
+    nudge.save_prefs(user, p)
+    return nudge.state(core.q("SELECT * FROM users WHERE id=?", (user["id"],), one=True), SITES)
+
+
+@app.post("/api/nudge/done")
+def nudge_done(p: dict = Body(...), user=Depends(auth)):
+    nudge.mark_done(user, str(p.get("key") or "")[:200])
+    return nudge.state(user, SITES)
+
+
+@app.post("/api/nudge/test")
+def nudge_test(user=Depends(auth)):
+    res = nudge.check(user, SITES, force=True) or {"sent": False, "items": 0}
+    return dict(nudge.state(user, SITES), result=res)
+
+
 @app.get("/api/meeting")
 def meeting_get(user=Depends(auth)):
     return meeting.state(user)
@@ -1644,7 +1674,7 @@ def meeting_set(p: dict = Body(...), user=Depends(auth)):
 @app.post("/api/meeting/prefs")
 def meeting_prefs(p: dict = Body(...), user=Depends(auth)):
     meeting.save_prefs(user, p)
-    return meeting.state(user)
+    return meeting.state(core.q("SELECT * FROM users WHERE id=?", (user["id"],), one=True))
 
 
 @app.get("/api/watch")
@@ -3104,6 +3134,11 @@ def background():
                             core.log(u["id"], f"{site} looks down", "waiting")
                             watch.alert(u, "site", "Website down", f"{site} is not answering. Trillion checks it every 3 minutes.")
             now = datetime.datetime.now()
+            for u in core.q("SELECT * FROM users"):
+                try:
+                    nudge.check(u, SITES, now)
+                except Exception:
+                    pass
             try:
                 if backup.due(now) and not backup.JOB.get("running"):
                     backup.start(backup.owner_settings().get("backup_target"))

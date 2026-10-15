@@ -3,7 +3,7 @@
 Works over the USB cable, or wirelessly (for example over Tailscale) once switched to wireless mode.
 Nothing here can get past the phone's lock screen: screen actions need the phone unlocked.
 """
-import glob, os, re, shutil, subprocess, time
+import glob, os, re, shlex, shutil, subprocess, time
 from urllib.parse import quote
 
 import core
@@ -701,12 +701,13 @@ def locate(user):
     return res
 
 
-def ring(user):
+def ring(user, message="Trillion: find my phone"):
     """Ring through the phone's own clock: alarm volume to full, then a one-second timer.
     The timer alarm sounds until someone dismisses it, and does not depend on a music app."""
     sh(user, "cmd media_session volume --stream 4 --set 15; cmd media_session volume --stream 3 --set 15; input keyevent KEYCODE_WAKEUP")
     out = sh(user, "am start -a android.intent.action.SET_TIMER --ei android.intent.extra.alarm.LENGTH 1 "
-                   "--ez android.intent.extra.alarm.SKIP_UI true --es android.intent.extra.alarm.MESSAGE 'Trillion: find my phone'")
+                   "--ez android.intent.extra.alarm.SKIP_UI true --es android.intent.extra.alarm.MESSAGE "
+                   + shlex.quote(re.sub(r"\s+", " ", message)[:60]))
     if "Error" in out or "unable to resolve" in out.lower():
         sh(user, "cmd notification post -S bigtext -t 'Trillion' find_phone 'Find my phone: here I am'")
         return {"status": "notification_only", "note": "The phone's clock would not take a timer, so I sent a notification "

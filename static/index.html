@@ -525,6 +525,16 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
       <div><button class="btn pri" id="mt-save">SAVE</button> <span class="msg" id="mt-smsg"></span></div></div></details>
     <details id="mt-lastbox" hidden><summary class="muted" style="cursor:pointer;font-size:14px">Last meeting summary</summary><div id="mt-last" style="white-space:pre-wrap;font-size:14px;margin-top:8px"></div></details>
   </div>
+  <div class="panel" id="ng-panel"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><b>Check-ins</b><span class="pill" id="ng-pill"></span></div>
+    <div class="muted" style="font-size:13px">I tell you when something is waiting on you: things needing your OK, jobs that failed or got stuck, people to call back after a meeting, your website being down, overdue invoices and unanswered WhatsApps. Everything comes together at the times below; something urgent comes straight away and can ring your phone. Never during a meeting or quiet hours. Ask "what's outstanding" any time.</div>
+    <div id="ng-items" style="display:flex;flex-direction:column;gap:8px"></div>
+    <label class="tickrow"><input type="checkbox" id="ng-on"><span><b>Check in with me</b></span></label>
+    <label class="field"><span>At these times (separate with commas)</span><input id="ng-times" placeholder="08:00, 14:00" style="max-width:240px"></label>
+    <label class="tickrow"><input type="checkbox" id="ng-ring"><span><b>Ring my phone for something urgent</b><br><span class="muted">Full volume through the phone's timer, with the reason on the screen. Only between these times:</span></span></label>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><label class="field"><span>From</span><input type="time" id="ng-from" style="max-width:140px"></label><label class="field"><span>To</span><input type="time" id="ng-to" style="max-width:140px"></label></div>
+    <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="ng-save">SAVE</button><button class="btn" id="ng-test">CHECK NOW</button></div>
+    <div class="msg" id="ng-msg"></div>
+  </div>
   <div class="panel" id="wt-panel"><b>Watch alerts</b>
     <div class="muted" style="font-size:13px">She posts a short notification on your phone and your watch shows it, the same way it shows WhatsApps. Nothing is installed on the watch. Alerts go to your own phone only.</div>
     <div class="msg" id="wt-state"></div>
@@ -1646,7 +1656,7 @@ async function loadPhonePage(){
   if(!S)return;fillPhoneSettings();const full=!!S.user.settings.phone_full_control;
   $('pp-cmds').innerHTML=PPC.filter(c=>!c[2]||full).map((c,i)=>`<button type="button" data-pc="${esc(c[1])}">${esc(c[0])}</button>`).join('')+(full?'':'<span class="muted" style="font-size:13px;align-self:center">Tick Full phone control below for Home, Back, volume and reading the screen.</span>');
   $('pp-cmds').querySelectorAll('[data-pc]').forEach(b=>b.onclick=()=>runHere(b.dataset.pc,$('pp-cmdmsg')));
-  ppUse();render();loadPhone();ulLoad();loadWA(true);loadContacts($('pp-cmsg'));wtLoad();mtLoad();
+  ppUse();render();loadPhone();ulLoad();loadWA(true);loadContacts($('pp-cmsg'));wtLoad();mtLoad();ngLoad();
 }
 async function wtLoad(){try{wtDraw(await (await api('/api/watch')).json());}catch(e){}}
 function wtDraw(w){$('wt-on').checked=w.on;$('wt-quiet').checked=w.quiet;$('wt-from').value=w.from;$('wt-to').value=w.to;
@@ -1845,7 +1855,7 @@ async function loadProjects(){
 const CMDS=[
   ['Bible study',[['verse of the day','The morning verse, or the evening verse after 5 pm'],['read John 3:16',''],['read Psalms 23',''],['search the bible for living water',''],['explain Romans 8:28','She answers from the passage and its context'],['what does the bible say about forgiveness','']]],
   ['Gumroad store',[['how are my gumroad sales','Today and the last 30 days'],['how much did I sell this week',''],['how much did I make this month',''],['unpublish My Ebook on gumroad','Hides a product from buyers'],['publish My Ebook on gumroad',''],['make a 20% discount code for My Ebook','Add "called SPRING20" to choose the name'],['post a product called My Ebook for $19','Attach the file with + first. Say "create" instead of "post" to save a draft']]],
-  ['Meeting mode',[['I\'m in a meeting until 11','I answer your WhatsApps and decline calls with a message'],['I\'m in a meeting for 2 hours',''],['I\'m out of the meeting','Ends it and gives you the summary']]],
+  ['Meeting mode',[['I\'m in a meeting until 11','I answer your WhatsApps and decline calls with a message'],['I\'m in a meeting for 2 hours',''],['I\'m out of the meeting','Ends it and gives you the summary'],['what\'s outstanding','Everything waiting on you, from approvals to call-backs']]],
   ['WhatsApp',[['read my whatsapps','Reads out new incoming messages'],['send a whatsapp to Llewellyn saying I will be there at 5','Goes straight out to a saved contact'],['send this to Llewellyn on whatsapp','Attach a photo or file with the + button first'],['send a test whatsapp to Llewellyn Terblanche',''],['send me a test whatsapp','Needs your own number on the Phone page'],['open my whatsapp','']]],
   ['Phone',[['ring my phone','Rings at full volume, even on silent'],['where is my phone','Last known position with a map link'],['how is my phone','Battery, storage, Wi-Fi'],['unlock my phone','Needs an unlock code saved on the Phone page'],['put my phone to sleep','Screen off and locked'],['take a screenshot of my phone',''],['open maps on my phone','Any installed app'],['what is on my phone screen','Needs Full phone control'],['tap Chats on my phone','Needs Full phone control'],['press back on my phone','Needs Full phone control']]],
   ['Briefings',[['good morning','Runs your morning routine'],['what is the weather',''],['give me the news',''],['how are the markets','Rand, gold, shares, crypto']]],
@@ -2072,6 +2082,16 @@ function mtDraw(m){$('mt-pill').textContent=m.on?'on':'off';$('mt-pill').classNa
   const p=m.prefs;$('mt-reason').value=p.reason;$('mt-tone').value=p.tone;$('mt-calls').checked=p.calls;$('mt-voice').checked=p.voice;$('mt-vip').value=p.vip.join(', ');
   $('mt-lastbox').hidden=!m.last;if(m.last)$('mt-last').textContent=m.last.summary;}
 $('mt-save').onclick=async()=>{const s_=$('mt-smsg');try{mtDraw(await (await api('/api/meeting/prefs',{json:{reason:$('mt-reason').value.trim(),tone:$('mt-tone').value,calls:$('mt-calls').checked,voice:$('mt-voice').checked,vip:$('mt-vip').value}})).json());s_.className='msg ok';s_.textContent='Saved.';}catch(e){s_.className='msg bad';s_.textContent=e.message;}};
+
+// ---------- check-ins ----------
+async function ngLoad(){try{ngDraw(await (await api('/api/nudge')).json());}catch(e){}}
+function ngDraw(n){const p=n.prefs;$('ng-on').checked=p.on;$('ng-times').value=p.times.join(', ');$('ng-ring').checked=p.ring;$('ng-from').value=p.ring_from;$('ng-to').value=p.ring_to;
+  $('ng-pill').textContent=n.items.length?n.items.length+' waiting':'all clear';$('ng-pill').className='pill'+(n.items.length?' warn':' on');
+  $('ng-items').innerHTML=n.items.map((it,i)=>`<div style="display:flex;gap:10px;align-items:center;border:1px solid var(--edge2);padding:8px 10px;font-size:14px">${it.urgent?'<span class="pill warn">urgent</span>':''}<span style="flex:1">${esc(it.text)}</span>${it.go?`<button class="btn" data-ngo="${it.go}" style="min-height:36px;font-size:12px">OPEN</button>`:''}<button class="btn" data-ngd="${i}" style="min-height:36px;font-size:12px">DONE</button></div>`).join('');
+  $('ng-items').querySelectorAll('[data-ngo]').forEach(b=>b.onclick=()=>go(b.dataset.ngo));
+  $('ng-items').querySelectorAll('[data-ngd]').forEach(b=>b.onclick=async()=>{try{ngDraw(await (await api('/api/nudge/done',{json:{key:n.items[+b.dataset.ngd].key}})).json());}catch(e){}});}
+$('ng-save').onclick=async()=>{const m=$('ng-msg');try{ngDraw(await (await api('/api/nudge/prefs',{json:{on:$('ng-on').checked,times:$('ng-times').value,ring:$('ng-ring').checked,ring_from:$('ng-from').value,ring_to:$('ng-to').value}})).json());m.className='msg ok';m.textContent='Saved.';}catch(e){m.className='msg bad';m.textContent=e.message;}};
+$('ng-test').onclick=async()=>{const m=$('ng-msg');m.className='msg muted';m.textContent='Checking...';try{const r=await (await api('/api/nudge/test',{json:{}})).json();ngDraw(r);m.className='msg ok';m.textContent=r.result.items?'Sent '+r.result.items+' to your phone'+(r.result.phone?'':' (the phone did not answer; it is in the chat)')+'.':'Nothing is waiting on you.';}catch(e){m.className='msg bad';m.textContent=e.message;}};
 </script>
 </body>
 </html>
