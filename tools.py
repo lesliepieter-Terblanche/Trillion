@@ -1,5 +1,5 @@
 """Trillion tools: what the assistant can actually do on the PC."""
-import os, re, json, math, shutil, subprocess, time, fnmatch
+import os, re, json, math, shutil, subprocess, threading, time, fnmatch
 from pathlib import Path
 
 import httpx
@@ -127,6 +127,25 @@ SPECS = [
 ]
 NEEDS_APPROVAL = {"delete_path", "run_command", "phone_send_whatsapp", "phone_shell", "gumroad_set_price", "gumroad_refund",
                   "social_post", "email_send", "invoice_email", "inbox_reply"}
+MONEY = {"gumroad_set_price", "gumroad_refund"}      # payment matters: these always wait for your OK, even on a call
+_CTX = threading.local()
+
+
+class on_call:
+    """While you are on the phone with Trillion, what you ask for is done at once (you said it out loud and heard it
+    repeated back). Only payment matters (MONEY) still wait for your OK on the dashboard."""
+
+    def __enter__(self):
+        _CTX.call = True
+
+    def __exit__(self, *a):
+        _CTX.call = False
+
+
+def calling():
+    return bool(getattr(_CTX, "call", False))
+
+
 FULL_PHONE = {"phone_read_screen", "phone_tap", "phone_type", "phone_press", "phone_swipe", "phone_shell"}
 
 
@@ -247,6 +266,10 @@ def execute(user, name, args, task_id=None, approved=False, direct=False):
                     out = t_phone_send_whatsapp(user, **args)
                     core.log(uid, describe(name, args), "done")
                     return out
+            if calling() and name not in MONEY:           # asked for on a call: no approval needed
+                out = globals()["t_" + name](user, **args)
+                core.log(uid, describe(name, args) + " (asked for on a call)", "done")
+                return out
             summary = describe(name, args)
             core.x("INSERT INTO approvals(user_id,task_id,tool,args,summary,created) VALUES(?,?,?,?,?,?)",
                    (uid, task_id, name, json.dumps(args), summary, time.time()))

@@ -30,7 +30,9 @@ LISTEN_MAX = 15                   # seconds to wait for an answer
 END_SILENCE = 1.5                 # seconds of quiet that end what you said
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 BUSY = {}                         # user id -> {"t": when it started, "call": the call} while a call is on
-MAX_CALL = 300                    # a call never lasts longer than five minutes
+MAX_CALL = 600                    # a call never lasts longer than ten minutes
+IN_TURNS = 12                     # when you call Trillion, you can ask for up to twelve things in one call
+ON_INCOMING = None                # set by the app: what to do when you phone Trillion (user, call) -> None
 
 
 def busy(uid):
@@ -369,7 +371,8 @@ class Call:
 
     def _reply_ok(self, data):
         first, h, _ = self._parse(data)
-        resp = ["SIP/2.0 200 OK"] + [f"{k}: {h[k]}" for k in ("via", "from", "to", "call-id", "cseq") if k in h] + ["Content-Length: 0"]
+        names = {"via": "Via", "from": "From", "to": "To", "call-id": "Call-ID", "cseq": "CSeq"}
+        resp = ["SIP/2.0 200 OK"] + [f"{names[k]}: {h[k]}" for k in names if k in h] + ["Content-Length: 0"]
         self._send_sip(("\r\n".join(resp) + "\r\n\r\n").encode())
 
     def _sip_loop(self):
@@ -541,34 +544,266 @@ def conversation(user, opening, answer=None, my_ip=None, log=None):
             return {"result": result, "heard": heard}
         try:
             time.sleep(0.6)
-            call.say(first)
-            began = time.time()
-            for _ in range(MAX_TURNS):
-                if call.ended.is_set() or time.time() - began > MAX_CALL:
-                    break
-                words = hear(call.listen(), call.rate, user) if not call.ended.is_set() else ""
-                if call.ended.is_set():                    # you hung up: stop at once
-                    break
-                if not words:
-                    call.say(synth("I did not hear anything, so I will leave it on your phone. Bye.", user))
-                    break
-                heard.append(words)
-                if log:
-                    log(words)
-                if re.search(r"\b(bye|goodbye|that'?s (all|it)|nothing|no thanks|no thank you|okay thanks|thanks,? bye|got it)\b", words, re.I) \
-                        and len(words) < 40:
-                    call.say(synth("Okay. Bye.", user))
-                    break
-                call.say(synth(f"Got it: {words[:160]}. One moment.", user))      # so a word heard wrong is caught at once
-                reply = answer(words) if answer else "Noted."
-                if call.ended.is_set():
-                    break
-                call.say(synth(spoken(reply or "Done.") + " Anything else?", user))
+            heard = talk(call, user, first, answer, log)
             return {"result": "answered", "heard": heard}
         finally:
             call.hangup()
     finally:
         BUSY.pop(user["id"], None)
+
+
+BYE_WORDS = re.compile(r"\b(bye|goodbye|that'?s (all|it)|nothing|no thanks|no thank you|okay thanks|thanks,? bye|got it)\b", re.I)
+
+
+def talk(call, user, first, answer=None, log=None, turns=MAX_TURNS, caller=False):
+    """The back-and-forth once a call is up: say `first`, then listen, repeat back, answer, until bye or hang-up."""
+    heard, began, missed = [], time.time(), 0
+    call.say(first)
+    for _ in range(turns):
+        if call.ended.is_set() or time.time() - began > MAX_CALL:
+            break
+        words = hear(call.listen(), call.rate, user) if not call.ended.is_set() else ""
+        if call.ended.is_set():                    # you hung up: stop at once
+            break
+        if not words:
+            if caller and not missed:              # you phoned in: one more chance before giving up
+                missed = 1
+                call.say(synth("Sorry, I did not catch that. Say it again?", user))
+                continue
+            call.say(synth("I did not hear anything. Call me again any time. Bye." if caller else
+                           "I did not hear anything, so I will leave it on your phone. Bye.", user))
+            break
+        missed = 0
+        heard.append(words)
+        if log:
+            log(words)
+        if BYE_WORDS.search(words) and len(words) < 40:
+            call.say(synth("Okay. Bye.", user))
+            break
+        call.say(synth(f"Got it: {words[:160]}. One moment.", user))      # so a word heard wrong is caught at once
+        reply = answer(words) if answer else "Noted."
+        if call.ended.is_set():
+            break
+        call.say(synth(spoken(reply or "Done.") + " Anything else?", user))
+    else:
+        if not call.ended.is_set() and caller:
+            call.say(synth("That is all I can take in one call. Call me again for more. Bye.", user))
+    return heard
+
+
+# ---------- you phone Trillion ----------
+def _headers(text):
+    """All header lines of a SIP message, long names, in order (a message can carry several Via lines)."""
+    head = text.partition("\r\n\r\n")[0]
+    first, *lines = head.split("\r\n")
+    out = []
+    for ln in lines:
+        if ":" in ln:
+            k, v = ln.split(":", 1)
+            k = {"v": "via", "f": "from", "t": "to", "i": "call-id", "m": "contact", "l": "content-length"}.get(k.strip().lower(), k.strip().lower())
+            out.append((k, v.strip()))
+    return first, out
+
+
+class IncomingCall(Call):
+    """A call Linphone makes to Trillion. It arrives on the sign-in socket and is answered there."""
+
+    def __init__(self, sock, data, addr, user):
+        super().__init__(addr[0], addr[1], None, shared=sock)
+        CALLQ.pop(self.call_id, None)
+        text = data.decode("utf-8", "replace")
+        self.first_line, self.hdrs = _headers(text)
+        h = dict(reversed(self.hdrs))                  # first value of each
+        self.h, self.user = h, user
+        self.call_id = h.get("call-id", self.call_id)
+        CALLQ[self.call_id] = self.q
+        self.my_ip = self._route_ip(addr[0])
+        self.their_side = h.get("from", "")
+        self.our_side = h.get("to", "") + ("" if ";tag=" in h.get("to", "") else f";tag={self.tag}")
+        cm = re.search(r"<([^>]+)>", h.get("contact", "")) or re.search(r"(sip:\S+)", h.get("contact", ""))
+        self.remote_uri = cm.group(1) if cm else f"sip:{addr[0]}:{addr[1]}"
+        self.offer = text.partition("\r\n\r\n")[2]
+        self.answer_sdp, self.ok = "", b""
+
+    def _respond(self, code, reason, body="", tag=True):
+        lines = [f"SIP/2.0 {code} {reason}"]
+        for k, v in self.hdrs:
+            if k == "via":
+                if "rport" in v and "rport=" not in v:
+                    v = v.replace("rport", f"rport={self.port};received={self.target}", 1)
+                lines.append(f"Via: {v}")
+        lines += [f"From: {self.their_side}", f"To: {self.our_side if tag else self.h.get('to', '')}",
+                  f"Call-ID: {self.call_id}", f"CSeq: {self.h.get('cseq', '')}",
+                  f"Contact: <sip:trillion@{self.my_ip}:{self.sip_port}>", "Server: Trillion",
+                  "Allow: INVITE, ACK, BYE, CANCEL, OPTIONS"]
+        if body:
+            lines.append("Content-Type: application/sdp")
+        lines.append(f"Content-Length: {len(body.encode())}")
+        data = ("\r\n".join(lines) + "\r\n\r\n" + body).encode()
+        self._send_sip(data)
+        return data
+
+    def _msg(self, method, cseq, body="", branch=None, to_tag=True):
+        """A request from Trillion inside this call (hanging up): the two sides swap round."""
+        lines = [f"{method} {self.remote_uri} SIP/2.0",
+                 f"Via: SIP/2.0/UDP {self.my_ip}:{self.sip_port};branch={branch or self.branch};rport", "Max-Forwards: 70",
+                 f"From: {self.our_side}", f"To: {self.their_side}", f"Call-ID: {self.call_id}", f"CSeq: {cseq} {method}",
+                 f"Contact: <sip:trillion@{self.my_ip}:{self.sip_port}>", "User-Agent: Trillion", "Content-Length: 0"]
+        return ("\r\n".join(lines) + "\r\n\r\n").encode()
+
+    def choose(self):
+        """Pick the sound format from what the phone offers. False if there is nothing Trillion can use."""
+        mm = re.search(r"^m=audio (\d+) RTP/AVP ([\d ]+)", self.offer, re.M)
+        if not mm:
+            return False
+        pts = [int(x) for x in mm.group(2).split()]
+        wide = G722 in pts
+        if wide:
+            try:
+                import av  # noqa: F401
+            except ImportError:
+                wide = False
+        self.pt = G722 if wide else next((p for p in pts if p in (0, 8)), -1)
+        if self.pt < 0:
+            return False
+        self.rate = 16000 if self.pt == G722 else 8000
+        c = re.search(r"^c=IN IP4 (\S+)", self.offer, re.M)
+        self.remote_rtp = (c.group(1) if c else self.target, int(mm.group(1)))
+        name = {G722: "G722", 0: "PCMU", 8: "PCMA"}[self.pt]
+        media = [f"m=audio {self.rtp_port} RTP/AVP {self.pt}" + (" 101" if 101 in pts else ""),
+                 f"a=rtpmap:{self.pt} {name}/8000"] + (["a=rtpmap:101 telephone-event/8000"] if 101 in pts else []) + \
+                ["a=ptime:20", "a=sendrecv"]
+        for other in re.findall(r"^m=(?!audio)(\w+) \d+ (\S+) (\S+)", self.offer, re.M):   # video and the like: declined
+            media.append(f"m={other[0]} 0 {other[1]} {other[2]}")
+        self.answer_sdp = (f"v=0\r\no=trillion {int(time.time())} 1 IN IP4 {self.my_ip}\r\ns=Trillion\r\n"
+                           f"c=IN IP4 {self.my_ip}\r\nt=0 0\r\n" + "\r\n".join(media) + "\r\n")
+        return True
+
+    def ringing(self):
+        self._respond(100, "Trying", tag=False)
+        self._respond(180, "Ringing")
+
+    def _drain(self, wait):
+        """Look at what the phone sent while it rings. 'cancel' if you hung up first."""
+        end = time.time() + wait
+        while time.time() < end:
+            try:
+                data, _ = self._recv(min(0.1, max(0.01, end - time.time())))
+            except socket.timeout:
+                continue
+            first = data.decode("utf-8", "replace").split("\r\n", 1)[0]
+            if first.startswith(("CANCEL", "BYE")):
+                self._reply_ok(data)
+                self._respond(487, "Request Terminated")
+                return "cancel"
+            if first.startswith("INVITE"):            # the phone asking again: still ringing
+                self._respond(180, "Ringing")
+        return ""
+
+    def pick_up(self, min_ring=0.8):
+        """Answer: send OK with the sound details, wait for the phone's ACK, start the sound."""
+        if self._drain(min_ring) == "cancel":
+            self.ended.set()
+            return False
+        self.ok = self._respond(200, "OK", self.answer_sdp)
+        start, gap, last = time.time(), 0.5, time.time()
+        self.state = "talking"
+        while time.time() - start < 8:
+            try:
+                data, _ = self._recv(0.1)
+            except socket.timeout:
+                if time.time() - last > gap:
+                    self._send_sip(self.ok)
+                    last, gap = time.time(), min(gap * 2, 2)
+                continue
+            first = data.decode("utf-8", "replace").split("\r\n", 1)[0]
+            if first.startswith("ACK"):
+                break
+            if first.startswith("INVITE"):
+                self._send_sip(self.ok)
+            elif first.startswith(("BYE", "CANCEL")):
+                self._reply_ok(data)
+                self.peer_bye = True
+                self.ended.set()
+                return False
+        threading.Thread(target=self._rtp_loop, daemon=True).start()
+        threading.Thread(target=self._sip_loop, daemon=True).start()
+        return True
+
+    def _sip_loop(self):
+        while not self.ended.is_set():
+            try:
+                data, _ = self._recv(0.5)
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            first = data.decode("utf-8", "replace").split("\r\n", 1)[0]
+            if first.startswith("BYE"):
+                self._reply_ok(data)
+                self.peer_bye = True
+                self.ended.set()
+            elif first.startswith("INVITE") and self.ok:      # our OK got lost: send it again
+                self._send_sip(self.ok)
+            elif first.startswith(("OPTIONS", "INFO", "UPDATE")):
+                self._reply_ok(data)
+
+
+def take_call(user, call, opening, answer=None, log=None):
+    """Run a call you made to Trillion, from ringing to hang-up. The line is already marked busy."""
+    heard = []
+    try:
+        BUSY[user["id"]]["call"] = call
+        first = synth(opening, user)                   # made while the phone rings, so there is no pause
+        if not call.pick_up():
+            return {"result": "cancelled", "heard": heard}
+        time.sleep(0.4)
+        heard = talk(call, user, first, answer, log, turns=IN_TURNS, caller=True)
+        return {"result": "answered", "heard": heard}
+    except Exception as e:
+        return {"result": "failed", "error": f"{type(e).__name__}: {e}", "heard": heard}
+    finally:
+        call.hangup()
+        BUSY.pop(user["id"], None)
+        REGISTRAR["incoming"] = {"t": time.time(), "user": user["name"], "heard": len(heard)}
+
+
+def _incoming(sock, data, addr, reply):
+    """Linphone dialled Trillion. Only your own signed-in phone gets through, and it gets your own Trillion."""
+    if not _allowed_source(addr[0]):
+        reply(403, "Forbidden")
+        return
+    _, hdrs = _headers(data.decode("utf-8", "replace"))
+    frm = dict(reversed(hdrs)).get("from", "")
+    m = re.search(r"sip:([^@;>\s]+)@", frm)
+    user = _user_for(m.group(1) if m else "")
+    reg = registered(user) if user else None
+    if not user or not reg or reg["ip"] != addr[0]:
+        _seen(addr, "a call was refused: only a phone signed in to Trillion can call it.")
+        reply(403, "Forbidden")
+        return
+    if ON_INCOMING is None:
+        reply(480, "Temporarily Unavailable")
+        return
+    if busy(user["id"]):
+        reply(486, "Busy Here")
+        return
+    BUSY[user["id"]] = {"t": time.time(), "call": None}
+    try:
+        call = IncomingCall(sock, data, addr, user)
+    except Exception:
+        BUSY.pop(user["id"], None)
+        reply(500, "Server Error")
+        return
+    if not call.choose():
+        _seen(addr, "a call was refused: switch on G722 or PCMU in Linphone's audio codecs, and media encryption to None.")
+        call._respond(488, "Not Acceptable Here")
+        call.hangup()
+        BUSY.pop(user["id"], None)
+        return
+    call.ringing()
+    _seen(addr, f"{user['name'].lower()} is calling Trillion")
+    threading.Thread(target=ON_INCOMING, args=(user, call), daemon=True).start()
 
 
 # ---------- calls at set times ----------
@@ -720,7 +955,7 @@ def _handle_sip(sock, data, addr):
     head, _, _ = text.partition("\r\n\r\n")
     first, *lines = head.split("\r\n")
     method = first.split(" ", 1)[0]
-    if method not in ("REGISTER", "OPTIONS"):
+    if method not in ("REGISTER", "OPTIONS", "INVITE", "CANCEL", "BYE", "ACK"):
         return
     h = {}
     for ln in lines:
@@ -742,6 +977,14 @@ def _handle_sip(sock, data, addr):
 
     if method == "OPTIONS":
         reply(200, "OK", ["Allow: INVITE, ACK, BYE, CANCEL, OPTIONS, REGISTER"])
+        return
+    if method == "INVITE":
+        _incoming(sock, data, addr, reply)
+        return
+    if method == "ACK":
+        return
+    if method in ("CANCEL", "BYE"):                 # for a call that is already over
+        reply(481, "Call/Transaction Does Not Exist")
         return
     if not _allowed_source(addr[0]):
         _seen(addr, f"refused: {addr[0]} is not a Tailscale address. Use the PC's 100.x address as the domain.")

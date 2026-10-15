@@ -1722,13 +1722,7 @@ def place_call(user, topic="projects", items=None):
     else:
         opening = f"Good {'morning' if datetime.datetime.now().hour < 12 else 'day'} {user['name']}, it's {name}. " + project_briefing(user) + " Anything you want me to do?"
 
-    def answer(words):
-        if BUSY.get(user["id"]):
-            return "I am busy with another job right now. I have put your request in the chat."
-        try:
-            return run_agent(user, words).get("reply") or "Done."
-        except Exception as e:
-            return f"That did not work: {type(e).__name__}."
+    answer = call_answer(user)
     ts = TAILSCALE.get("v") or {}
     try:
         res = voicecall.conversation(user, opening, answer, my_ip=ts.get("ip") or None,
@@ -1741,6 +1735,35 @@ def place_call(user, topic="projects", items=None):
                                                     "declined": "declined", "unreachable": "the phone could not be reached"}.get(res["result"], res.get("error", res["result"]))[:200],
              "done" if res["result"] == "answered" else "waiting")
     return res
+
+
+def call_answer(user):
+    """What Trillion does with something you say on a call: the normal chat, with no approvals except for payments."""
+    def answer(words):
+        if BUSY.get(user["id"]):
+            return "I am busy with another job right now. Ask me again in a minute."
+        try:
+            with tools.on_call():
+                return run_agent(user, words).get("reply") or "Done."
+        except Exception as e:
+            return f"That did not work: {type(e).__name__}."
+    return answer
+
+
+def incoming_call(user, call):
+    """You phoned Trillion from Linphone."""
+    name = core.settings(user).get("assistant_name") or "Trillion"
+    part = "morning" if datetime.datetime.now().hour < 12 else ("afternoon" if datetime.datetime.now().hour < 18 else "evening")
+    opening = f"Good {part} {user['name']}, it's {name}. What can I do for you?"
+    res = voicecall.take_call(user, call, opening, call_answer(user),
+                              log=lambda w: core.log(user["id"], f'On the call you said: "{w[:120]}"', "voice"))
+    if res["result"] == "answered":
+        core.log(user["id"], f"You called {name}: {len(res['heard'])} thing{'s' if len(res['heard']) != 1 else ''} said", "done")
+    elif res["result"] == "failed":
+        core.log(user["id"], f"Your call to {name} did not work: {res.get('error', '')}"[:200], "info")
+
+
+voicecall.ON_INCOMING = incoming_call
 
 
 def call_in_background(user, topic="projects", items=None, fallback=None):
