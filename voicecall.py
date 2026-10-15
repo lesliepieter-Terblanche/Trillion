@@ -379,15 +379,13 @@ def _resolve(target):
 def conversation(user, opening, answer=None, my_ip=None, log=None):
     """Ring the login's Linphone, say the opening, then take up to a few requests by voice.
     answer(text) -> what to say back (the normal chat). Returns how it went."""
-    p = prefs(user)
-    if not p["target"]:
-        raise CallError("Set up calls first: choose your phone on the Phone page.")
+    ip, port = where(user)
     if BUSY.get(user["id"]):
         raise CallError("I am already on a call with you.")
     BUSY[user["id"]] = True
     heard = []
     try:
-        call = Call(_resolve(p["target"]), p["port"], my_ip)
+        call = Call(ip, port, my_ip)
         first = synth(opening, user)                       # ready before the phone rings, so there is no pause
         result = call.dial()
         if result != "answered":
@@ -528,3 +526,114 @@ def parse(text):
         if named:
             days = "".join(sorted(set(named)))
     return {"at": f"{h:02d}:{mi:02d}", "days": days, "once": once, "topic": topic}
+
+
+# ---------- the login point: Linphone signs in to Trillion, so Trillion always knows where the phone is ----------
+SIP_PORT = int(os.environ.get("TRILLION_SIP_PORT", 5060))
+REG = {}                                   # user id -> {"ip", "port", "expires", "agent", "seen", "user"}
+REGISTRAR = {"running": False, "error": ""}
+
+
+def _allowed_source(ip):
+    import ipaddress
+    try:
+        a = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return a.is_loopback or a in ipaddress.ip_network("100.64.0.0/10")        # this PC, or your own Tailscale devices
+
+
+def _user_for(name):
+    import core
+    name = (name or "").strip().lower()
+    for u in core.q("SELECT * FROM users"):
+        if u["name"].lower() == name:
+            return u
+    return None
+
+
+def _handle_sip(sock, data, addr):
+    text = data.decode("utf-8", "replace")
+    head, _, _ = text.partition("\r\n\r\n")
+    first, *lines = head.split("\r\n")
+    method = first.split(" ", 1)[0]
+    if method not in ("REGISTER", "OPTIONS"):
+        return
+    h = {}
+    for ln in lines:
+        if ":" in ln:
+            k, v = ln.split(":", 1)
+            k = {"v": "via", "f": "from", "t": "to", "i": "call-id", "m": "contact"}.get(k.strip().lower(), k.strip().lower())
+            h.setdefault(k, v.strip())
+    to = h.get("to", "")
+    if ";tag=" not in to:
+        to += ";tag=" + uuid.uuid4().hex[:8]
+    via = h.get("via", "")
+    if "rport" in via and "rport=" not in via:
+        via = via.replace("rport", f"rport={addr[1]};received={addr[0]}", 1)
+    base = [f"Via: {via}", f"From: {h.get('from', '')}", f"To: {to}", f"Call-ID: {h.get('call-id', '')}", f"CSeq: {h.get('cseq', '')}",
+            "Server: Trillion"]
+
+    def reply(code, reason, extra=()):
+        sock.sendto(("\r\n".join([f"SIP/2.0 {code} {reason}"] + base + list(extra) + ["Content-Length: 0"]) + "\r\n\r\n").encode(), addr)
+
+    if method == "OPTIONS":
+        reply(200, "OK", ["Allow: INVITE, ACK, BYE, CANCEL, OPTIONS, REGISTER"])
+        return
+    if not _allowed_source(addr[0]):
+        reply(403, "Forbidden")
+        return
+    m = re.search(r"sip:([^@;>\s]+)@", h.get("to", ""))
+    user = _user_for(m.group(1) if m else "")
+    if not user:
+        reply(404, "Not Found")                     # the user name must be the Trillion login name, e.g. pieter
+        return
+    contact = h.get("contact", "")
+    exp = re.search(r"expires=(\d+)", contact) or re.search(r"(\d+)", h.get("expires", ""))
+    expires = int(exp.group(1)) if exp else 3600
+    if contact.strip() == "*" or expires == 0:
+        REG.pop(user["id"], None)
+        reply(200, "OK")
+        return
+    cm = re.search(r"sip:(?:[^@;>]+@)?([^:;>]+)(?::(\d+))?", contact)
+    ip = addr[0]                                   # where the phone really is (it may sit behind a router)
+    port = addr[1] if "rport" in h.get("via", "") or not cm else int(cm.group(2) or 5060)
+    expires = max(60, min(expires, 3600))
+    REG[user["id"]] = {"ip": ip, "port": port, "expires": time.time() + expires, "agent": h.get("user-agent", "")[:60],
+                       "seen": time.time(), "user": user["name"]}
+    reply(200, "OK", [f"Contact: {contact.split(';expires')[0] if contact else '<sip:' + ip + '>'};expires={expires}", f"Expires: {expires}"])
+
+
+def run_registrar():
+    """Listen for Linphone signing in. Runs for as long as Trillion runs."""
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(("0.0.0.0", SIP_PORT))
+    except OSError as e:
+        REGISTRAR.update(running=False, error=f"Port {SIP_PORT} is in use by another program ({e.strerror}).")
+        return
+    REGISTRAR.update(running=True, error="", port=SIP_PORT)
+    while True:
+        try:
+            data, addr = sock.recvfrom(65535)
+            _handle_sip(sock, data, addr)
+        except Exception:
+            time.sleep(0.05)
+
+
+def registered(user):
+    r = REG.get(user["id"])
+    return r if r and r["expires"] > time.time() else None
+
+
+def where(user):
+    """Where to ring: the phone's own sign-in if it is signed in, otherwise the address saved on the Phone page."""
+    r = registered(user)
+    if r:
+        return r["ip"], r["port"]
+    p = prefs(user)
+    if not p["target"]:
+        raise CallError("Your phone is not signed in to Trillion yet. In Linphone use user name "
+                        f"{user['name'].lower()}, domain this PC's Tailscale address, transport UDP.")
+    return _resolve(p["target"]), p["port"]

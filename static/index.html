@@ -514,11 +514,11 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
   <div class="panel" id="vc-panel"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><b>Calls from Trillion</b><span class="pill" id="vc-pill">off</span></div>
     <div class="muted" style="font-size:13px">I phone you for free through the Linphone app over Tailscale: at times you choose with a breakdown of your projects, and when something urgent needs you. Answer and talk back: "approve it", "remind me at three", "send Johan a message saying..." Anything that needs your OK still waits for it.</div>
     <details><summary class="muted" style="cursor:pointer;font-size:14px">Set it up (once)</summary><div class="muted" style="font-size:13px;line-height:1.7">
-      1. On your phone, install <b>Linphone</b> from the Play Store. When it asks for an account, skip it (no account needed).<br>
-      2. In Linphone: Settings, Network: set the <b>SIP port to 5060</b> (not random). Settings, Audio: leave <b>PCMU</b> switched on.<br>
+      1. On your phone, install <b>Linphone</b> from the Play Store and choose <b>Use a SIP account</b>.<br>
+      2. User name: <b id="vc-u">your login name</b>. Password: anything. Domain: <b id="vc-d">this PC's Tailscale address (100.x.x.x)</b>. Transport: <b>UDP</b>. With Trillion running it signs in and shows connected.<br>
       3. In Linphone: Settings, Advanced: switch on <b>Keep alive service</b> / <b>Start at boot</b>. In Android's settings, set Linphone's battery use to <b>Unrestricted</b>, otherwise calls can be missed.<br>
       4. Keep <b>Tailscale</b> on, on the phone. Choose the phone below and press TEST CALL. If Windows asks whether Python may use the network, allow it on private networks.</div></details>
-    <label class="field"><span>Your phone on Tailscale</span><select id="vc-dev" style="max-width:320px"></select></label>
+    <label class="field"><span>Or choose your phone on Tailscale (only needed if it does not sign in)</span><select id="vc-dev" style="max-width:320px"></select></label>
     <label class="field" id="vc-ipbox"><span>Or its Tailscale address</span><input id="vc-ip" placeholder="100.x.x.x" style="max-width:240px"></label>
     <label class="field"><span>Linphone SIP port</span><input id="vc-port" style="max-width:120px"></label>
     <label class="tickrow"><input type="checkbox" id="vc-on"><span><b>Call me</b><br><span class="muted">At the times below, and for urgent check-ins (if it is not answered, the phone rings instead).</span></span></label>
@@ -2119,6 +2119,9 @@ let VC=null;
 const VCDAYS={daily:'every day',weekdays:'weekdays',weekends:'weekends'};
 async function vcLoad(){try{vcDraw(await (await api('/api/call')).json());}catch(e){}}
 function vcDraw(c){VC=c;const p=c.prefs;$('vc-pill').textContent=p.on&&p.target?'on':'off';$('vc-pill').className='pill'+(p.on&&p.target?' on':'');
+  $('vc-u').textContent=c.sip_user;if(c.pc_ip)$('vc-d').textContent=c.pc_ip;
+  const rs=c.registered?'Linphone is signed in from '+c.registered.ip+'. Calls go straight there.':(c.registrar.error?c.registrar.error:'Linphone is not signed in yet (Trillion must be running).');
+  $('vc-msg').className='msg '+(c.registered?'ok':'muted');if(!$('vc-msg').dataset.busy)$('vc-msg').textContent=rs;
   $('vc-dev').innerHTML='<option value="">Choose...</option>'+c.devices.map(d=>`<option value="${esc(d.ip)}" ${d.ip===p.target?'selected':''}>${esc(d.name)} (${esc(d.os||'')}) ${d.online?'':'· offline'}</option>`).join('');
   $('vc-dev').closest('label').hidden=!c.devices.length;$('vc-ip').value=p.target;$('vc-port').value=p.port;$('vc-on').checked=p.on;
   $('vc-plans').innerHTML=c.plans.length?c.plans.map(x=>`<div style="display:flex;gap:10px;align-items:center;border:1px solid var(--edge2);padding:6px 10px;font-size:14px"><span style="flex:1"><b>${esc(x.at)}</b> ${x.once_date?'on '+esc(x.once_date):esc(VCDAYS[x.days]||'on set days')} · ${esc(x.topic==='projects'?'project breakdown':x.topic)}</span><button class="btn" data-vcx="${x.id}" style="min-height:34px;font-size:12px">REMOVE</button></div>`).join(''):'<div class="muted" style="font-size:13px">None yet.</div>';

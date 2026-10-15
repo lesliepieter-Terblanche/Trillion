@@ -869,8 +869,8 @@ def run_agent(user, text, files=None):
                 voicecall.delete_plan(user, pl["id"])
             voicecall.save_prefs(user, {"on": False})
             reply = "I will not call you any more. Urgent things still come as a notification and a ring. Switch calls on again on the Phone page."
-        elif not vp["target"]:
-            reply = "I cannot call you yet: set up calls on the Phone page first (install Linphone on your phone and choose it there)."
+        elif not vp["target"] and not voicecall.registered(user):
+            reply = "I cannot call you yet: set up Linphone on your phone so it signs in to me (steps on the Phone page)."
         elif cm.get("now"):
             BUSY[uid] = False
             call_in_background(user, cm["topic"])
@@ -1780,7 +1780,10 @@ def nudge_test(user=Depends(auth)):
 @app.get("/api/call")
 def call_get(user=Depends(auth)):
     ts = TAILSCALE.get("v") or {}
+    reg = voicecall.registered(user)
     return {"prefs": voicecall.prefs(user), "plans": voicecall.plans(user), "busy": bool(voicecall.BUSY.get(user["id"])),
+            "registered": {"ip": reg["ip"], "port": reg["port"], "agent": reg["agent"]} if reg else None,
+            "registrar": dict(voicecall.REGISTRAR), "pc_ip": ts.get("ip") or "", "sip_user": user["name"].lower(),
             "devices": [d for d in ts.get("devices", []) if d.get("ip")] if user["is_admin"] else [],
             "tailscale": bool(ts.get("ip"))}
 
@@ -1808,8 +1811,8 @@ def call_plan(p: dict = Body(...), user=Depends(auth)):
 
 @app.post("/api/call/test")
 def call_test(user=Depends(auth)):
-    if not voicecall.prefs(user)["target"]:
-        raise HTTPException(400, "Choose your phone first.")
+    if not voicecall.prefs(user)["target"] and not voicecall.registered(user):
+        raise HTTPException(400, "Your phone is not signed in yet. Set up Linphone as shown in the steps, or choose the phone.")
     if voicecall.BUSY.get(user["id"]):
         raise HTTPException(409, "A call is already on.")
     res = place_call(user, "a test call. If you can hear me, say hello")
@@ -3354,6 +3357,7 @@ def start_background():
     threading.Thread(target=background, daemon=True).start()
     threading.Thread(target=wa_background, daemon=True).start()
     threading.Thread(target=gumroad.background, daemon=True).start()
+    threading.Thread(target=voicecall.run_registrar, daemon=True).start()
 
     def warm():  # load hearing and the brains up front so the first request is not slow
         try:
