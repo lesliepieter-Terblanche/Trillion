@@ -20,11 +20,14 @@ import uuid
 import numpy as np
 
 RATE = 8000
-FRAME = 160                       # 20 ms at 8 kHz
+FRAME = 160                       # 20 ms at 8 kHz (the old telephone sound)
+VOICE_RATE = 16000                # Trillion's voice is made at 16 kHz; wideband calls (G.722) carry it as it is
+CALL_MODEL = os.environ.get("TRILLION_CALL_WHISPER", "large-v3-turbo")
+_CALL_W = {"m": None, "tried": False}
 RING_SECONDS = 40
 MAX_TURNS = 4
 LISTEN_MAX = 15                   # seconds to wait for an answer
-END_SILENCE = 1.2                 # seconds of quiet that end what you said
+END_SILENCE = 1.5                 # seconds of quiet that end what you said
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 BUSY = {}                         # user id -> True while a call is on
 
@@ -84,13 +87,13 @@ def synth(text, user=None):
                                params={"output_format": "pcm_16000"}, headers={"xi-api-key": key}, timeout=60,
                                json={"text": text, "model_id": "eleven_turbo_v2_5"})
                 if r.status_code == 200 and r.content:
-                    return np.frombuffer(r.content, dtype=np.int16)[::2].copy()
+                    return np.frombuffer(r.content, dtype=np.int16).copy()
         except Exception:
             pass
     if os.name == "nt":
         out = os.path.join(tempfile.mkdtemp(), "say.wav")
         ps = ("Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
-              "$f = New-Object System.Speech.AudioFormat.SpeechAudioFormatInfo(8000, [System.Speech.AudioFormat.AudioBitsPerSample]::Sixteen, "
+              "$f = New-Object System.Speech.AudioFormat.SpeechAudioFormatInfo(16000, [System.Speech.AudioFormat.AudioBitsPerSample]::Sixteen, "
               "[System.Speech.AudioFormat.AudioChannel]::Mono); $s.Rate = 0; "
               f"$s.SetOutputToWaveFile('{out}', $f); $s.Speak([Console]::In.ReadToEnd()); $s.Dispose()")
         subprocess.run(["powershell", "-NoProfile", "-Command", ps], input=text, capture_output=True, text=True, timeout=60,
@@ -104,15 +107,94 @@ def synth(text, user=None):
     raise CallError("No voice is available on this PC.")
 
 
-def hear(samples):
-    """8 kHz samples -> words, with the speech recognition the dashboard uses."""
+def resample(x, src, dst):
+    if src == dst or not len(x):
+        return x.astype(np.int16)
+    n = int(round(len(x) * dst / src))
+    return np.interp(np.linspace(0, len(x) - 1, n), np.arange(len(x)), x.astype(np.float32)).astype(np.int16)
+
+
+def call_model():
+    """A stronger speech model for phone calls (better with accents and phone sound); the dashboard's one if it cannot load."""
     import app
-    w = app.load_whisper()
-    audio = np.repeat(samples.astype(np.float32) / 32768.0, 2)          # 8 kHz -> 16 kHz
+    if _CALL_W["m"] is not None:
+        return _CALL_W["m"]
+    if not _CALL_W["tried"]:
+        _CALL_W["tried"] = True
+        try:
+            import core
+            from faster_whisper import WhisperModel
+            if core.gpu():
+                app._cuda_dlls()
+                _CALL_W["m"] = WhisperModel(CALL_MODEL, device="cuda", compute_type="int8_float16")
+                return _CALL_W["m"]
+        except Exception:
+            _CALL_W["m"] = None
+    return app.load_whisper()
+
+
+def hints(user):
+    """Names and words the speech model should expect, so they are heard right."""
+    words = ["Trillion", "Pieter", "Brandon", "Lewellyn", "TrueHome", "TackleTrail", "VapeEssence", "Gumroad", "Payhip",
+             "WhatsApp", "Linphone", "invoice", "approve", "remind me", "call back", "outstanding"]
+    try:
+        import core
+        st = core.settings(user) if user else {}
+        words = [user["name"], st.get("brand") or "", st.get("assistant_name") or ""] + words
+    except Exception:
+        pass
+    return "Phone call with " + ", ".join(dict.fromkeys(w for w in words if w)) + "."
+
+
+def hear(samples, rate=RATE, user=None):
+    """What was said on the call, as words."""
+    audio = resample(samples, rate, 16000).astype(np.float32) / 32768.0
     if audio.size < 8000:
         return ""
-    segs, _ = w.transcribe(audio, vad_filter=True, language="en")
-    return " ".join(s.text.strip() for s in segs).strip()
+    w = call_model()
+    segs, _ = w.transcribe(audio, language="en", beam_size=5, vad_filter=True, initial_prompt=hints(user),
+                           condition_on_previous_text=False)
+    text = " ".join(s.text.strip() for s in segs).strip()
+    if not text:
+        segs, _ = w.transcribe(audio, language="en", beam_size=5, vad_filter=False, initial_prompt=hints(user))
+        text = " ".join(s.text.strip() for s in segs).strip()
+    return "" if text.lower().startswith("phone call with") else text
+
+
+def spoken(text, limit=320):
+    """A chat answer made fit to be heard: no lists or symbols, two or three sentences."""
+    t = re.sub(r"https?://\S+", "the link on your dashboard", str(text or ""))
+    t = re.sub(r"^\s*[-*\u2022]\s*", "", t, flags=re.M)
+    t = re.sub(r"[*_#`>|]", "", t)
+    t = re.sub(r"\s*\n+\s*", ". ", t).replace("..", ".")
+    t = re.sub(r"\s+", " ", t).strip()
+    if len(t) <= limit:
+        return t
+    cut = t[:limit]
+    end = max(cut.rfind(". "), cut.rfind("? "), cut.rfind("! "))
+    return (cut[:end + 1] if end > 80 else cut.rsplit(" ", 1)[0] + ".") + " The rest is in the chat."
+
+
+G722 = 9
+
+
+def g722_codec():
+    """Wideband (16 kHz) sound in and out, through the audio library Trillion already has."""
+    import av
+    e = av.CodecContext.create("g722", "w")
+    e.sample_rate, e.format, e.layout = 16000, "s16", "mono"
+    d = av.CodecContext.create("g722", "r")
+    d.sample_rate, d.layout = 16000, "mono"
+
+    def enc(pcm):
+        f = av.AudioFrame.from_ndarray(pcm.astype(np.int16).reshape(1, -1), format="s16", layout="mono")
+        f.sample_rate = 16000
+        return b"".join(bytes(p) for p in e.encode(f))
+
+    def dec(payload):
+        out = [fr.to_ndarray().reshape(-1) for fr in d.decode(av.Packet(payload))]
+        return np.concatenate(out).astype(np.int16) if out else np.zeros(0, dtype=np.int16)
+    return enc, dec
 
 
 # ---------- one call ----------
@@ -135,7 +217,7 @@ class Call:
         self.rtp.bind(("0.0.0.0", 0))
         self.sip_port, self.rtp_port = self.sip.getsockname()[1], self.rtp.getsockname()[1]
         self.tag, self.branch = uuid.uuid4().hex[:10], "z9hG4bK" + uuid.uuid4().hex[:16]
-        self.to_tag, self.remote_rtp, self.pt = "", None, 0
+        self.to_tag, self.remote_rtp, self.pt, self.rate = "", None, 0, 8000
         self.inbox, self.ended, self.lock = [], threading.Event(), threading.Lock()
         self.seq, self.ts, self.ssrc = random.randint(0, 65535), random.randint(0, 2 ** 31), random.randint(0, 2 ** 31)
         self.out_q, self.state = [], "new"
@@ -154,7 +236,7 @@ class Call:
 
     def _sdp(self):
         return (f"v=0\r\no=trillion {int(time.time())} 1 IN IP4 {self.my_ip}\r\ns=Trillion\r\nc=IN IP4 {self.my_ip}\r\nt=0 0\r\n"
-                f"m=audio {self.rtp_port} RTP/AVP 0 8 101\r\na=rtpmap:0 PCMU/8000\r\na=rtpmap:8 PCMA/8000\r\n"
+                f"m=audio {self.rtp_port} RTP/AVP 9 0 8 101\r\na=rtpmap:9 G722/8000\r\na=rtpmap:0 PCMU/8000\r\na=rtpmap:8 PCMA/8000\r\n"
                 f"a=rtpmap:101 telephone-event/8000\r\na=ptime:20\r\na=sendrecv\r\n")
 
     def _msg(self, method, cseq, body="", branch=None, to_tag=True):
@@ -242,7 +324,13 @@ class Call:
                 self.hangup()
                 raise CallError("The phone answered without sound.")
             pts = [int(x) for x in mm.group(2).split()]
-            self.pt = 0 if 0 in pts else (8 if 8 in pts else -1)
+            self.pt = next((p for p in pts if p in (G722, 0, 8)), -1)
+            if self.pt == G722:
+                try:
+                    import av  # noqa: F401  (wideband needs the audio library; telephone sound otherwise)
+                except ImportError:
+                    self.pt = 0 if 0 in pts else (8 if 8 in pts else -1)
+            self.rate = 16000 if self.pt == G722 else 8000
             if self.pt < 0:
                 self._send_sip(self._ack(200))
                 self.hangup()
@@ -283,9 +371,13 @@ class Call:
 
     def _rtp_loop(self):
         self.rtp.settimeout(0.005)
-        enc = ulaw_encode if self.pt == 0 else alaw_encode
-        dec = ulaw_decode if self.pt == 0 else alaw_decode
-        silence = enc(np.zeros(FRAME, dtype=np.int16))
+        frame = self.rate // 50
+        if self.pt == G722:
+            enc, dec = g722_codec()
+        else:
+            enc = ulaw_encode if self.pt == 0 else alaw_encode
+            dec = ulaw_decode if self.pt == 0 else alaw_decode
+        silence = enc(np.zeros(frame, dtype=np.int16))
         nxt = time.time()
         while not self.ended.is_set():
             with self.lock:
@@ -297,12 +389,12 @@ class Call:
             except OSError:
                 pass
             self.seq += 1
-            self.ts += FRAME
+            self.ts += FRAME                      # the clock runs at 8 kHz for G.722 too, as the standard says
             nxt += 0.02
             while time.time() < nxt:
                 try:
                     data, _ = self.rtp.recvfrom(2048)
-                    if len(data) > 12 and (data[1] & 0x7F) in (0, 8):
+                    if len(data) > 12 and (data[1] & 0x7F) == self.pt:
                         body = data[12 + 4 * (data[0] & 0x0F):]
                         with self.lock:
                             self.inbox.append(dec(body))
@@ -311,11 +403,13 @@ class Call:
                 except OSError:
                     break
 
-    def say(self, samples):
-        """Play samples to the phone and wait until they have been sent."""
-        frames = [samples[i:i + FRAME] for i in range(0, len(samples), FRAME)]
-        if frames and len(frames[-1]) < FRAME:
-            frames[-1] = np.pad(frames[-1], (0, FRAME - len(frames[-1])))
+    def say(self, samples, rate=VOICE_RATE):
+        """Play samples (made at `rate`) to the phone and wait until they have been sent."""
+        samples = resample(samples, rate, self.rate)
+        fr = self.rate // 50
+        frames = [samples[i:i + fr] for i in range(0, len(samples), fr)]
+        if frames and len(frames[-1]) < fr:
+            frames[-1] = np.pad(frames[-1], (0, fr - len(frames[-1])))
         with self.lock:
             self.out_q.extend(frames)
         while not self.ended.is_set():
@@ -329,19 +423,29 @@ class Call:
     def listen(self, max_seconds=LISTEN_MAX, end_silence=END_SILENCE):
         """Collect what the person says: from when they start speaking until they stop."""
         got, start, talking, quiet_since = [], time.time(), False, None
-        floor = 600
+        before, noise = [], []                    # the moment before speech starts is kept, so the first word is not cut
+        floor = 500
         while not self.ended.is_set() and time.time() - start < max_seconds:
             time.sleep(0.05)
             with self.lock:
                 frames, self.inbox = self.inbox, []
             for f in frames:
                 level = float(np.sqrt(np.mean(f.astype(np.float32) ** 2))) if len(f) else 0.0
+                if not talking and len(noise) < 15 and level < 1500:          # quiet frames only: speech is never "noise"
+                    noise.append(level)
+                    floor = min(1500.0, max(500.0, 3.0 * float(np.median(noise))))   # set by the line's own background hiss
                 if level > floor:
+                    if not talking:
+                        got.extend(before)
                     talking, quiet_since = True, None
                 elif talking and quiet_since is None:
                     quiet_since = time.time()
+                elif talking and level > floor * 0.6:
+                    quiet_since = None
                 if talking:
                     got.append(f)
+                else:
+                    before = (before + [f])[-15:]
             if talking and quiet_since and time.time() - quiet_since > end_silence:
                 break
         return np.concatenate(got) if got else np.zeros(0, dtype=np.int16)
@@ -419,7 +523,7 @@ def conversation(user, opening, answer=None, my_ip=None, log=None):
             time.sleep(0.6)
             call.say(first)
             for _ in range(MAX_TURNS):
-                words = hear(call.listen()) if not call.ended.is_set() else ""
+                words = hear(call.listen(), call.rate, user) if not call.ended.is_set() else ""
                 if call.ended.is_set():
                     break
                 if not words:
@@ -432,10 +536,9 @@ def conversation(user, opening, answer=None, my_ip=None, log=None):
                         and len(words) < 40:
                     call.say(synth("Okay. Bye.", user))
                     break
-                call.say(synth("One moment.", user))
+                call.say(synth(f"Got it: {words[:160]}. One moment.", user))      # so a word heard wrong is caught at once
                 reply = answer(words) if answer else "Noted."
-                reply = re.sub(r"https?://\S+", "the link on your dashboard", str(reply or "Done."))[:600]
-                call.say(synth(reply + " Anything else?", user))
+                call.say(synth(spoken(reply or "Done.") + " Anything else?", user))
             return {"result": "answered", "heard": heard}
         finally:
             call.hangup()

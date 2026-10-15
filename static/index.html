@@ -516,7 +516,7 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <details><summary class="muted" style="cursor:pointer;font-size:14px">Set it up (once)</summary><div class="muted" style="font-size:13px;line-height:1.7">
       1. On your phone, install <b>Linphone</b> from the Play Store and choose <b>Use a SIP account</b>.<br>
       2. User name: <b id="vc-u">your login name</b>. Password: anything. Domain: <b id="vc-d">this PC's Tailscale address (100.x.x.x)</b>. Transport: <b>UDP</b>. With Trillion running it signs in and shows connected.<br>
-      3. In Linphone: Settings, Advanced: switch on <b>Keep alive service</b> / <b>Start at boot</b>. In Android's settings, set Linphone's battery use to <b>Unrestricted</b>, otherwise calls can be missed.<br>
+      3. In Linphone: Settings, Audio, Codecs: switch on <b>G722</b> (much clearer sound, so I hear you better). Then Settings, Advanced: switch on <b>Keep alive service</b> / <b>Start at boot</b>. In Android's settings, set Linphone's battery use to <b>Unrestricted</b>, otherwise calls can be missed.<br>
       4. Keep <b>Tailscale</b> on, on the phone. Choose the phone below and press TEST CALL. If Windows asks whether Python may use the network, allow it on private networks.</div></details>
     <label class="field"><span>Or choose your phone on Tailscale (only needed if it does not sign in)</span><select id="vc-dev" style="max-width:320px"></select></label>
     <label class="field" id="vc-ipbox"><span>Or its Tailscale address</span><input id="vc-ip" placeholder="100.x.x.x" style="max-width:240px"></label>
