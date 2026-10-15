@@ -156,27 +156,41 @@ def _report_back(user, label, res):
         pass
 
 
-def phone_app(user, pull):
-    """Reverse-engineer a phone app whose APK was just pulled off the phone, on the owner's Pro plan via Claude Code.
-    `pull` is the result of phone.pull_apk. Returns at once; the report arrives in the chat and on the phone."""
+def phone_app(user, app):
+    """Reverse-engineer a phone app on the owner's Pro plan via Claude Code. Resolves the app quickly (so a bad name
+    fails at once), then pulls the APK and runs Claude Code in the background. Returns at once; the report arrives in
+    the chat and on the phone."""
     if not user["is_admin"]:
         return {"error": "REA is owner-only for now."}
     import core
-    folder = os.path.dirname(pull["apk"])
+    import phone
+    try:
+        pkg = phone.resolve_app(user, app)                 # quick: a wrong name fails straight away
+    except Exception as e:
+        return {"error": str(e) if type(e).__name__ == "PhoneError" else f"{type(e).__name__}: {e}"}
     uid = user["id"]
+    dest = os.path.join(str(core.DATA), "rea_apks", re.sub(r"[^A-Za-z0-9._-]+", "_", pkg)[:60] or "app")
 
     def work():
-        core.log(uid, f"Handed to Claude Code (Pro plan): REA on {pull['package']}", "info")
+        try:
+            pull = phone.pull_apk(user, pkg, dest)         # the slow part (adb pull): off the request thread
+        except Exception as e:
+            msg = str(e) if type(e).__name__ == "PhoneError" else f"{type(e).__name__}: {e}"
+            core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)",
+                   (uid, "assistant", f"I could not get {pkg} off your phone: {msg}", time.time()))
+            core.log(uid, f"REA on {pkg}: could not pull the APK", "waiting")
+            return
+        core.log(uid, f"Handed to Claude Code (Pro plan): REA on {pkg}", "info")
         names = ", ".join(os.path.basename(p) for p in pull["all"])
         prompt = ("You are Claude Code, reverse-engineering an Android app on the owner's own machine. The owner approved "
-                  "this through Trillion. The app's APK file(s) are in the current folder: " + names + f" (package {pull['package']}). "
+                  "this through Trillion. The app's APK file(s) are in the current folder: " + names + f" (package {pkg}). "
                   "Decompile and inspect it with whatever is available (jadx or apktool if installed; otherwise unzip the APK and read "
                   "AndroidManifest.xml, the DEX strings, and resources). Explain how the app or the feature in question works and show the "
                   "evidence you based it on. Finish with a short plain-language summary the owner can read on a phone.")
-        _report_back(user, pull["package"], _dispatch_claude(user, prompt, folder))
+        _report_back(user, pkg, _dispatch_claude(user, prompt, os.path.dirname(pull["apk"])))
 
     threading.Thread(target=work, daemon=True).start()
-    return {"result": f"Pulled {pull['package']} off your phone and handed it to Claude Code on your Pro plan. "
+    return {"result": f"Pulling {pkg} off your phone and handing it to Claude Code on your Pro plan. "
             "It will do the work and report back here and on your phone when it is done.", "via": "Claude Code (Pro plan)"}
 
 

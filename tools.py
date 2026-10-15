@@ -621,17 +621,8 @@ def t_connector_call(user, connector, tool, arguments=None):
 
 
 def t_rea_phone_app(user, app):
-    import os
-    import phone
     import rea
-    if not user["is_admin"]:
-        return {"error": "REA is owner-only for now."}
-    dest = os.path.join(str(core.DATA), "rea_apks", re.sub(r"[^A-Za-z0-9._-]+", "_", str(app))[:40] or "app")
-    try:
-        pull = phone.pull_apk(user, app, dest)
-    except Exception as e:
-        return {"error": str(e) if type(e).__name__ == "PhoneError" else f"{type(e).__name__}: {e}"}
-    return rea.phone_app(user, pull)
+    return rea.phone_app(user, app)
 
 
 def t_rea_phone_traffic(user, app, seconds=60):
