@@ -1781,7 +1781,7 @@ def nudge_test(user=Depends(auth)):
 def call_get(user=Depends(auth)):
     ts = TAILSCALE.get("v") or {}
     reg = voicecall.registered(user)
-    return {"prefs": voicecall.prefs(user), "plans": voicecall.plans(user), "busy": bool(voicecall.BUSY.get(user["id"])),
+    return {"prefs": voicecall.prefs(user), "plans": voicecall.plans(user), "busy": voicecall.busy(user["id"]),
             "registered": {"ip": reg["ip"], "port": reg["port"], "agent": reg["agent"]} if reg else None,
             "registrar": dict(voicecall.REGISTRAR), "pc_ip": ts.get("ip") or "", "sip_user": user["name"].lower(),
             "devices": [d for d in ts.get("devices", []) if d.get("ip")] if user["is_admin"] else [],
@@ -1813,8 +1813,8 @@ def call_plan(p: dict = Body(...), user=Depends(auth)):
 def call_test(user=Depends(auth)):
     if not voicecall.prefs(user)["target"] and not voicecall.registered(user):
         raise HTTPException(400, "Your phone is not signed in yet. Set up Linphone as shown in the steps, or choose the phone.")
-    if voicecall.BUSY.get(user["id"]):
-        raise HTTPException(409, "A call is already on.")
+    if voicecall.busy(user["id"]):
+        raise HTTPException(409, "A call is already on. Hang up in Linphone, or wait a moment and try again.")
     res = place_call(user, "a test call. If you can hear me, say hello")
     return res
 
@@ -3300,7 +3300,7 @@ def background():
             for u in core.q("SELECT * FROM users"):
                 try:
                     vp = voicecall.prefs(u)
-                    if vp["on"] and vp["target"] and not voicecall.BUSY.get(u["id"]) and not meeting.active(u):
+                    if vp["on"] and vp["target"] and not voicecall.busy(u["id"]) and not meeting.active(u):
                         for plan in voicecall.due_plans(u, now)[:1]:
                             voicecall.mark_ran(plan["id"], now.date().isoformat(), once=bool(plan["once_date"]))
                             call_in_background(u, plan["topic"], fallback=lambda u=u: watch.send(u, "Trillion tried to call you", "Your planned call was not answered. The update is in the chat."))
@@ -3362,6 +3362,8 @@ def start_background():
     def warm():  # load hearing and the brains up front so the first request is not slow
         try:
             load_whisper()
+            if any(voicecall.prefs(u)["on"] for u in core.q("SELECT * FROM users")):
+                voicecall.warm_call_model()             # the stronger model for phone calls, never during a call
         except Exception:
             pass
         try:

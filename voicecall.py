@@ -29,7 +29,20 @@ MAX_TURNS = 4
 LISTEN_MAX = 15                   # seconds to wait for an answer
 END_SILENCE = 1.5                 # seconds of quiet that end what you said
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-BUSY = {}                         # user id -> True while a call is on
+BUSY = {}                         # user id -> {"t": when it started, "call": the call} while a call is on
+MAX_CALL = 300                    # a call never lasts longer than five minutes
+
+
+def busy(uid):
+    """True only while a call is really on: a call that ended, or one stuck for too long, does not count."""
+    b = BUSY.get(uid)
+    if not b:
+        return False
+    c = b.get("call")
+    if (c is not None and c.ended.is_set()) or time.time() - b["t"] > MAX_CALL + 60:
+        BUSY.pop(uid, None)
+        return False
+    return True
 
 
 class CallError(Exception):
@@ -119,18 +132,24 @@ def call_model():
     import app
     if _CALL_W["m"] is not None:
         return _CALL_W["m"]
-    if not _CALL_W["tried"]:
-        _CALL_W["tried"] = True
-        try:
-            import core
-            from faster_whisper import WhisperModel
-            if core.gpu():
-                app._cuda_dlls()
-                _CALL_W["m"] = WhisperModel(CALL_MODEL, device="cuda", compute_type="int8_float16")
-                return _CALL_W["m"]
-        except Exception:
-            _CALL_W["m"] = None
+    if not _CALL_W["tried"]:                      # never wait for it during a call: load it in the background
+        threading.Thread(target=warm_call_model, daemon=True).start()
     return app.load_whisper()
+
+
+def warm_call_model():
+    """Load (the first time: download, about 1.6 GB) the stronger call model. Run in the background at start-up."""
+    if _CALL_W["tried"]:
+        return
+    _CALL_W["tried"] = True
+    try:
+        import app, core
+        from faster_whisper import WhisperModel
+        if core.gpu():
+            app._cuda_dlls()
+            _CALL_W["m"] = WhisperModel(CALL_MODEL, device="cuda", compute_type="int8_float16")
+    except Exception:
+        _CALL_W["m"] = None
 
 
 def hints(user):
@@ -505,15 +524,16 @@ def conversation(user, opening, answer=None, my_ip=None, log=None):
     answer(text) -> what to say back (the normal chat). Returns how it went."""
     ip, port = where(user)
     reg = registered(user)
-    if BUSY.get(user["id"]):
+    if busy(user["id"]):
         raise CallError("I am already on a call with you.")
-    BUSY[user["id"]] = True
+    BUSY[user["id"]] = {"t": time.time(), "call": None}
     heard = []
     try:
         if reg and SOCK["s"] is not None:
             call = Call(ip, port, my_ip, shared=SOCK["s"], user_part=reg.get("user", "").lower())
         else:
             call = Call(ip, port, my_ip)
+        BUSY[user["id"]]["call"] = call
         first = synth(opening, user)                       # ready before the phone rings, so there is no pause
         result = call.dial()
         REGISTRAR["call"] = {"t": time.time(), "to": f"{ip}:{port}", "result": result, "via": "sign-in" if call.shared is not None else "direct"}
@@ -522,9 +542,12 @@ def conversation(user, opening, answer=None, my_ip=None, log=None):
         try:
             time.sleep(0.6)
             call.say(first)
+            began = time.time()
             for _ in range(MAX_TURNS):
+                if call.ended.is_set() or time.time() - began > MAX_CALL:
+                    break
                 words = hear(call.listen(), call.rate, user) if not call.ended.is_set() else ""
-                if call.ended.is_set():
+                if call.ended.is_set():                    # you hung up: stop at once
                     break
                 if not words:
                     call.say(synth("I did not hear anything, so I will leave it on your phone. Bye.", user))
@@ -538,6 +561,8 @@ def conversation(user, opening, answer=None, my_ip=None, log=None):
                     break
                 call.say(synth(f"Got it: {words[:160]}. One moment.", user))      # so a word heard wrong is caught at once
                 reply = answer(words) if answer else "Noted."
+                if call.ended.is_set():
+                    break
                 call.say(synth(spoken(reply or "Done.") + " Anything else?", user))
             return {"result": "answered", "heard": heard}
         finally:
