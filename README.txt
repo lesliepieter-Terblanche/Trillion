@@ -67,6 +67,13 @@ SKILLS AND CONNECTORS (Skills page)
 - Connector: a helper program (MCP server) that adds abilities, such as browser control. Only the
   owner adds one and chooses which logins may use it. Connectors need Node.js: run Setup again
   once if "Cannot find the program npx" appears.
+- Reverse engineering (REA): a connector that looks inside apps, websites and programs without
+  their source (github.com/morluto/rea, MIT). Owner only. Every REA job waits for your OK first,
+  even on a phone call, and the approval shows on your phone over Tailscale. Heavy native-binary
+  jobs (a .exe/.dll, a Ghidra-level disassembly) are handed to Claude Code on your Pro plan, which
+  does the work and reports back in the chat and on your phone. For that handoff, Claude Code must
+  be installed and signed in to your Pro plan on this PC; adjust its command under the REA
+  connector if needed (default "claude -p").
 
 MOVING TO A NEW DRIVE OR A CLEAN WINDOWS INSTALL
 Before you wipe C:

@@ -234,7 +234,8 @@ def execute(user, name, args, task_id=None, approved=False, direct=False):
             return {"error": "Full phone control is switched off. Switch it on on the Phone page."}
         if name == "update_self" and not user["is_admin"]:
             return {"error": "Only the owner login can update Trillion."}
-        if name in NEEDS_APPROVAL and not approved:
+        rea_job = name == "connector_call" and not approved and __import__("rea").is_rea_call(user, (args or {}).get("connector"))
+        if (name in NEEDS_APPROVAL or rea_job) and not approved:
             if name == "delete_path":
                 resolve(user, args.get("path"))  # permission check before asking
             if name == "gumroad_set_price":       # settle exactly which product before asking
@@ -266,7 +267,7 @@ def execute(user, name, args, task_id=None, approved=False, direct=False):
                     out = t_phone_send_whatsapp(user, **args)
                     core.log(uid, describe(name, args), "done")
                     return out
-            if calling() and name not in MONEY:           # asked for on a call: no approval needed
+            if calling() and name not in MONEY and not rea_job:   # asked for on a call: no approval needed (but never REA or payments)
                 out = globals()["t_" + name](user, **args)
                 core.log(uid, describe(name, args) + " (asked for on a call)", "done")
                 return out
@@ -628,6 +629,12 @@ def t_connector_call(user, connector, tool, arguments=None):
             arguments = json.loads(arguments)
         except Exception:
             arguments = {}
+    import rea
+    if rea.is_rea(row):
+        if not user["is_admin"]:
+            return {"error": "REA is owner-only for now."}
+        if rea.is_native_job(tool, arguments or {}):
+            return rea.handoff(user, row, tool, arguments or {})
     return extend.client(row).call(tool, arguments or {})
 
 
