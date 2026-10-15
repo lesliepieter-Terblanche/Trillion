@@ -364,6 +364,10 @@ PHONE_RULES = [
                           r"\b(?:battery|status|storage|charge|stats)\b.{0,30}" + _PH + r"|\bhow(?:'s| is)\s+" + _PH, re.I)),
 ]
 PHONE_WORDS = re.compile(r"\b(phone|cell|mobile|what'?s ?(?:app|up)|contact|battery|galaxy|samsung)\b", re.I)
+# the model falsely claiming it put something up for approval (not merely explaining that approval is needed)
+CLAIMS_PENDING = re.compile(r"\b(waiting for (?:your |my )?(?:ok|approval)|pending (?:your )?approval|"
+                            r"(?:sent|queued|submitted|put) (?:it |this )?(?:up )?for (?:your )?approval|"
+                            r"awaiting (?:your )?approval|approve it (?:on|in|from|via)|for your approval now)\b", re.I)
 
 
 # ---------- the Gumroad store, asked about or managed in plain words ----------
@@ -1182,8 +1186,8 @@ def run_agent(user, text, files=None):
         core.log(uid, reply[:300], "waiting")
     finally:
         BUSY[uid] = False
-    if not waiting and re.search(r"\bapprov", reply, re.I) and not re.search(r"\bapprov", text, re.I):
-        # the model talked about an approval that does not exist: say what really happened instead
+    if not waiting and not asking and CLAIMS_PENDING.search(reply) and not re.search(r"\bapprov", text, re.I):
+        # the model claimed something is waiting for approval when nothing is (not just explaining, and not answering a question)
         reply = ("I did not do that: nothing was prepared or sent. For a WhatsApp, say it like this: "
                  "send a WhatsApp to Sarie saying I am running late." if PHONE_WORDS.search(text) else
                  "I did not do that: nothing is waiting for approval. Tell me again in other words and I will try properly.")
