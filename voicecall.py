@@ -531,7 +531,7 @@ def parse(text):
 # ---------- the login point: Linphone signs in to Trillion, so Trillion always knows where the phone is ----------
 SIP_PORT = int(os.environ.get("TRILLION_SIP_PORT", 5060))
 REG = {}                                   # user id -> {"ip", "port", "expires", "agent", "seen", "user"}
-REGISTRAR = {"running": False, "error": ""}
+REGISTRAR = {"running": False, "error": "", "last": None}       # last: the latest sign-in attempt seen, and what happened
 
 
 def _allowed_source(ip):
@@ -550,6 +550,10 @@ def _user_for(name):
         if u["name"].lower() == name:
             return u
     return None
+
+
+def _seen(addr, what):
+    REGISTRAR["last"] = {"t": time.time(), "from": addr[0], "what": what}
 
 
 def _handle_sip(sock, data, addr):
@@ -581,11 +585,13 @@ def _handle_sip(sock, data, addr):
         reply(200, "OK", ["Allow: INVITE, ACK, BYE, CANCEL, OPTIONS, REGISTER"])
         return
     if not _allowed_source(addr[0]):
+        _seen(addr, f"refused: {addr[0]} is not a Tailscale address. Use the PC's 100.x address as the domain.")
         reply(403, "Forbidden")
         return
     m = re.search(r"sip:([^@;>\s]+)@", h.get("to", ""))
     user = _user_for(m.group(1) if m else "")
     if not user:
+        _seen(addr, f"refused: there is no Trillion login called '{m.group(1) if m else ''}'. Use your login name, e.g. pieter.")
         reply(404, "Not Found")                     # the user name must be the Trillion login name, e.g. pieter
         return
     contact = h.get("contact", "")
@@ -599,6 +605,7 @@ def _handle_sip(sock, data, addr):
     ip = addr[0]                                   # where the phone really is (it may sit behind a router)
     port = addr[1] if "rport" in h.get("via", "") or not cm else int(cm.group(2) or 5060)
     expires = max(60, min(expires, 3600))
+    _seen(addr, f"signed in as {user['name'].lower()}")
     REG[user["id"]] = {"ip": ip, "port": port, "expires": time.time() + expires, "agent": h.get("user-agent", "")[:60],
                        "seen": time.time(), "user": user["name"]}
     reply(200, "OK", [f"Contact: {contact.split(';expires')[0] if contact else '<sip:' + ip + '>'};expires={expires}", f"Expires: {expires}"])

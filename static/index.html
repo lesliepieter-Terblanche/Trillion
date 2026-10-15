@@ -2120,7 +2120,9 @@ const VCDAYS={daily:'every day',weekdays:'weekdays',weekends:'weekends'};
 async function vcLoad(){try{vcDraw(await (await api('/api/call')).json());}catch(e){}}
 function vcDraw(c){VC=c;const p=c.prefs;$('vc-pill').textContent=p.on&&p.target?'on':'off';$('vc-pill').className='pill'+(p.on&&p.target?' on':'');
   $('vc-u').textContent=c.sip_user;if(c.pc_ip)$('vc-d').textContent=c.pc_ip;
-  const rs=c.registered?'Linphone is signed in from '+c.registered.ip+'. Calls go straight there.':(c.registrar.error?c.registrar.error:'Linphone is not signed in yet (Trillion must be running).');
+  const L=c.registrar.last;
+  const rs=c.registered?'Linphone is signed in from '+c.registered.ip+'. Calls go straight there.':(c.registrar.error?c.registrar.error:
+    (L?'Last sign-in attempt '+hm(L.t)+' from '+L.from+': '+L.what:'Trillion is listening on UDP '+(c.registrar.port||5060)+' but has not received anything from Linphone. That means the Windows Firewall is blocking it (see the steps).'));
   $('vc-msg').className='msg '+(c.registered?'ok':'muted');if(!$('vc-msg').dataset.busy)$('vc-msg').textContent=rs;
   $('vc-dev').innerHTML='<option value="">Choose...</option>'+c.devices.map(d=>`<option value="${esc(d.ip)}" ${d.ip===p.target?'selected':''}>${esc(d.name)} (${esc(d.os||'')}) ${d.online?'':'· offline'}</option>`).join('');
   $('vc-dev').closest('label').hidden=!c.devices.length;$('vc-ip').value=p.target;$('vc-port').value=p.port;$('vc-on').checked=p.on;
