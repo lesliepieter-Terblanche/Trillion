@@ -215,21 +215,60 @@ def packages(user):
     return [ln.split(":", 1)[1].strip() for ln in sh(user, "pm list packages").splitlines() if ln.startswith("package:")]
 
 
+def _norm(s):
+    return re.sub(r"[^a-z0-9]", "", str(s).lower())
+
+
+def third_party(user):
+    """Packages the user installed (not the built-in Android ones)."""
+    out = sh(user, "pm list packages -3")
+    return [ln.split(":", 1)[1].strip() for ln in out.splitlines() if ln.startswith("package:")]
+
+
+def foreground_app(user):
+    """The package of the app currently open on the phone's screen."""
+    for cmd in ("dumpsys activity activities | grep -E 'mResumedActivity|ResumedActivity' | head -n 3",
+                "dumpsys window windows | grep -E 'mCurrentFocus|mFocusedApp' | head -n 3",
+                "dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' | head -n 3"):
+        try:
+            out = sh(user, cmd, timeout=25)
+        except PhoneError:
+            out = ""
+        for m in re.finditer(r"\b([a-zA-Z][\w.]+)/[\w.$]+", out):
+            pkg = m.group(1)
+            if "." in pkg and not pkg.startswith(("com.android.systemui", "com.android.launcher")):
+                return pkg
+    raise PhoneError("I could not tell which app is open. Open the app you want and try again.")
+
+
 def resolve_app(user, name):
-    key = re.sub(r"\s+", " ", name.lower().strip())
+    key = re.sub(r"\s+", " ", str(name).lower().strip())
     pkgs = packages(user)
+    if key in pkgs:                                  # an exact package name was given
+        return key
     if APPS.get(key) in pkgs:
         return APPS[key]
-    squashed = key.replace(" ", "")
-    hits = [p for p in pkgs if squashed in p.replace(".", "").lower()]
+    q = _norm(key)
+    if not q:
+        raise PhoneError("Say which app to use.")
+    hits = [p for p in pkgs if q in _norm(p)]
     if len(hits) == 1:
         return hits[0]
     if len(hits) > 1:
-        best = [p for p in hits if p.lower().endswith("." + squashed)]
+        best = [p for p in hits if _norm(p).endswith(q) or p.lower().rsplit(".", 1)[-1] == key.replace(" ", "")]
         if len(best) == 1:
             return best[0]
-        raise PhoneError(f"More than one app matches '{name}': {', '.join(hits[:6])}. Say which one.")
-    raise PhoneError(f"I could not find an app called '{name}' on the phone.")
+        raise PhoneError(f"More than one app matches '{name}': {', '.join(hits[:6])}. "
+                         "Say which one, or give the exact package name.")
+    toks = [t for t in re.split(r"[^a-z0-9]+", key) if len(t) >= 2]
+    try:
+        pool = third_party(user) or pkgs
+    except PhoneError:
+        pool = pkgs
+    loose = [p for p in pool if any(t in _norm(p) for t in toks)][:10]
+    hint = (" Closest installed: " + ", ".join(loose) + "." if loose else "")
+    raise PhoneError(f"I could not find an app called '{name}' on the phone. Open the app and say "
+                     f"'reverse engineer the app on my screen', or give the exact package name.{hint}")
 
 
 def open_app(user, name):
