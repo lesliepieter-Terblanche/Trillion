@@ -788,6 +788,8 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
 <div class="view" id="v-skills">
   <h2>Skills</h2>
   <div class="muted">A skill is a written playbook for doing one kind of job well. Every skill starts switched on for every login. Switch off any you do not want her to use for yours.</div>
+  <div class="btns" style="justify-content:flex-start;margin:4px 0"><button class="btn" id="dupcheck" style="min-height:40px;font-size:13px">CHECK FOR DUPLICATES</button></div>
+  <div class="msg" id="dupmsg" style="overflow-wrap:anywhere"></div>
   <div id="sklist" style="display:flex;flex-direction:column;gap:12px"></div>
   <div class="panel" id="skadd" hidden><b>Add a skill from GitHub</b>
     <div class="muted">Paste the address of a skill folder or SKILL.md on github.com. You see what it says before anything is installed.</div>
@@ -1392,6 +1394,12 @@ $('vgo').onclick=async()=>{const about=$('vprompt').value.trim();if(!about){$('v
   else await send(`Create a ${$('vsec').value} second ${$('vfmt').value} video${$('vvo').checked?'':' with no voice-over'}: ${about}`,false);
   $('vmsg').textContent='';$('vprompt').value='';loadVideos();};
 // skills and connectors
+$('dupcheck').onclick=async()=>{const m=$('dupmsg');m.className='msg muted';m.textContent='Checking...';
+  try{const d=await (await api('/api/duplicates')).json();
+    if(d.clean){m.className='msg ok';m.textContent='No duplicates. Nothing is doing the same job twice.';return;}
+    const rows=[...d.connectors,...d.skills].map(x=>'• '+x);
+    m.className='msg';m.innerHTML='<b>Found these overlaps:</b><br>'+rows.map(esc).join('<br>')+'<br><span class="muted">Remove the extra one with its REMOVE button below.</span>';
+  }catch(e){m.className='msg bad';m.textContent=e.message;}};
 async function loadSkills(){
   const adm=S&&S.user.is_admin;$('skadd').hidden=!adm;$('cnadd').hidden=!adm;
   const sk=await (await api('/api/skills')).json();
@@ -1425,7 +1433,7 @@ $('skform').onsubmit=async e=>{e.preventDefault();const url=$('skurl').value.tri
 $('cnsave').onclick=async()=>{try{await api('/api/connectors',{json:{name:$('cnname').value,description:$('cndesc').value,command:$('cncmd').value}});$('cnname').value=$('cndesc').value=$('cncmd').value='';$('cnmsg').textContent='';loadSkills();}catch(e){$('cnmsg').className='msg bad';$('cnmsg').textContent=e.message;}};
 // settings
 const SK=['personality','assistant_name','brand','site','accent','brain','local_model','cloud_model','voice','eleven_voice_id'];
-const LABEL={gemini:'Google Gemini',anthropic:'Claude (API key)',elevenlabs:'ElevenLabs voice',pexels:'Pexels stock footage (only if you already have a key)',pixabay:'Pixabay stock footage (free key from pixabay.com/api/docs)'};
+const LABEL={gemini:'Google Gemini',anthropic:'Claude (API key)',elevenlabs:'ElevenLabs voice',pixabay:'Pixabay stock footage (free key from pixabay.com/api/docs)'};
 async function loadPhone(){
   let p;try{p=await (await api('/api/phone')).json();}catch(e){p={adb:false,error:'Could not check the phone just now: '+e.message};}let h='';
   if(!p.adb){h=`<div class="bad">${esc(p.error)}</div>`;}
@@ -1882,7 +1890,7 @@ const CMDS=[
   ['Briefings',[['good morning','Runs your morning routine'],['what is the weather',''],['give me the news',''],['how are the markets','Rand, gold, shares, crypto']]],
   ['Websites',[['read the website tackletrail.co.za and make a presentation','Opens it in a browser on the PC, reads every page, analyses it'],['analyse truehome.co.za and write a report on how they price their listings','Say what to look for and the report answers it'],['open the browser and go through vapeessence.co.za, make a spreadsheet','Shows the browser on the PC screen while it reads'],['read the website gumroad.com, 80 pages','Reads up to 150 pages; 40 if you do not say']]],
   ['Cloning websites',[['clone tackletrail.co.za','A full working copy of your own site: files, folders and a zip to upload'],['rebuild the layout of example.com for TackleTrail, guided fishing trips in Durban','A new site in that style with your own name and words'],['make me a site like example.com for VapeEssence','Same as rebuild']]],
-  ['Business apps',[['post this to tiktok and facebook tomorrow at 6pm saying New ebook out now!','Attach the video or picture first; waits for your OK'],['how many visitors did my sites get this week','From Umami'],['add jan@example.com to my buyers list','Listmonk'],['invoice Durban Tackle R4500 for website design','Makes a draft in Invoice Ninja'],['which invoices are unpaid',''],['where do my sites rank on google','SerpBear'],['any new customer messages','Chatwoot'],['switch my new sale workflow off','n8n']]],
+  ['Business apps',[['where do my sites rank on google','SerpBear'],['show my keyword rankings for tackletrail.co.za',''],['list my automations','n8n'],['switch my new sale workflow off','n8n']]],
   ['Pictures',[['create a picture of a modern family home at sunset','Needs your Google Gemini key under Settings, Keys'],['make a wide banner for TrueHome with a city skyline','']]],
   ['Videos',[['create a 20 second cinematic video about our newest listings','Takes a few minutes'],['open the video','Shows the newest one']]],
   ['Files and documents',[['create a folder called Invoices in my Documents',''],['create a Word document called Welcome with a short welcome note',''],['create an Excel sheet of my monthly budget',''],['find all pdf files in my Downloads',''],['open my Documents folder','']]],
@@ -1894,7 +1902,7 @@ function drawCommands(){
   document.querySelectorAll('[data-use]').forEach(b=>b.onclick=()=>{go('control');$('say').value=b.dataset.use;$('say').focus();});
 }
 function drawMore(){
-  const items=[...(S&&S.bible_on?[['bible','Bible study','Daily verse, reader, notes, helper']]:[]),...(S&&S.store_on?[['store','Store','Gumroad sales, products, codes']]:[]),['videos','Videos','Make and watch videos'],['files','Files','Browse your folders'],['sites','Websites','Read a site, make a deck or report'],['apps','Apps','Social posting, email lists, invoices, inbox, automations'],['memory','Memory','What she remembers'],['routines','Routines','Morning briefing, news, weather'],['skills','Skills','Extra abilities and connectors'],['commands','Commands','Everything you can say'],['settings','Settings','Look, brain, voice, keys']];
+  const items=[...(S&&S.bible_on?[['bible','Bible study','Daily verse, reader, notes, helper']]:[]),...(S&&S.store_on?[['store','Store','Gumroad sales, products, codes']]:[]),['videos','Videos','Make and watch videos'],['files','Files','Browse your folders'],['sites','Websites','Read a site, make a deck or report'],['apps','Apps','Search rankings and automations'],['memory','Memory','What she remembers'],['routines','Routines','Morning briefing, news, weather'],['skills','Skills','Extra abilities and connectors'],['commands','Commands','Everything you can say'],['settings','Settings','Look, brain, voice, keys']];
   if(S&&S.user.is_admin)items.push(['family','Family','Logins, update, backup']);
   $('moregrid').innerHTML=items.map(i=>`<button class="mbtn" data-go="${i[0]}"><b>${i[1]}</b><span>${i[2]}</span></button>`).join('')+`<button class="mbtn" id="out2"><b>Sign out</b><span>${S?esc(S.user.name):''}</span></button>`;
   $('out2').onclick=()=>$('out').click();

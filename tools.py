@@ -36,25 +36,7 @@ SPECS = [
     fn("save_note", "Save something worth remembering to the second brain. domain is PERSONAL or WORK.",
        {"title": S, "body": S, "domain": S}, ["title", "body"]),
     fn("search_memory", "Search the second brain for things saved earlier.", {"query": S}),
-    fn("social_post", "Post or schedule a social media post through the user's Postiz (TikTok, Facebook, Instagram, YouTube, X, "
-       "LinkedIn...). networks: names like tiktok, facebook; leave empty for all connected. when: local date and time like "
-       "2026-10-14 18:00, empty for now. Needs the user's approval before it goes out.", {"text": S, "networks": ARR, "when": S}, ["text"]),
-    fn("social_channels", "List the social media accounts connected in the user's Postiz.", {}),
-    fn("email_lists", "List the user's Listmonk email lists with subscriber counts.", {}),
-    fn("email_add", "Add someone to the user's Listmonk email list(s).", {"email": S, "name": S, "lists": ARR}, ["email"]),
-    fn("email_campaign", "Create a draft email campaign in Listmonk (markdown body). Does not send it.",
-       {"subject": S, "body": S, "lists": ARR}, ["subject", "body"]),
-    fn("email_send", "Send a Listmonk draft campaign by its number. Needs the user's approval.", {"campaign": {"type": "integer"}}),
-    fn("site_visitors", "Website visitor statistics from the user's Umami for the last few days.", {"site": S, "days": {"type": "integer"}}, []),
-    fn("invoices_list", "List the user's invoices in Invoice Ninja. status: unpaid, overdue or all.", {"status": S}, []),
-    fn("invoice_create", "Create a draft invoice in Invoice Ninja. items: list of {description, amount, quantity} in rand.",
-       {"client": S, "items": {"type": "array", "items": {"type": "object", "properties": {"description": S, "amount": {"type": "number"},
-        "quantity": {"type": "number"}}}}, "note": S}, ["client", "items"]),
-    fn("invoice_email", "Email an Invoice Ninja invoice to its client, by the invoice id. Needs the user's approval.", {"invoice_id": S}),
     fn("seo_rankings", "Google rankings of the user's websites for their tracked search words, from SerpBear.", {"domain": S}, []),
-    fn("inbox_list", "Open customer conversations in the user's Chatwoot inbox (website chat, WhatsApp, Facebook, email).", {}),
-    fn("inbox_reply", "Reply to a Chatwoot customer conversation by its number. Needs the user's approval.",
-       {"conversation": {"type": "integer"}, "message": S}),
     fn("automations", "List the user's n8n automation workflows and whether each is on.", {}),
     fn("automation_switch", "Switch an n8n workflow on or off by its name.", {"name": S, "on": {"type": "boolean"}}),
     fn("read_website", "Open a website in a browser on the PC, read the whole site page by page, analyse it, and make files from "
@@ -126,7 +108,7 @@ SPECS = [
        {"command": S}),
 ]
 NEEDS_APPROVAL = {"delete_path", "run_command", "phone_send_whatsapp", "phone_shell", "gumroad_set_price", "gumroad_refund",
-                  "social_post", "email_send", "invoice_email", "inbox_reply"}
+                  }
 MONEY = {"gumroad_set_price", "gumroad_refund"}      # payment matters: these always wait for your OK, even on a call
 _CTX = threading.local()
 
@@ -200,15 +182,7 @@ def describe(name, a):
         "phone_shell": f"Run on the phone: {g('command')}",
         "phone_locate": "Locating the phone", "phone_ring": "Ringing the phone",
         "clone_website": f"{'Copying' if g('mode') == 'copy' else 'Rebuilding the style of'} {g('url')}",
-        "social_post": f"Post on social media{' (' + ', '.join(a.get('networks') or []) + ')' if a.get('networks') else ''}"
-                       + (f" at {a.get('when')}" if a.get('when') else " now") + f": \"{str(a.get('text', ''))[:140]}\""
-                       + (f" with {len(a['files'])} file{'s' if len(a['files']) != 1 else ''}" if a.get('files') else ""),
-        "social_channels": "Checking the social accounts", "email_lists": "Checking the email lists",
-        "email_add": f"Adding {g('email')} to the email list", "email_campaign": f"Drafting the email: {g('subject')}",
-        "email_send": f"Send email campaign {g('campaign')} to its list", "site_visitors": "Checking website visitors",
-        "invoices_list": "Checking invoices", "invoice_create": f"Drafting an invoice for {g('client')}",
-        "invoice_email": f"Email invoice {a.get('_name') or g('invoice_id')} to the client", "seo_rankings": "Checking Google rankings",
-        "inbox_list": "Checking the customer inbox", "inbox_reply": f"Reply to customer conversation {g('conversation')}: \"{str(a.get('message', ''))[:120]}\"",
+        "seo_rankings": "Checking Google rankings",
         "automations": "Checking automations", "automation_switch": f"Switching {g('name')} {'on' if a.get('on') else 'off'}",
         "read_website": f"Reading the website {g('url')}",
         "watch_alert": f"Alert on the watch: {g('text')[:80]}",
@@ -767,70 +741,9 @@ def _app(fn, *a, **k):
         return {"error": str(e)}
 
 
-def t_social_post(user, text, networks=None, when="", files=None):
-    import apps
-    paths = [f["path"] for f in whatsapp_files(user, files)] if files else []
-    return _app(apps.social_post, user, text, networks, when, paths)
-
-
-def t_social_channels(user):
-    import apps
-    return _app(apps.social_channels, user)
-
-
-def t_email_lists(user):
-    import apps
-    return _app(apps.email_lists, user)
-
-
-def t_email_add(user, email, name="", lists=None):
-    import apps
-    return _app(apps.email_add, user, email, name, lists)
-
-
-def t_email_campaign(user, subject, body, lists=None):
-    import apps
-    return _app(apps.email_campaign, user, subject, body, lists)
-
-
-def t_email_send(user, campaign):
-    import apps
-    return _app(apps.email_send, user, campaign)
-
-
-def t_site_visitors(user, site="", days=7):
-    import apps
-    return _app(apps.visitors, user, site, days or 7)
-
-
-def t_invoices_list(user, status="unpaid"):
-    import apps
-    return _app(apps.invoices, user, status or "unpaid")
-
-
-def t_invoice_create(user, client, items, note=""):
-    import apps
-    return _app(apps.invoice_create, user, client, items, note)
-
-
-def t_invoice_email(user, invoice_id, _name=None):
-    import apps
-    return _app(apps.invoice_email, user, invoice_id)
-
-
 def t_seo_rankings(user, domain=""):
     import apps
     return _app(apps.rankings, user, domain)
-
-
-def t_inbox_list(user):
-    import apps
-    return _app(apps.inbox, user)
-
-
-def t_inbox_reply(user, conversation, message):
-    import apps
-    return _app(apps.inbox_reply, user, conversation, message)
 
 
 def t_automations(user):

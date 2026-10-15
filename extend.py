@@ -499,3 +499,48 @@ def brief_tools(tools):
                     "arguments": {k: (_type_name(v) + ("" if k in req else ", optional"))
                                   for k, v in list(props.items())[:10]}})
     return out
+
+
+def _norm_cmd(cmd):
+    """A connector command stripped of version pins and spacing, so two of the same tool at different versions match."""
+    c = re.sub(r"@[0-9][^\s]*", "", str(cmd or ""))        # drop @6.4.0, @latest etc.
+    c = re.sub(r"\b-y\b", "", c)
+    return re.sub(r"\s+", " ", c).strip().lower()
+
+
+def _words(name):
+    return frozenset(w for w in re.findall(r"[a-z0-9]+", str(name).lower()) if len(w) > 2)
+
+
+def find_duplicates(user):
+    """Look for connectors that do the same thing and skills that overlap. Owner view (connectors need admin)."""
+    conn_dups, skill_dups = [], []
+    if user["is_admin"]:
+        by_cmd = {}
+        for r in core.q("SELECT * FROM connectors"):
+            by_cmd.setdefault(_norm_cmd(r["command"]), []).append(r["name"])
+        for cmd, names in by_cmd.items():
+            if len(names) > 1:
+                conn_dups.append(f"{', '.join(names)} run the same program — keep one and remove the others.")
+        by_slug = {}
+        for r in core.q("SELECT * FROM connectors"):
+            by_slug.setdefault(slugify(r["name"]), []).append(r["name"])
+        for slug, names in by_slug.items():
+            if len(set(names)) > 1 and not any(n in c for c in conn_dups for n in names):
+                conn_dups.append(f"{', '.join(sorted(set(names)))} have almost the same name.")
+
+    sk = [s for s in list_skills(user["id"]) if s["status"] == "active"]
+    seen = set()
+    for i, a in enumerate(sk):
+        for b in sk[i + 1:]:
+            pair = tuple(sorted((a["slug"], b["slug"])))
+            if pair in seen:
+                continue
+            wa, wb = _words(a["name"]), _words(b["name"])
+            same_desc = a["description"] and a["description"].strip().lower() == (b["description"] or "").strip().lower()
+            overlap = wa and wb and (wa == wb or len(wa & wb) / max(len(wa), len(wb)) >= 0.6)
+            if same_desc or overlap:
+                seen.add(pair)
+                skill_dups.append(f"“{a['name']}” and “{b['name']}” look like they cover the same thing.")
+    return {"connectors": conn_dups, "skills": skill_dups,
+            "clean": not conn_dups and not skill_dups}

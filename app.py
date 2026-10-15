@@ -688,9 +688,6 @@ NEEDS_TOOLS = re.compile(
     r"today|tomorrow|yesterday|latest|current|news|weather|price|my)\b", re.I)
 
 
-SOCIAL_RE = re.compile(r"\b(post|share|schedule|publish|upload)\b[^.?!]{0,40}\b(tiktok|facebook|instagram|youtube|linkedin|pinterest|threads|socials?|social media|all (my )?channels)\b", re.I)
-SOCIAL_CAP = re.compile(r"\b(?:saying|caption(?:ed)?|with the (?:caption|text))\s*[:\-]?\s*[\"“']?(.+?)[\"”']?\s*$", re.I | re.S)
-SOCIAL_WHEN = re.compile(r"\b(?:at|on)\s+((?:today|tomorrow|\d{4}-\d{2}-\d{2})?\s*(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b", re.I)
 
 
 def when_to_iso(words):
@@ -1075,23 +1072,6 @@ def run_agent(user, text, files=None):
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="failed" if "error" in res else "completed", detail=reply[:200])
         return {"reply": reply, "task_id": tid, "provider": "FreeVideo", "show": "" if "error" in res else "videos"}
-    soc = SOCIAL_RE.search(text) if files and apps.usable(user, "postiz") else None
-    if soc and not asking:
-        nets = [n.lower() for n in re.findall(r"\b(tiktok|facebook|instagram|youtube|linkedin|pinterest|threads|x)\b", text, re.I)]
-        cap = SOCIAL_CAP.search(text)
-        when = SOCIAL_WHEN.search(text)
-        args = {"text": (cap.group(1).strip() if cap else ""), "networks": nets, "files": [f["id"] for f in files]}
-        if when:
-            args["when"] = when_to_iso(when.group(1))
-        try:
-            res = tools.execute(user, "social_post", args, task_id=tid)
-        finally:
-            BUSY[uid] = False
-        reply = ("It is waiting for your OK on the dashboard: " + tools.describe("social_post", args) + "." if res.get("status") == "waiting_for_approval"
-                 else res.get("error") or "Done.")
-        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
-        core.set_task(tid, status="waiting" if res.get("status") == "waiting_for_approval" else ("failed" if "error" in res else "completed"), detail=reply[:200])
-        return {"reply": reply, "task_id": tid, "provider": "built-in"}
     clone_req = siteclone.request(text) if not files else None
     if clone_req and not asking:
         try:
@@ -2510,9 +2490,6 @@ def secret_test(name: str, user=Depends(auth)):
                           headers={"x-api-key": key, "anthropic-version": "2023-06-01"})
         elif name == "pixabay":
             r = httpx.get("https://pixabay.com/api/videos/", params={"key": key, "q": "city", "per_page": 3}, timeout=15)
-        elif name == "pexels":
-            r = httpx.get("https://api.pexels.com/videos/search", params={"query": "city", "per_page": 1},
-                          headers={"Authorization": key}, timeout=15)
         else:
             r = httpx.get("https://api.elevenlabs.io/v1/user", headers={"xi-api-key": key}, timeout=15)
         return {"ok": r.status_code == 200, "status": r.status_code}
@@ -3172,6 +3149,11 @@ def connectors_add(p: dict = Body(...), user=Depends(admin)):
     return {"id": cid}
 
 
+@app.get("/api/duplicates")
+def duplicates(user=Depends(auth)):
+    return extend.find_duplicates(user)
+
+
 @app.post("/api/connectors/{cid}/test")
 def connectors_test(cid: int, user=Depends(admin)):
     row = core.q("SELECT * FROM connectors WHERE id=?", (cid,), one=True)
@@ -3381,6 +3363,7 @@ def start_background():
     threading.Thread(target=wa_background, daemon=True).start()
     threading.Thread(target=gumroad.background, daemon=True).start()
     threading.Thread(target=voicecall.run_registrar, daemon=True).start()
+    threading.Thread(target=apps.retire_dropped_apps, daemon=True).start()   # erase apps the owner removed for good
 
     def warm():  # load hearing and the brains up front so the first request is not slow
         try:

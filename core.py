@@ -40,7 +40,7 @@ DEFAULT_SETTINGS = {
     "whatsapp_auto_contacts": False,   # send WhatsApps to saved contacts straight away, without the approval step
     "phone_country_code": "27",    # used to turn 082... into +2782... for WhatsApp
 }
-SECRET_NAMES = ["gemini", "anthropic", "elevenlabs", "pixabay", "pexels"]
+SECRET_NAMES = ["gemini", "anthropic", "elevenlabs", "pixabay"]
 LLM = None  # set by app.py: the brain, for jobs that need it outside the chat loop
 
 

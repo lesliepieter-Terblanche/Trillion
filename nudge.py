@@ -5,7 +5,6 @@ What counts as waiting:
 - a job that did not work, or one still running after two hours;
 - people owed a call-back or an answer after meeting mode (urgent for calls, right after the meeting);
 - their website being down (urgent);
-- overdue invoices, when Invoice Ninja is connected;
 - WhatsApps left unanswered for more than two hours, when the WhatsApp inbox is on.
 
 At the chosen times (08:00 and 14:00 to start with) everything still open comes as one notification on the phone and
@@ -92,14 +91,6 @@ def collect(user, sites=None, slow=False):
                    "AND ts<? AND ts>?", (uid, now - 7200, now - 3 * 86400), one=True)
         if r and r["c"]:
             add(f"wa:{datetime.date.today()}", f"{r['c']} WhatsApp{'s' if r['c'] != 1 else ''} unanswered for over two hours", False, "whatsapp", "phone")
-    if slow:
-        try:
-            import apps
-            if apps.usable(user, "invoiceninja"):
-                for i in apps.invoices(user, "overdue")[:5]:
-                    add(f"inv:{i['number']}", f"Invoice {i['number']} to {i['client']} is overdue (R {i['balance']})", False, "invoice", "apps")
-        except Exception:
-            pass
     done = {r["key"] for r in core.q("SELECT key FROM nudges WHERE user_id=? AND done=1", (uid,))}
     return [i for i in items if i["key"] not in done]
 

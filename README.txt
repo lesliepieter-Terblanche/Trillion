@@ -67,6 +67,13 @@ SKILLS AND CONNECTORS (Skills page)
 - Connector: a helper program (MCP server) that adds abilities, such as browser control. Only the
   owner adds one and chooses which logins may use it. Connectors need Node.js: run Setup again
   once if "Cannot find the program npx" appears.
+- CHECK FOR DUPLICATES (button on the Skills page): scans your connectors and skills and flags any
+  two that run the same program or cover the same ground, so you can remove the extra one.
+
+BUSINESS APPS (Apps page)
+- The apps are SerpBear (Google rankings), n8n and Activepieces (automations). Postiz, Listmonk,
+  Umami, Invoice Ninja and Chatwoot were removed on request; if any were installed, Trillion erases
+  their containers, data, folders and saved keys the next time it starts with Docker running.
 - Reverse engineering (REA): a connector that looks inside apps, websites and programs without
   their source (github.com/morluto/rea, MIT). Owner only. Every REA job waits for your OK first,
   even on a phone call, and the approval shows on your phone over Tailscale. Heavy native-binary

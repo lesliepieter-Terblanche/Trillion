@@ -1,9 +1,9 @@
 """Trillion video maker: turns a plain request into a finished MP4, with no media supplied.
 
 Steps: the brain writes a short script and scene list; real footage for each scene is fetched from
-Pexels (free stock video; needs a free key in Settings); ElevenLabs reads the voice-over (if that
+Pixabay (free stock video; needs a free key in Settings); ElevenLabs reads the voice-over (if that
 login has a key); then everything is graded, titled, captioned, mixed with music and encoded by
-FFmpeg. Without a Pexels key the scenes use abstract light backdrops instead of footage.
+FFmpeg. Without a Pixabay key the scenes use AI-made or abstract light backdrops instead of footage.
 """
 import base64, json, re, time, wave
 
@@ -202,42 +202,8 @@ Give exactly {n_scenes} scenes. English only."""
 
 
 # ---------- 2. footage ----------
-def pexels_clip(key, query, w, h, need_seconds, used):
-    """Find and download one stock clip. Returns (local path, credit) or (None, None)."""
-    orient = "portrait" if h > w else ("landscape" if w > h else "square")
-    try:
-        r = httpx.get("https://api.pexels.com/videos/search", headers={"Authorization": key}, timeout=25,
-                      params={"query": query, "orientation": orient, "per_page": 8, "size": "medium"})
-        r.raise_for_status()
-        vids = r.json().get("videos", [])
-    except Exception:
-        return None, None
-    vids = [v for v in vids if v.get("id") not in used and v.get("duration", 0) >= need_seconds] or \
-           [v for v in vids if v.get("id") not in used]
-    for v in vids:
-        files = [f for f in v.get("video_files", []) if f.get("link") and (f.get("file_type") or "").endswith("mp4") and f.get("height")]
-        if not files:
-            continue
-        files.sort(key=lambda f: (abs(f["height"] - h), f["height"] < h))  # closest to the frame, not below it
-        f = files[0]
-        path = CACHE / f"pexels-{v['id']}-{f['height']}.mp4"
-        if not path.exists():
-            try:
-                with httpx.stream("GET", f["link"], timeout=120, follow_redirects=True) as resp:
-                    resp.raise_for_status()
-                    with open(path, "wb") as out:
-                        for chunk in resp.iter_bytes(1 << 16):
-                            out.write(chunk)
-            except Exception:
-                path.unlink(missing_ok=True)
-                continue
-        used.add(v["id"])
-        return str(path), (v.get("user") or {}).get("name", "Pexels")
-    return None, None
-
-
 def pixabay_clip(key, query, w, h, need_seconds, used):
-    """Same job as pexels_clip, from Pixabay (free key, no orientation filter: clips are cropped to fit)."""
+    """Find and download one stock clip from Pixabay (free key, no orientation filter: clips are cropped to fit)."""
     try:
         r = httpx.get("https://pixabay.com/api/videos/", timeout=25,
                       params={"key": key, "q": query[:100], "per_page": 10, "video_type": "film", "safesearch": "true"})
@@ -634,9 +600,8 @@ def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progre
     own = [m for m in (media or []) if os.path.exists(m) and m.lower().endswith(IMAGE_EXT + (".gif", ".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi", ".3gp"))][:8]
     n_scenes = max(n_scenes, len(own))
     el_key = core.get_secret(uid, "elevenlabs") if voiceover else None
-    px_key = core.get_secret(uid, "pexels")
     pb_key = core.get_secret(uid, "pixabay")
-    find_clip, stock_key, stock_name = (pexels_clip, px_key, "Pexels") if px_key else (pixabay_clip, pb_key, "Pixabay")
+    find_clip, stock_key, stock_name = pixabay_clip, pb_key, "Pixabay"
     notes = []
 
     say("Writing the script")
@@ -715,7 +680,7 @@ def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progre
                          "(only the scene description is sent to it).")
     left = len(bare) - made
     if left:
-        saved = core.get_secret(uid, "pixabay", only_enabled=False) or core.get_secret(uid, "pexels", only_enabled=False)
+        saved = core.get_secret(uid, "pixabay", only_enabled=False)
         why = ("the picture service did not answer" if s.get("video_ai_images", True) else "AI pictures are switched off")
         notes.append(f"{left} scene{'s' if left != 1 else ''} use{'s' if left == 1 else ''} a plain backdrop because no footage was found and {why}."
                      + ("" if stock_key else (" Your footage key is saved but switched off." if saved else
