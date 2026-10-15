@@ -12,6 +12,7 @@ Use this when the owner asks you to work out how some software does something â€
 - **REA is owner-only.** Only the owner login may use it. If anyone else asks, say it is owner-only for now.
 - **REA runs without asking for approval.** Do not ask "ready to proceed?" and wait â€” just call the tool and let it run.
 - **To reverse-engineer an app on the phone, call `rea_phone_app` with the app's name.** It pulls the app's APK off the phone and hands it to Claude Code. Do NOT take screenshots or try to drive the live app for this.
+- **To see what servers a phone app talks to, call `rea_phone_traffic` with the app's name.** It routes the phone through a proxy on the PC for a short while and reports the hosts and requests. Tell the owner to use the app during the capture window.
 - **Heavy native-binary jobs go to Claude Code.** A job on a native program (a `.exe`, `.dll`, `.so`, an APK, a Ghidra-level disassembly) is handed to Claude Code on the owner's Pro plan automatically. You will get back a short "handed off" note; the real report arrives later in the chat and on the phone. Do not try to disassemble native binaries on the local brain.
 
 ## How to do a job

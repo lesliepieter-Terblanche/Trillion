@@ -77,7 +77,11 @@ BUSINESS APPS (Apps page)
 - Reverse engineering (REA): a connector that looks inside apps, websites and programs without
   their source (github.com/morluto/rea, MIT). Owner only, and it runs without asking for approval.
   To reverse-engineer an app on your phone, just say "use REA on <app> on my phone": Trillion pulls
-  the app's APK off the phone and hands it to Claude Code (no screenshots). Heavy native-binary jobs
+  the app's APK off the phone and hands it to Claude Code (no screenshots). To see what servers an
+  app talks to, say "what does <app> connect to": Trillion routes the phone through a proxy on the PC
+  (mitmproxy) for a short while and reports the hosts and requests. That needs mitmproxy installed on
+  the PC (pip install mitmproxy); reading HTTPS contents (not just the server names) also needs
+  mitmproxy's certificate installed on the phone, and the app must not pin its certificate. Heavy native-binary jobs
   (a .exe/.dll, an APK, a Ghidra-level disassembly) are handed to Claude Code on your Pro plan, which
   does the work and reports back in the chat and on your phone. For that handoff, Claude Code must
   be installed and signed in to your Pro plan on this PC; adjust its command under the REA

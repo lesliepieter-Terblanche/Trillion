@@ -12,6 +12,7 @@ For now REA is owner-only. The connector's own access list already enforces that
 is a belt-and-braces check so a future change cannot quietly open it to the other logins.
 """
 import os
+import re
 import shlex
 import subprocess
 import threading
@@ -231,3 +232,134 @@ def handoff(user, row, tool, arguments):
     return {"result": "This is a native-binary job, so I handed it to Claude Code on your Pro plan. "
             "It will do the work and report back here and on your phone when it is done.",
             "via": "Claude Code (Pro plan)"}
+
+
+# ---------- what servers a phone app talks to (live traffic) ----------
+TRAFFIC_PORT = int(os.environ.get("TRILLION_MITM_PORT", 8081))
+TRAFFIC_MAX = 300
+
+
+def _mitm_cmd():
+    import shutil
+    return os.environ.get("TRILLION_MITMDUMP") or shutil.which("mitmdump")
+
+
+def _summarize_flows(path):
+    """Read a mitmproxy capture file and return (hosts {host: count}, rows [{host,method,path,status,tls}])."""
+    from mitmproxy import io as mio
+    hosts, rows = {}, []
+    with open(path, "rb") as f:
+        for fl in mio.FlowReader(f).stream():
+            req = getattr(fl, "request", None)
+            if req is None:
+                continue
+            host = req.pretty_host
+            hosts[host] = hosts.get(host, 0) + 1
+            resp = getattr(fl, "response", None)
+            rows.append({"host": host, "method": req.method, "path": (req.path or "")[:120],
+                         "status": getattr(resp, "status_code", None), "tls": req.scheme == "https"})
+    return hosts, rows
+
+
+def phone_traffic(user, app, seconds, pc_ip):
+    """Capture what servers a phone app talks to: route the phone through mitmproxy on the PC for `seconds`,
+    then summarise the hosts and requests. Returns at once; the report arrives in the chat and on the phone."""
+    if not user["is_admin"]:
+        return {"error": "REA is owner-only for now."}
+    import core
+    import phone
+    mitm = _mitm_cmd()
+    if not mitm:
+        return {"error": "mitmproxy is not installed on this PC. Install it (pip install mitmproxy) to capture app "
+                "traffic, then try again."}
+    if not pc_ip:
+        return {"error": "I do not have this PC's Tailscale address, so the phone cannot reach the capture. "
+                "Check Tailscale is on, then try again."}
+    try:
+        pkg = phone.resolve_app(user, app)
+    except Exception as e:
+        return {"error": str(e) if type(e).__name__ == "PhoneError" else f"{type(e).__name__}: {e}"}
+    seconds = max(15, min(int(seconds or 60), TRAFFIC_MAX))
+    folder = os.path.join(str(core.DATA), "rea_traffic")
+    os.makedirs(folder, exist_ok=True)
+    flow = os.path.join(folder, re.sub(r"[^A-Za-z0-9._-]+", "_", pkg) + ".flows")
+    uid = user["id"]
+
+    def work():
+        import subprocess
+        core.log(uid, f"Capturing {pkg} traffic for {seconds}s", "info")
+        env = dict(os.environ)
+        env["ANONYMIZED_TELEMETRY"] = "false"
+        try:
+            proc = subprocess.Popen([mitm, "-q", "-p", str(TRAFFIC_PORT), "-w", flow],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env,
+                                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except Exception as e:
+            _traffic_report(user, pkg, None, None, f"Could not start mitmproxy: {type(e).__name__}: {e}")
+            return
+        proxied = False
+        try:
+            time.sleep(2)                                   # let the proxy bind
+            phone.set_http_proxy(user, pc_ip, TRAFFIC_PORT)
+            proxied = True
+            core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)",
+                   (uid, "assistant", f"Capturing now - open and use {app} on your phone for about {seconds} seconds.", time.time()))
+            time.sleep(seconds)
+        except Exception as e:
+            core.log(uid, f"Traffic capture problem: {type(e).__name__}: {e}", "info")
+        finally:
+            if proxied:
+                try:
+                    phone.clear_http_proxy(user)
+                except Exception:
+                    pass
+            try:
+                proc.terminate()
+                proc.wait(timeout=10)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+        try:
+            hosts, rows = _summarize_flows(flow)
+        except FileNotFoundError:
+            _traffic_report(user, pkg, None, None, "Nothing was captured. Did the app send any traffic during the window?")
+            return
+        except Exception as e:
+            _traffic_report(user, pkg, None, None, f"Could not read the capture: {type(e).__name__}: {e}")
+            return
+        _traffic_report(user, pkg, hosts, rows, None)
+
+    threading.Thread(target=work, daemon=True).start()
+    return {"result": f"Set your phone to route through this PC and started capturing. Open and use {app} now; "
+            f"I will report the servers it talks to in about {seconds} seconds.", "via": "mitmproxy"}
+
+
+def _traffic_report(user, pkg, hosts, rows, error):
+    import core
+    if error:
+        text = f"Traffic capture for {pkg} did not work: {error}"
+    elif not rows:
+        text = (f"I routed {pkg} through the PC but saw no requests. The app may use something other than HTTP(S), "
+                "or it sent nothing while capturing. Try again and use the app more during the window.")
+    else:
+        top = sorted(hosts.items(), key=lambda x: -x[1])[:15]
+        lines = [f"{pkg} talked to {len(hosts)} server{'s' if len(hosts) != 1 else ''} in {len(rows)} request(s). Top servers:"]
+        lines += [f"- {h} ({c})" for h, c in top]
+        sample = [r for r in rows if r["status"]][:8] or rows[:8]
+        if sample:
+            lines.append("Some requests:")
+            lines += [f"- {r['method']} {r['host']}{r['path']}" + (f" -> {r['status']}" if r['status'] else "") for r in sample]
+        enc = sum(1 for r in rows if r["tls"])
+        if enc:
+            lines.append(f"{enc} request(s) were HTTPS; to read their contents (not just the server) install mitmproxy's "
+                         "certificate on the phone and make sure the app does not pin its certificate.")
+        text = "\n".join(lines)[:6000]
+    core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (user["id"], "assistant", text, time.time()))
+    core.log(user["id"], f"Traffic capture for {pkg}: {'failed' if error else 'done'}", "waiting" if error else "done")
+    try:
+        import watch
+        watch.alert(user, "job", "Trillion: traffic capture done" if not error else "Trillion: traffic capture failed", text[:300])
+    except Exception:
+        pass

@@ -982,3 +982,15 @@ def pull_apk(user, name, dest):
         raise PhoneError("Could not copy the app's files off the phone. Is it still connected and unlocked?")
     base = next((l for l in pulled if l.endswith("base.apk")), pulled[0])
     return {"package": pkg, "apk": base, "all": pulled, "splits": len(pulled)}
+
+
+def set_http_proxy(user, host, port):
+    """Route the phone's web traffic through host:port (a proxy running on the PC). Over ADB, no root."""
+    sh(user, f"settings put global http_proxy {host}:{int(port)}", timeout=20)
+    return True
+
+
+def clear_http_proxy(user):
+    """Stop routing the phone through the PC proxy (back to normal)."""
+    sh(user, "settings put global http_proxy :0", timeout=20)
+    return True

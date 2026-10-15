@@ -63,6 +63,10 @@ SPECS = [
     fn("rea_phone_app", "Reverse-engineer an app installed on the user's phone: pulls the app's APK off the phone and hands it to "
        "Claude Code for analysis. Use this for 'use REA on <app> on my phone' instead of taking screenshots. app is the app's name "
        "or package. Owner only; runs without asking for approval.", {"app": S}, ["app"]),
+    fn("rea_phone_traffic", "Capture what servers an app on the phone talks to: routes the phone through a proxy on the PC for a "
+       "short while, then reports the hosts and requests. Use for 'what does <app> connect to / its network traffic'. app is the "
+       "app's name; seconds is how long to capture (default 60). Owner only; runs without asking for approval.",
+       {"app": S, "seconds": {"type": "integer"}}, ["app"]),
     fn("phone_status", "Get the user's own mobile phone status: battery, charging, storage, Wi-Fi, model, screen on or off.", {}),
     fn("phone_open_app", "Open an app on the user's own phone, for example WhatsApp, Chrome or Maps. The phone must be unlocked.",
        {"app": S}),
@@ -172,6 +176,7 @@ def describe(name, a):
         "connector_tools": f"Checking what {g('connector')} can do",
         "connector_call": f"Using {g('connector')}: {g('tool')}",
         "rea_phone_app": f"Reverse-engineering the phone app {g('app')} (pulling its APK and handing it to Claude Code)",
+        "rea_phone_traffic": f"Capturing the network traffic of the phone app {g('app')}",
         "gumroad_sales": "Reading Gumroad sales", "gumroad_publish": f"{'Publish' if a.get('published') else 'Unpublish'} {g('product')} on Gumroad",
         "gumroad_discount_code": f"Gumroad code {g('code')}: {g('percent')}% off {g('product')}",
         "gumroad_set_price": f"Change the Gumroad price of {a.get('_name') or g('product')} to {g('price')}",
@@ -627,6 +632,15 @@ def t_rea_phone_app(user, app):
     except Exception as e:
         return {"error": str(e) if type(e).__name__ == "PhoneError" else f"{type(e).__name__}: {e}"}
     return rea.phone_app(user, pull)
+
+
+def t_rea_phone_traffic(user, app, seconds=60):
+    import rea
+    if not user["is_admin"]:
+        return {"error": "REA is owner-only for now."}
+    import app as _app
+    pc_ip = (_app.TAILSCALE.get("v") or {}).get("ip") or ""
+    return rea.phone_traffic(user, app, seconds, pc_ip)
 
 
 # ---------- the user's own phone ----------

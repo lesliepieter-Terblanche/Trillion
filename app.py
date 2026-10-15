@@ -273,7 +273,7 @@ How to work:
 - Use your tools to actually do things. Never say something was done unless a tool result confirms it.
 - To get a go-ahead, call the tool - it creates the approval card by itself. Never ask "ready to proceed?" in words and wait; just call the tool.
 - Deleting files and running commands need approval: the tool will report waiting_for_approval. Then tell the user it is waiting for them on the dashboard, and do not retry it.
-- To reverse-engineer an app on the phone, call rea_phone_app with the app's name - it pulls the APK and hands it to Claude Code. Do not take screenshots for that, and do not ask the user to approve first; it runs on its own.
+- To reverse-engineer an app on the phone, call rea_phone_app with the app's name - it pulls the APK and hands it to Claude Code. To see what servers an app talks to, call rea_phone_traffic. Do not take screenshots for either, and do not ask the user to approve first; they run on their own.
 - If a tool returns an error, say plainly what went wrong.
 - You can update your own software from GitHub with update_self (owner only).
 - On the user's phone, never confirm a payment or purchase, delete anything, or send a message by tapping unless the user asked for exactly that in this request.
@@ -730,7 +730,7 @@ def tools_for(user, text):
     if not user["is_admin"]:
         skip.add("run_command")
     if not (user["is_admin"] and core.settings(user).get("phone_serial")):
-        skip.add("rea_phone_app")                                                    # owner only, and needs a linked phone
+        skip |= {"rea_phone_app", "rea_phone_traffic"}                                # owner only, and need a linked phone
     skip |= {t for t, k in apps.TOOL_APP.items() if not apps.usable(user, k)}       # only apps this login has connected
     return [s_ for s_ in tools.SPECS if s_["function"]["name"] not in skip]
 
