@@ -117,15 +117,23 @@ def hear(samples):
 
 # ---------- one call ----------
 class Call:
-    def __init__(self, target, port=5060, my_ip=None, codec="auto"):
-        self.target, self.port = target, int(port)
+    def __init__(self, target, port=5060, my_ip=None, codec="auto", shared=None, user_part=""):
+        """shared: the socket the phone signed in on (the call goes out the way the phone already trusts)."""
+        import queue
+        self.target, self.port, self.user_part = target, int(port), user_part
         self.my_ip = my_ip or self._route_ip(target)
-        self.sip = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sip.bind(("0.0.0.0", 0))
+        self.call_id = uuid.uuid4().hex + "@trillion"
+        self.shared = shared
+        if shared is not None:
+            self.sip = shared
+            self.q = queue.Queue()
+            CALLQ[self.call_id] = self.q
+        else:
+            self.sip = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.sip.bind(("0.0.0.0", 0))
         self.rtp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.rtp.bind(("0.0.0.0", 0))
         self.sip_port, self.rtp_port = self.sip.getsockname()[1], self.rtp.getsockname()[1]
-        self.call_id = uuid.uuid4().hex + "@trillion"
         self.tag, self.branch = uuid.uuid4().hex[:10], "z9hG4bK" + uuid.uuid4().hex[:16]
         self.to_tag, self.remote_rtp, self.pt = "", None, 0
         self.inbox, self.ended, self.lock = [], threading.Event(), threading.Lock()
@@ -150,8 +158,9 @@ class Call:
                 f"a=rtpmap:101 telephone-event/8000\r\na=ptime:20\r\na=sendrecv\r\n")
 
     def _msg(self, method, cseq, body="", branch=None, to_tag=True):
-        to = f"<sip:{self.target}:{self.port}>" + (f";tag={self.to_tag}" if to_tag and self.to_tag else "")
-        lines = [f"{method} sip:{self.target}:{self.port} SIP/2.0",
+        who = f"{self.user_part}@" if self.user_part else ""
+        to = f"<sip:{who}{self.target}:{self.port}>" + (f";tag={self.to_tag}" if to_tag and self.to_tag else "")
+        lines = [f"{method} sip:{who}{self.target}:{self.port};transport=udp SIP/2.0",
                  f"Via: SIP/2.0/UDP {self.my_ip}:{self.sip_port};branch={branch or self.branch};rport",
                  "Max-Forwards: 70", f'From: "Trillion" <sip:trillion@{self.my_ip}>;tag={self.tag}', f"To: {to}",
                  f"Call-ID: {self.call_id}", f"CSeq: {cseq} {method}", f"Contact: <sip:trillion@{self.my_ip}:{self.sip_port}>",
@@ -163,6 +172,17 @@ class Call:
 
     def _send_sip(self, data):
         self.sip.sendto(data, (self.target, self.port))
+
+    def _recv(self, timeout=0.25):
+        """The next SIP message for this call. Raises socket.timeout when there is none yet."""
+        if self.shared is not None:
+            import queue
+            try:
+                return self.q.get(timeout=timeout)
+            except queue.Empty:
+                raise socket.timeout()
+        self.sip.settimeout(timeout)
+        return self.sip.recvfrom(65535)
 
     def _parse(self, data):
         text = data.decode("utf-8", "replace")
@@ -181,10 +201,9 @@ class Call:
         self._send_sip(invite)
         self.state = "calling"
         start, last_tx, gap, provisional = time.time(), time.time(), 0.5, False
-        self.sip.settimeout(0.25)
         while time.time() - start < ring_seconds:
             try:
-                data, addr = self.sip.recvfrom(65535)
+                data, addr = self._recv(0.25)
             except socket.timeout:
                 if not provisional and time.time() - last_tx > gap:
                     if time.time() - start > 8:
@@ -249,7 +268,7 @@ class Call:
     def _sip_loop(self):
         while not self.ended.is_set():
             try:
-                data, _ = self.sip.recvfrom(65535)
+                data, _ = self._recv(0.5)
             except socket.timeout:
                 continue
             except OSError:
@@ -336,7 +355,8 @@ class Call:
         self.ended.set()
         self.state = "ended"
         time.sleep(0.1)
-        for s in (self.sip, self.rtp):
+        CALLQ.pop(self.call_id, None)
+        for s in ((self.rtp,) if self.shared is not None else (self.sip, self.rtp)):
             try:
                 s.close()
             except OSError:
@@ -380,14 +400,19 @@ def conversation(user, opening, answer=None, my_ip=None, log=None):
     """Ring the login's Linphone, say the opening, then take up to a few requests by voice.
     answer(text) -> what to say back (the normal chat). Returns how it went."""
     ip, port = where(user)
+    reg = registered(user)
     if BUSY.get(user["id"]):
         raise CallError("I am already on a call with you.")
     BUSY[user["id"]] = True
     heard = []
     try:
-        call = Call(ip, port, my_ip)
+        if reg and SOCK["s"] is not None:
+            call = Call(ip, port, my_ip, shared=SOCK["s"], user_part=reg.get("user", "").lower())
+        else:
+            call = Call(ip, port, my_ip)
         first = synth(opening, user)                       # ready before the phone rings, so there is no pause
         result = call.dial()
+        REGISTRAR["call"] = {"t": time.time(), "to": f"{ip}:{port}", "result": result, "via": "sign-in" if call.shared is not None else "direct"}
         if result != "answered":
             return {"result": result, "heard": heard}
         try:
@@ -531,6 +556,8 @@ def parse(text):
 # ---------- the login point: Linphone signs in to Trillion, so Trillion always knows where the phone is ----------
 SIP_PORT = int(os.environ.get("TRILLION_SIP_PORT", 5060))
 REG = {}                                   # user id -> {"ip", "port", "expires", "agent", "seen", "user"}
+CALLQ = {}                                 # call id -> queue: answers to calls that went out on the sign-in socket
+SOCK = {"s": None}
 REGISTRAR = {"running": False, "error": "", "last": None}       # last: the latest sign-in attempt seen, and what happened
 
 
@@ -558,6 +585,10 @@ def _seen(addr, what):
 
 def _handle_sip(sock, data, addr):
     text = data.decode("utf-8", "replace")
+    cid = re.search(r"^(?:Call-ID|i)\s*:\s*(\S+)", text, re.M | re.I)
+    if cid and cid.group(1) in CALLQ:               # part of a call Trillion is making: hand it to that call
+        CALLQ[cid.group(1)].put((data, addr))
+        return
     head, _, _ = text.partition("\r\n\r\n")
     first, *lines = head.split("\r\n")
     method = first.split(" ", 1)[0]
@@ -620,6 +651,7 @@ def run_registrar():
     except OSError as e:
         REGISTRAR.update(running=False, error=f"Port {SIP_PORT} is in use by another program ({e.strerror}).")
         return
+    SOCK["s"] = sock
     REGISTRAR.update(running=True, error="", port=SIP_PORT)
     while True:
         try:

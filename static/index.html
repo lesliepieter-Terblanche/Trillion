@@ -2123,7 +2123,8 @@ function vcDraw(c){VC=c;const p=c.prefs;$('vc-pill').textContent=p.on&&p.target?
   const L=c.registrar.last;
   const rs=c.registered?'Linphone is signed in from '+c.registered.ip+'. Calls go straight there.':(c.registrar.error?c.registrar.error:
     (L?'Last sign-in attempt '+hm(L.t)+' from '+L.from+': '+L.what:'Trillion is listening on UDP '+(c.registrar.port||5060)+' but has not received anything from Linphone. That means the Windows Firewall is blocking it (see the steps).'));
-  $('vc-msg').className='msg '+(c.registered?'ok':'muted');if(!$('vc-msg').dataset.busy)$('vc-msg').textContent=rs;
+  const LC=c.registrar.call;const rs2=LC?' Last call '+hm(LC.t)+' to '+LC.to+' ('+LC.via+'): '+LC.result+'.':'';
+  $('vc-msg').className='msg '+(c.registered?'ok':'muted');if(!$('vc-msg').dataset.busy)$('vc-msg').textContent=rs+rs2;
   $('vc-dev').innerHTML='<option value="">Choose...</option>'+c.devices.map(d=>`<option value="${esc(d.ip)}" ${d.ip===p.target?'selected':''}>${esc(d.name)} (${esc(d.os||'')}) ${d.online?'':'· offline'}</option>`).join('');
   $('vc-dev').closest('label').hidden=!c.devices.length;$('vc-ip').value=p.target;$('vc-port').value=p.port;$('vc-on').checked=p.on;
   $('vc-plans').innerHTML=c.plans.length?c.plans.map(x=>`<div style="display:flex;gap:10px;align-items:center;border:1px solid var(--edge2);padding:6px 10px;font-size:14px"><span style="flex:1"><b>${esc(x.at)}</b> ${x.once_date?'on '+esc(x.once_date):esc(VCDAYS[x.days]||'on set days')} · ${esc(x.topic==='projects'?'project breakdown':x.topic)}</span><button class="btn" data-vcx="${x.id}" style="min-height:34px;font-size:12px">REMOVE</button></div>`).join(''):'<div class="muted" style="font-size:13px">None yet.</div>';
