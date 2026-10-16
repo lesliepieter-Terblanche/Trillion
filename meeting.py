@@ -37,7 +37,7 @@ def prefs(user):
     s = core.settings(user).get("meeting_prefs") or {}
     return {"calls": s.get("calls", True), "voice": s.get("voice", True), "vip": [str(x).strip() for x in s.get("vip", []) if str(x).strip()],
             "reason": str(s.get("reason") or "in a meeting")[:60], "tone": s.get("tone", "friendly"),
-            "template": str(s.get("template") or "")[:400]}
+            "template": str(s.get("template") or "")[:400], "call_after": bool(s.get("call_after"))}
 
 
 def _reason_phrase(reason):
@@ -71,7 +71,8 @@ def save_prefs(user, data):
                            "vip": [x.strip()[:40] for x in vip if x.strip()][:30],
                            "reason": str(data.get("reason") or old["reason"]).strip()[:60] or "in a meeting",
                            "tone": data.get("tone") if data.get("tone") in ("friendly", "formal") else old["tone"],
-                           "template": str(data.get("template", old["template"]) or "").strip()[:400]}
+                           "template": str(data.get("template", old["template"]) or "").strip()[:400],
+                           "call_after": bool(data.get("call_after", old["call_after"]))}
     core.save_settings(user["id"], st)
     return prefs(core.q("SELECT * FROM users WHERE id=?", (user["id"],), one=True))
 
@@ -126,7 +127,55 @@ def finish(user, quiet=False):
         except Exception:
             pass
     core.log(user["id"], "Meeting mode off" + (f": {len(log)} thing{'s' if len(log) != 1 else ''} came in" if log else ""), "done")
+    if log and not quiet and prefs(user).get("call_after"):
+        _call_wrap(user, log)
     return summary
+
+
+def spoken_summary(user, log):
+    """A short, plain, say-aloud version of what came in - no bullets or markdown, for a phone call."""
+    if not log:
+        return "nothing came in while you were busy."
+    people = {}
+    for e in log:
+        people.setdefault(e["who"], []).append(e)
+    parts = []
+    for who, es in list(people.items())[:6]:
+        calls = sum(1 for e in es if e["kind"] == "call")
+        msgs = [e for e in es if e["kind"] != "call"]
+        bit = who
+        if calls:
+            bit += f" called{(' ' + str(calls) + ' times') if calls > 1 else ''}"
+        if msgs:
+            bit += (" and " if calls else " ") + "messaged" + (f": {msgs[0]['text'][:90]}" if msgs[0].get("text") else "")
+        parts.append(bit)
+    n = len(people)
+    head = f"{n} {'person' if n == 1 else 'people'} got in touch while you were busy. "
+    return head + "; ".join(parts) + "."
+
+
+def _call_wrap(user, log):
+    """When the owner chose it: phone them after the meeting and read out what came in, then take any requests."""
+    try:
+        import voicecall
+        vp = voicecall.prefs(user)
+        if not vp.get("on") or not (vp.get("target") or voicecall.registered(user)) or voicecall.busy(user["id"]):
+            return
+        import app as _app
+        name = core.settings(user).get("assistant_name") or "Trillion"
+        opening = f"Hi {user['name']}, it's {name}. Your meeting is done. {spoken_summary(user, log)} What would you like me to do?"
+        _app.call_in_background(user, opening=opening,
+                                fallback=lambda: _watch_fallback(user))
+    except Exception:
+        pass
+
+
+def _watch_fallback(user):
+    try:
+        import watch
+        watch.send(user, "Trillion tried to call you", "Your meeting wrap-up call was not answered. The summary is in the chat.")
+    except Exception:
+        pass
 
 
 def summarise(user, log):

@@ -1759,10 +1759,12 @@ def project_briefing(user):
     return plain
 
 
-def place_call(user, topic="projects", items=None):
+def place_call(user, topic="projects", items=None, opening=None):
     """Phone the login's Linphone. Returns how it went; never raises."""
     name = core.settings(user).get("assistant_name") or "Trillion"
-    if items:
+    if opening:
+        opening = opening
+    elif items:
         opening = (f"Hi {user['name']}, it's {name}. " + (f"{len(items)} things need you. " if len(items) > 1 else "")
                    + " ".join(i["text"] for i in items[:4]) + ". What would you like me to do?")
     elif topic and topic != "projects":
@@ -1814,9 +1816,9 @@ def incoming_call(user, call):
 voicecall.ON_INCOMING = incoming_call
 
 
-def call_in_background(user, topic="projects", items=None, fallback=None):
+def call_in_background(user, topic="projects", items=None, fallback=None, opening=None):
     def go():
-        res = place_call(user, topic, items)
+        res = place_call(user, topic, items, opening=opening)
         if res["result"] != "answered" and fallback:
             try:
                 fallback()

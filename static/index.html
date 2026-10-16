@@ -544,6 +544,7 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
       <label class="field"><span>Tone (used only when the box above is blank)</span><select id="mt-tone" style="max-width:200px"><option value="friendly">Friendly</option><option value="formal">Professional</option></select></label>
       <label class="tickrow"><input type="checkbox" id="mt-calls"><span><b>Decline calls and send a message</b></span></label>
       <label class="tickrow"><input type="checkbox" id="mt-voice"><span><b>Listen to voice notes</b><br><span class="muted">So the reply and the summary know what was said.</span></span></label>
+      <label class="tickrow"><input type="checkbox" id="mt-callafter"><span><b>Call me with the wrap-up when the meeting ends</b><br><span class="muted">Trillion phones you and reads out who got in touch, instead of only leaving a summary. Needs calls set up above.</span></span></label>
       <label class="field"><span>Let these people through (no auto-reply, they tap your watch instead). Names, separated by commas.</span><textarea id="mt-vip" rows="2" placeholder="Brandon, Lewellyn, My boss"></textarea></label>
       <div><button class="btn pri" id="mt-save">SAVE</button> <span class="msg" id="mt-smsg"></span></div></div></details>
     <details id="mt-lastbox" hidden><summary class="muted" style="cursor:pointer;font-size:14px">Last meeting summary</summary><div id="mt-last" style="white-space:pre-wrap;font-size:14px;margin-top:8px"></div></details>
@@ -2126,9 +2127,9 @@ function mtDraw(m){$('mt-pill').textContent=m.on?'on':'off';$('mt-pill').classNa
   const b=(k,l,pri)=>`<button class="btn${pri?' pri':''}" data-mt="${k}">${l}</button>`;
   $('mt-btns').innerHTML=m.on?b('end','END MEETING',1):b('30m','30 MIN')+b('1h','1 HOUR',1)+b('2h','2 HOURS')+b('open','UNTIL I SAY');
   $('mt-btns').querySelectorAll('[data-mt]').forEach(x=>x.onclick=async()=>{const k=x.dataset.mt;try{mtDraw(await (await api('/api/meeting',{json:k==='end'?{on:false}:{on:true,for:k}})).json());}catch(e){st.className='msg bad';st.textContent=e.message;}});
-  const p=m.prefs;$('mt-reason').value=p.reason;$('mt-tone').value=p.tone;$('mt-calls').checked=p.calls;$('mt-voice').checked=p.voice;$('mt-vip').value=p.vip.join(', ');if($('mt-template'))$('mt-template').value=p.template||'';
+  const p=m.prefs;$('mt-reason').value=p.reason;$('mt-tone').value=p.tone;$('mt-calls').checked=p.calls;$('mt-voice').checked=p.voice;$('mt-vip').value=p.vip.join(', ');if($('mt-template'))$('mt-template').value=p.template||'';if($('mt-callafter'))$('mt-callafter').checked=!!p.call_after;
   $('mt-lastbox').hidden=!m.last;if(m.last)$('mt-last').textContent=m.last.summary;}
-$('mt-save').onclick=async()=>{const s_=$('mt-smsg');try{mtDraw(await (await api('/api/meeting/prefs',{json:{reason:$('mt-reason').value.trim(),tone:$('mt-tone').value,calls:$('mt-calls').checked,voice:$('mt-voice').checked,vip:$('mt-vip').value,template:$('mt-template')?$('mt-template').value.trim():''}})).json());s_.className='msg ok';s_.textContent='Saved.';}catch(e){s_.className='msg bad';s_.textContent=e.message;}};
+$('mt-save').onclick=async()=>{const s_=$('mt-smsg');try{mtDraw(await (await api('/api/meeting/prefs',{json:{reason:$('mt-reason').value.trim(),tone:$('mt-tone').value,calls:$('mt-calls').checked,voice:$('mt-voice').checked,vip:$('mt-vip').value,template:$('mt-template')?$('mt-template').value.trim():'',call_after:$('mt-callafter')?$('mt-callafter').checked:false}})).json());s_.className='msg ok';s_.textContent='Saved.';}catch(e){s_.className='msg bad';s_.textContent=e.message;}};
 
 // ---------- check-ins ----------
 async function ngLoad(){try{ngDraw(await (await api('/api/nudge')).json());}catch(e){}}
