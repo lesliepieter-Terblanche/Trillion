@@ -14,6 +14,7 @@ import routines
 import tools
 import video
 import attach
+import selfcheck
 
 core.init()
 for _u in core.q("SELECT * FROM users WHERE is_admin=1"):   # the owner asked for this; the other logins choose for themselves
@@ -370,6 +371,8 @@ PHONE_WORDS = re.compile(r"\b(phone|cell|mobile|what'?s ?(?:app|up)|contact|batt
 CLAIMS_PENDING = re.compile(r"\b(waiting for (?:your |my )?(?:ok|approval)|pending (?:your )?approval|"
                             r"(?:sent|queued|submitted|put) (?:it |this )?(?:up )?for (?:your )?approval|"
                             r"awaiting (?:your )?approval|approve it (?:on|in|from|via)|for your approval now)\b", re.I)
+SELFCHECK_RE = re.compile(r"\b(?:self[-\s]?check|health check|system check|run a check|are you (?:ok|working|healthy|production[-\s]?ready)|"
+                          r"is everything (?:ok|working)|check (?:yourself|your systems|everything is working))\b", re.I)
 # reverse-engineering an app on the phone - run the tool directly (the local brain tends to only talk about it)
 REA_PHONE_RE = re.compile(r"\b(?:reverse[-\s]?engineer|use rea on|run rea on|do rea on|rea on|decompile|analy[sz]e|look inside|"
                           r"pull the apk of)\b\s+(?:the\s+)?(?P<app>.+?)(?:\s+app)?\s+(?:on|from)\s+(?:my|the|this)\s+(?:phone|screen)\b", re.I)
@@ -1001,6 +1004,19 @@ def run_agent(user, text, files=None):
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="failed" if reply.startswith("I could not") else "completed", detail=reply[:200])
         return {"reply": reply, "task_id": tid, "provider": "built-in", "show": show}
+    if user["is_admin"] and SELFCHECK_RE.search(text) and not files:
+        res = selfcheck.run(user, SITES, HEARING, TAILSCALE)
+        BUSY[uid] = False
+        if "error" in res:
+            reply = res["error"]
+        else:
+            lines = [selfcheck.spoken(res), ""]
+            mark = {"ok": "OK", "warn": "!", "fail": "X"}
+            lines += [f"[{mark.get(c['status'], '?')}] {c['name']}: {c['detail']}" + (f" -> {c['fix']}" if c['fix'] and c['status'] != 'ok' else "") for c in res["checks"]]
+            reply = "\n".join(lines)
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="completed", detail="Self-check")
+        return {"reply": reply, "task_id": tid, "provider": "built-in"}
     # reverse-engineer an app on the phone, or capture its traffic: run the tool directly (owner + linked phone)
     if user["is_admin"] and core.settings(user).get("phone_serial") and not files:
         rea_kind, rea_app = None, None
@@ -2186,6 +2202,11 @@ def upload_file(fid: int, user=Depends(auth)):
     if not f or not os.path.exists(f["path"]):
         raise HTTPException(404, "That file is no longer there")
     return FileResponse(f["path"], media_type=mimetypes.guess_type(f["name"])[0] or "application/octet-stream", filename=f["name"])
+
+
+@app.get("/api/selfcheck")
+def selfcheck_get(user=Depends(admin)):
+    return selfcheck.run(user, SITES, HEARING, TAILSCALE)
 
 
 @app.post("/api/stop")
@@ -3433,6 +3454,15 @@ def start_background():
                         httpx.post(core.OLLAMA + "/api/chat", timeout=300,
                                    json={"model": want, "messages": [], "keep_alive": "4h",
                                          "options": {"num_ctx": 12288 if want == st.get("local_model", "qwen2.5:14b") else 6144}})
+        except Exception:
+            pass
+        try:                                            # flag anything broken at startup, so the owner sees it without asking
+            time.sleep(8)
+            for u in core.q("SELECT * FROM users WHERE is_admin=1 ORDER BY id LIMIT 1"):
+                res = selfcheck.run(u, SITES, HEARING, TAILSCALE)
+                bad = [c for c in res.get("checks", []) if c["status"] == "fail"]
+                if bad:
+                    core.log(u["id"], "Self-check at start: " + "; ".join(f"{c['name']} - {c['detail']}" for c in bad)[:350], "waiting")
         except Exception:
             pass
     threading.Thread(target=warm, daemon=True).start()

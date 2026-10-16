@@ -814,6 +814,11 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
 <div class="view" id="v-settings">
   <h2>Settings</h2>
   <div class="muted" id="setver" style="font-family:var(--mono);font-size:13px"></div>
+  <div class="panel" id="sc" hidden><div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><b>Self-check</b><span class="pill" id="sc-pill">not run</span></div>
+    <div class="muted" style="font-size:13px">Tests each part of Trillion live on this PC - brain, phone, Tailscale, calls, website, Docker, backup, disk, keys, Claude Code and mitmproxy - and shows what is working. Safe: it only looks, it changes nothing.</div>
+    <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="sc-go" style="min-height:40px">RUN SELF-CHECK</button></div>
+    <div id="sc-list" style="display:flex;flex-direction:column;gap:6px"></div>
+  </div>
   <div class="chips" id="setnav">
     <button data-sec="look" class="on">Look and name</button><button data-sec="brain">Brain and voice</button><button data-sec="home">Home buttons</button><button data-sec="keys">Keys</button><button data-sec="other">Phone, routines, family</button>
   </div>
@@ -1473,8 +1478,17 @@ function drawThemes(){const cur=(S.user.settings.theme||'night');
   $('themes').querySelectorAll('[data-th]').forEach(b=>b.onclick=async()=>{const t=THEMES.find(x=>x[0]===b.dataset.th);
     try{await api('/api/settings',{method:'PUT',json:{theme:t[0],accent:t[3]}});await tick();$('s-accent').value=t[3];drawThemes();$('thmsg').className='msg ok';$('thmsg').textContent=t[1]+' mode is on.';}catch(e){$('thmsg').className='msg bad';$('thmsg').textContent=e.message;}});}
 const SECF={look:['assistant_name','personality','brand','site','accent'],brain:['brain','local_model','cloud_model','voice','eleven_voice_id']};
+const SC_MARK={ok:'●',warn:'▲',fail:'✕'},SC_CLS={ok:'ok',warn:'muted',fail:'bad'};
+async function runSelfCheck(){const L=$('sc-list'),P=$('sc-pill');P.textContent='checking...';P.className='pill';L.innerHTML='';
+  try{const r=await (await api('/api/selfcheck')).json();
+    if(r.error){P.textContent='error';P.className='pill';L.innerHTML='<div class="bad">'+esc(r.error)+'</div>';return;}
+    P.textContent=r.overall==='ok'?'all green':(r.counts.fail?r.counts.fail+' red':r.counts.warn+' amber');
+    P.className='pill'+(r.overall==='ok'?' on':'');
+    L.innerHTML=r.checks.map(c=>`<div class="row" style="align-items:flex-start;gap:8px;border:1px solid var(--edge2);padding:8px 10px"><span class="${SC_CLS[c.status]}" style="font-size:16px;line-height:1.2">${SC_MARK[c.status]}</span><div style="flex:1"><b style="font-size:14px">${esc(c.name)}</b><div class="muted" style="font-size:13px">${esc(c.detail)}${c.fix&&c.status!=='ok'?' — '+esc(c.fix):''}</div></div></div>`).join('');
+  }catch(e){P.textContent='failed';L.innerHTML='<div class="bad">'+esc(e.message)+'</div>';}}
 async function loadSettings(){
   if(!S)return;const s=S.user.settings;$('setver').textContent='Trillion version '+S.version;SK.forEach(k=>$('s-'+k).value=s[k]??'');$('s-daily_review').checked=!!s.daily_review;$('s-fast_answers').checked=s.fast_answers!==false;$('s-wake_word').checked=!!s.wake_word;$('wakeex').textContent=s.assistant_name||'Trillion';drawThemes();
+  if($('sc')){$('sc').hidden=!S.user.is_admin;const b=$('sc-go');if(b&&!b._w){b._w=1;b.onclick=runSelfCheck;}}
   drawLinks();
   const on=s.quick_actions||[];$('qapick').innerHTML=Object.keys(QA).filter(k=>k!=='store'||S.store_on).map(k=>`<label class="tickrow" style="align-items:center"><input type="checkbox" data-qa="${k}" ${on.includes(k)?'checked':''}><span>${esc(QA[k].label)}</span></label>`).join('');
   const ks=await (await api('/api/secrets')).json();
@@ -1881,6 +1895,7 @@ async function loadProjects(){
 }
 // ---- commands help ----
 const CMDS=[
+  ['Keeping Trillion healthy',[['run a self check','Tests every part live and shows what is working (owner only). Also on the Settings page.'],['are you production ready',''],['what is outstanding','Anything waiting on you']]],
   ['Bible study',[['verse of the day','The morning verse, or the evening verse after 5 pm'],['read John 3:16',''],['read Psalms 23',''],['search the bible for living water',''],['explain Romans 8:28','She answers from the passage and its context'],['what does the bible say about forgiveness','']]],
   ['Gumroad store',[['how are my gumroad sales','Today and the last 30 days'],['how much did I sell this week',''],['how much did I make this month',''],['unpublish My Ebook on gumroad','Hides a product from buyers'],['publish My Ebook on gumroad',''],['make a 20% discount code for My Ebook','Add "called SPRING20" to choose the name'],['post a product called My Ebook for $19','Attach the file with + first. Say "create" instead of "post" to save a draft']]],
   ['Calls with Trillion',[['(in Linphone, dial trillion)','Talk to me by phone. Done straight away, only payments wait for your OK'],['call me at 8am every weekday and give me a breakdown of current projects','Free, through Linphone on your phone'],['call me','Rings you now with the update'],['call me tomorrow at 7:30 to remind me about the dentist',''],['stop calling me','Removes planned calls']]],

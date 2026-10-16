@@ -87,6 +87,28 @@ BUSINESS APPS (Apps page)
   be installed and signed in to your Pro plan on this PC; adjust its command under the REA
   connector if needed (default "claude -p").
 
+SELF-CHECK (is everything working?)
+Trillion can test all her own parts live on this PC and show what is working.
+- Settings page: press RUN SELF-CHECK. Or in the chat: "run a self check".
+- Green = working. Amber = optional or not set up yet. Red = broken; the line says how to fix it.
+- She also runs it once when she starts and writes any red items into the activity log, so you
+  find out about a problem without having to ask.
+
+GO-LIVE CHECKLIST (do this once, then you KNOW it is solid)
+Run the self-check first and clear every red item. Then confirm these by hand, because they only
+truly count when done on your real PC:
+1. Backup round-trip: Settings > BACK UP NOW to a D: folder. Open the backup folder and check a
+   manifest.json and a data folder are there.
+2. One business app: Apps page > install SerpBear (or n8n). Wait for "running", open it, sign in.
+3. REA on an app: open an app on the phone, then say "reverse engineer the app on my screen". You
+   should get a report back (needs Claude Code signed in to your Pro plan on this PC).
+4. App traffic: "what does <app> connect to" - you should get a list of servers (needs mitmproxy,
+   which Setup now installs).
+5. A call: Phone page > TEST CALL, answer it, say a request, check it acts on it.
+6. Meeting mode: turn it on, send yourself a WhatsApp, check Trillion replies.
+7. A reminder call: "call me in 2 minutes with my project update", confirm the phone rings.
+When all seven are done and the self-check is green, Trillion is ready to rely on day to day.
+
 MOVING TO A NEW DRIVE OR A CLEAN WINDOWS INSTALL
 Before you wipe C:
 1. Settings > Backup and restore > BACK UP NOW, to a folder on another drive (for example D:\Trillion Backup).
