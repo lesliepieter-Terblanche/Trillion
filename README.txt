@@ -105,7 +105,9 @@ truly count when done on your real PC:
 4. App traffic: "what does <app> connect to" - you should get a list of servers (needs mitmproxy,
    which Setup now installs).
 5. A call: Phone page > TEST CALL, answer it, say a request, check it acts on it.
-6. Meeting mode: turn it on, send yourself a WhatsApp, check Trillion replies.
+6. Meeting mode: turn it on, send yourself a WhatsApp, check Trillion replies. The reply wording is
+   set on the Phone page under Meeting mode - either a short phrase ("in a meeting") that slots into
+   a sentence, or your own full message (use {time} for when you're back and {name} for your name).
 7. A reminder call: "call me in 2 minutes with my project update", confirm the phone rings.
 When all seven are done and the self-check is green, Trillion is ready to rely on day to day.
 

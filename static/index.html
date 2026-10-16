@@ -537,8 +537,11 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <div class="btns" style="justify-content:flex-start" id="mt-btns"></div>
     <details><summary class="muted" style="cursor:pointer;font-size:14px">Meeting mode settings</summary>
       <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
-      <label class="field"><span>What to tell people you are doing</span><input id="mt-reason" placeholder="in a meeting"></label>
-      <label class="field"><span>Tone</span><select id="mt-tone" style="max-width:200px"><option value="friendly">Friendly</option><option value="formal">Professional</option></select></label>
+      <label class="field"><span>What to tell people you are doing (a short phrase)</span><input id="mt-reason" placeholder="in a meeting" maxlength="60"></label>
+      <div class="muted" style="font-size:13px">I put that into: "Sorry I missed your call. I'm <b>&lt;that&gt;</b> right now and will call you back after 11:00…" — so keep it short, like "in a meeting" or "with a client".</div>
+      <label class="field"><span>Or write the whole message yourself (optional)</span><textarea id="mt-template" rows="3" placeholder="Leave blank to use the line above. Example: Hi, it's {name} — I can't take calls right now, back to you {time}. For anything urgent, WhatsApp me here."></textarea></label>
+      <div class="muted" style="font-size:13px">If you fill this in, I send exactly this (for both missed calls and messages). Use <b>{time}</b> for when you'll be back and <b>{name}</b> for your name.</div>
+      <label class="field"><span>Tone (used only when the box above is blank)</span><select id="mt-tone" style="max-width:200px"><option value="friendly">Friendly</option><option value="formal">Professional</option></select></label>
       <label class="tickrow"><input type="checkbox" id="mt-calls"><span><b>Decline calls and send a message</b></span></label>
       <label class="tickrow"><input type="checkbox" id="mt-voice"><span><b>Listen to voice notes</b><br><span class="muted">So the reply and the summary know what was said.</span></span></label>
       <label class="field"><span>Let these people through (no auto-reply, they tap your watch instead). Names, separated by commas.</span><textarea id="mt-vip" rows="2" placeholder="Brandon, Lewellyn, My boss"></textarea></label>
@@ -2123,9 +2126,9 @@ function mtDraw(m){$('mt-pill').textContent=m.on?'on':'off';$('mt-pill').classNa
   const b=(k,l,pri)=>`<button class="btn${pri?' pri':''}" data-mt="${k}">${l}</button>`;
   $('mt-btns').innerHTML=m.on?b('end','END MEETING',1):b('30m','30 MIN')+b('1h','1 HOUR',1)+b('2h','2 HOURS')+b('open','UNTIL I SAY');
   $('mt-btns').querySelectorAll('[data-mt]').forEach(x=>x.onclick=async()=>{const k=x.dataset.mt;try{mtDraw(await (await api('/api/meeting',{json:k==='end'?{on:false}:{on:true,for:k}})).json());}catch(e){st.className='msg bad';st.textContent=e.message;}});
-  const p=m.prefs;$('mt-reason').value=p.reason;$('mt-tone').value=p.tone;$('mt-calls').checked=p.calls;$('mt-voice').checked=p.voice;$('mt-vip').value=p.vip.join(', ');
+  const p=m.prefs;$('mt-reason').value=p.reason;$('mt-tone').value=p.tone;$('mt-calls').checked=p.calls;$('mt-voice').checked=p.voice;$('mt-vip').value=p.vip.join(', ');if($('mt-template'))$('mt-template').value=p.template||'';
   $('mt-lastbox').hidden=!m.last;if(m.last)$('mt-last').textContent=m.last.summary;}
-$('mt-save').onclick=async()=>{const s_=$('mt-smsg');try{mtDraw(await (await api('/api/meeting/prefs',{json:{reason:$('mt-reason').value.trim(),tone:$('mt-tone').value,calls:$('mt-calls').checked,voice:$('mt-voice').checked,vip:$('mt-vip').value}})).json());s_.className='msg ok';s_.textContent='Saved.';}catch(e){s_.className='msg bad';s_.textContent=e.message;}};
+$('mt-save').onclick=async()=>{const s_=$('mt-smsg');try{mtDraw(await (await api('/api/meeting/prefs',{json:{reason:$('mt-reason').value.trim(),tone:$('mt-tone').value,calls:$('mt-calls').checked,voice:$('mt-voice').checked,vip:$('mt-vip').value,template:$('mt-template')?$('mt-template').value.trim():''}})).json());s_.className='msg ok';s_.textContent='Saved.';}catch(e){s_.className='msg bad';s_.textContent=e.message;}};
 
 // ---------- check-ins ----------
 async function ngLoad(){try{ngDraw(await (await api('/api/nudge')).json());}catch(e){}}

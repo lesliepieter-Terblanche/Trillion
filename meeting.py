@@ -36,7 +36,28 @@ core.x("""CREATE TABLE IF NOT EXISTS meetings(id INTEGER PRIMARY KEY, user_id IN
 def prefs(user):
     s = core.settings(user).get("meeting_prefs") or {}
     return {"calls": s.get("calls", True), "voice": s.get("voice", True), "vip": [str(x).strip() for x in s.get("vip", []) if str(x).strip()],
-            "reason": str(s.get("reason") or "in a meeting")[:60], "tone": s.get("tone", "friendly")}
+            "reason": str(s.get("reason") or "in a meeting")[:60], "tone": s.get("tone", "friendly"),
+            "template": str(s.get("template") or "")[:400]}
+
+
+def _reason_phrase(reason):
+    """Tidy whatever is in the reason box so it always slots into 'I'm ___ right now' and reads correctly,
+    whether the user typed a short phrase ('in a meeting') or a whole sentence ('I am currently in a meeting.')."""
+    r = re.sub(r"\s+", " ", str(reason or "")).strip().strip(".!?,; ")
+    while True:
+        n = re.sub(r"^(?:i\s*'?\s*m|i\s+am|currently|right\s+now|busy)\b[\s,]*", "", r, flags=re.I).strip()
+        if n == r:
+            break
+        r = n
+    r = re.sub(r"[\s,]*right now$", "", r, flags=re.I).strip()
+    return r or "in a meeting"
+
+
+def fill_template(tmpl, back, name):
+    """Fill a user-written full message. {time}/{back} -> when they'll be back; {name} -> their name."""
+    out = re.sub(r"\{\s*(?:time|back)\s*\}", back, str(tmpl), flags=re.I)
+    out = re.sub(r"\{\s*name\s*\}", name, out, flags=re.I)
+    return re.sub(r"\s+", " ", out).strip()[:700]
 
 
 def save_prefs(user, data):
@@ -49,7 +70,8 @@ def save_prefs(user, data):
     st["meeting_prefs"] = {"calls": bool(data.get("calls", old["calls"])), "voice": bool(data.get("voice", old["voice"])),
                            "vip": [x.strip()[:40] for x in vip if x.strip()][:30],
                            "reason": str(data.get("reason") or old["reason"]).strip()[:60] or "in a meeting",
-                           "tone": data.get("tone") if data.get("tone") in ("friendly", "formal") else old["tone"]}
+                           "tone": data.get("tone") if data.get("tone") in ("friendly", "formal") else old["tone"],
+                           "template": str(data.get("template", old["template"]) or "").strip()[:400]}
     core.save_settings(user["id"], st)
     return prefs(core.q("SELECT * FROM users WHERE id=?", (user["id"],), one=True))
 
@@ -204,14 +226,17 @@ def handle(user, row, send, decline=None, voice_text=None):
 def compose(user, m, p, entry):
     """The reply: short, honest, no promises. The brain fits it to what was asked; a plain one if the brain is busy."""
     back = f"after {hhmm(m['until'])}" if m["until"] else "as soon as I am out"
+    if p.get("template"):                                    # the user wrote the whole message themselves
+        return fill_template(p["template"], back, user["name"])
+    reason = _reason_phrase(p["reason"])
     if entry["kind"] == "call":
-        return f"Sorry I missed your call, I'm {p['reason']} right now. I'll call you back {back}. If it's urgent, send me a message here."
-    plain = f"Hi, I'm {p['reason']} right now and will get back to you {back}."
+        return f"Sorry I missed your call. I'm {reason} right now and will call you back {back}. If it's urgent, send me a message here."
+    plain = f"Hi, I'm {reason} right now and will get back to you {back}."
     try:
         msg = core.LLM(user, [
-            {"role": "system", "content": f"You answer WhatsApps for {user['name']} while they are {p['reason']}. Write ONE short reply "
+            {"role": "system", "content": f"You answer WhatsApps for {user['name']} while they are {reason}. Write ONE short reply "
              f"(at most two sentences), {'warm and casual' if p['tone'] == 'friendly' else 'polite and professional'}, in the language "
-             f"the person wrote in (often Afrikaans or English). Say {user['name']} is {p['reason']} and will reply {back}. "
+             f"the person wrote in (often Afrikaans or English). Say {user['name']} is {reason} and will reply {back}. "
              "If they asked something, acknowledge it in a few words but never answer it, never agree to anything, never give "
              "prices, times, money or promises. Write as the first person, as if you were " + user["name"] + ". No quotes, no signature."},
             {"role": "user", "content": f"{entry['who']} wrote ({entry['kind']}): {entry['text'][:800]}"}], fast=True)
