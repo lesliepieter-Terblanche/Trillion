@@ -947,6 +947,20 @@ def run_agent(user, text, files=None):
             reply = "I will not call you any more. Urgent things still come as a notification and a ring. Switch calls on again on the Phone page."
         elif not vp["target"] and not voicecall.registered(user):
             reply = "I cannot call you yet: set up Linphone on your phone so it signs in to me (steps on the Phone page)."
+        elif cm.get("on_done"):
+            BUSY[uid] = False
+            running = core.q("SELECT id, title FROM tasks WHERE user_id=? AND status='in_progress' AND id<>?", (uid, tid))
+            watch_ids = {r["id"] for r in running}
+            topic = cm.get("topic") or "projects"
+            if topic in ("let me know", "know", "me", ""):
+                topic = "projects"
+            DONE_CALLS[uid] = {"watch": watch_ids or None, "exclude": {tid}, "topic": topic}
+            if watch_ids:
+                what = running[0]["title"][:60] if len(running) == 1 else f"{len(running)} running jobs"
+                reply = f"Will do — I'll call you on Linphone as soon as that finishes ({what}). I won't ring you before then."
+            else:
+                reply = ("Will do — I'll call you on Linphone as soon as the next job finishes. "
+                         "Nothing is running right now, so if the project is something I start later, I'll ring you when it's done.")
         elif cm.get("now"):
             BUSY[uid] = False
             call_in_background(user, cm["topic"])
@@ -1915,6 +1929,32 @@ def call_in_background(user, topic="projects", items=None, fallback=None, openin
             except Exception:
                 pass
     threading.Thread(target=go, daemon=True).start()
+
+
+# "call me when the project is done": each entry waits for a running job to finish, then calls once.
+DONE_CALLS = {}   # uid -> {"watch": set(task_ids) or None (any future task), "exclude": set(task_ids), "topic": str}
+
+
+def _call_on_task_done(tid, status):
+    """Fires when any task ends. If the user asked to be called when their work finished, ring them now."""
+    for uid, p in list(DONE_CALLS.items()):
+        if tid in p.get("exclude", ()):
+            continue
+        ws = p.get("watch")
+        if ws is not None and tid not in ws:
+            continue
+        DONE_CALLS.pop(uid, None)
+        u = core.q("SELECT * FROM users WHERE id=?", (uid,), one=True)
+        if not u:
+            continue
+        opening = "Hi, you asked me to call when the work was done - it's finished. Here's where things stand."
+        call_in_background(u, p.get("topic", "projects"), opening=opening,
+                           fallback=lambda u=u: watch.send(u, "Your job is done",
+                                                           "The work you asked about is finished; I tried to call you. The update is in the chat."))
+
+
+if _call_on_task_done not in core.ON_TASK_END:
+    core.ON_TASK_END.append(_call_on_task_done)
 
 
 @app.get("/api/nudge")

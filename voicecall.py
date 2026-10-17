@@ -888,9 +888,13 @@ def parse(text):
                   r"(?:a |the )?(.+)$", text[CALL_ME.search(text).end():], re.I)
     if t:
         words = t.group(1).strip(" .?!")
-        if not re.search(r"\b(projects?|breakdown|update|status|briefing|summary|what'?s outstanding|everything)\b", words, re.I):
+        if not re.search(r"\b(projects?|breakdown|update|status|briefing|summary|what'?s outstanding|everything|let me know)\b", words, re.I):
             topic = words[:200]
     if not a:
+        # "call me WHEN the project is done" - defer the call until the work finishes, don't ring now
+        if re.search(r"\b(when|once|after|as soon as|the moment)\b", text, re.I) and \
+           re.search(r"\b(done|finish\w*|complet\w*|ready|over|wrapped?\s*up|wraps?\s*up|ends?)\b", text, re.I):
+            return {"on_done": True, "topic": topic}
         return {"now": True, "topic": topic}
     h, mi, ap = int(a.group(1)), int(a.group(2) or 0), (a.group(3) or "").lower()
     if ap == "pm" and h < 12:
