@@ -126,7 +126,9 @@ truly count when done on your real PC:
    should get a report back (needs Claude Code signed in to your Pro plan on this PC).
 4. App traffic: "what does <app> connect to" - you should get a list of servers (needs mitmproxy,
    which Setup now installs).
-5. A call: Phone page > TEST CALL, answer it, say a request, check it acts on it.
+5. A call: Phone page > TEST CALL, answer it, say a request, check it acts on it. Before every call
+   Trillion wakes and unlocks the phone and opens Linphone so it rings - save an unlock code on the
+   Phone page so she can unlock it (without one, the call still comes but may sit behind the lock screen).
 6. Meeting mode: turn it on, send yourself a WhatsApp, check Trillion replies. The reply wording is
    set on the Phone page under Meeting mode - either a short phrase ("in a meeting") that slots into
    a sentence, or your own full message (use {time} for when you're back and {name} for your name).

@@ -1863,6 +1863,27 @@ def project_briefing(user):
     return plain
 
 
+def _prep_phone_for_call(user):
+    """Before Trillion rings, wake and unlock the phone and bring Linphone to the front, so the call
+    actually comes through instead of sitting behind the lock screen. Best-effort: never blocks the call."""
+    if not core.settings(user).get("phone_serial"):
+        return
+    try:
+        phone.unlock(user, explicit=True)       # explicit: unlock for the call if a code is saved
+    except Exception as e:
+        core.log(user["id"], "Before calling: could not unlock the phone - " +
+                 (str(e.args[0]) if getattr(e, "args", None) else type(e).__name__)
+                 + " (save an unlock code on the Phone page so I can unlock it for calls)", "waiting")
+    try:
+        phone.open_app(user, "linphone")         # wakes/unlocks (again, harmless) and opens Linphone
+    except Exception:
+        try:
+            phone.sh(user, "monkey -p org.linphone -c android.intent.category.LAUNCHER 1")
+        except Exception:
+            pass
+    time.sleep(2.0)                              # let Linphone come to the foreground and register before the call
+
+
 def place_call(user, topic="projects", items=None, opening=None):
     """Phone the login's Linphone. Returns how it went; never raises."""
     name = core.settings(user).get("assistant_name") or "Trillion"
@@ -1876,6 +1897,7 @@ def place_call(user, topic="projects", items=None, opening=None):
     else:
         opening = f"Good {'morning' if datetime.datetime.now().hour < 12 else 'day'} {user['name']}, it's {name}. " + project_briefing(user) + " Anything you want me to do?"
 
+    _prep_phone_for_call(user)
     answer = call_answer(user)
     ts = TAILSCALE.get("v") or {}
     try:
