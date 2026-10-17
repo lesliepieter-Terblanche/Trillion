@@ -164,6 +164,40 @@ def _mitmproxy():
               "Run 'pip install mitmproxy' if you want to capture what servers a phone app talks to.")
 
 
+def _heavy_model(user):
+    hv = core.settings(user).get("heavy_model") or "mistral-small:24b"
+    try:
+        if core.has_model(hv):
+            return _c("Smart model", OK, f"The bigger brain ({hv}) is installed; used for coding and hard reasoning.")
+    except Exception:
+        pass
+    return _c("Smart model", WARN, f"The bigger brain ({hv}) is not installed yet. Everyday chat still works on the fast model.",
+              "Tell Trillion 'install the smart model', or run Setup again, to download it (about 14 GB).")
+
+
+def _search():
+    try:
+        import apps
+        r = core.q("SELECT status FROM apps WHERE key='searxng'", one=True)
+        if r and r["status"] in ("installed", "running"):
+            return _c("Private web search", OK, "SearXNG is installed; Trillion can search the web with no API key.")
+    except Exception:
+        pass
+    return _c("Private web search", WARN, "SearXNG is not installed; web search is off.",
+              "Install 'Private search (SearXNG)' on the Apps page (needs Docker).")
+
+
+def _knowledge():
+    try:
+        import vstore
+        if vstore.available():
+            return _c("Knowledge store", OK, "The smart memory store (Chroma) is active for the second brain.")
+    except Exception:
+        pass
+    return _c("Knowledge store", WARN, "The smart memory store is not installed; the built-in memory search is used instead.",
+              "Run 'pip install chromadb' (Setup does this automatically) for faster, sharper recall.")
+
+
 def _disk():
     try:
         v = core.vitals().get("disk")
@@ -196,12 +230,15 @@ def run(user, sites=None, hearing=None, tailscale=None):
         return {"error": "The self-check is for the owner login only."}
     checks = [
         _brain(),
+        _heavy_model(user),
         _hearing(hearing),
         _tailscale(tailscale),
         _phone(user),
         _calls(user),
         _website(user, sites),
         _docker(),
+        _search(),
+        _knowledge(),
         _backup(),
         _disk(),
         _secrets(),

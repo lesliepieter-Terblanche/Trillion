@@ -21,6 +21,8 @@ DEFAULT_SETTINGS = {
     "site": "",
     "brain": "local",              # local | gemini | anthropic
     "local_model": "qwen2.5:14b",
+    "heavy_model": "mistral-small:24b",   # the bigger local brain for hard/coding jobs (fits 16 GB VRAM at Q4)
+    "heavy_answers": True,                 # route hard jobs (code, deep reasoning) to the heavy model when it is installed
     "cloud_model": "gemini-2.5-flash",
     "voice": "browser",            # browser | elevenlabs
     "eleven_voice_id": "21m00Tcm4TlvDq8ikWAM",
@@ -323,6 +325,15 @@ def pick_local_model(pref):
         if n.split(":")[0] == pref.split(":")[0]:
             return n
     return names[0]
+
+
+def has_model(pref):
+    """True if a model of this family is installed (so we never route to one that isn't there)."""
+    if not pref:
+        return False
+    fam = pref.split(":")[0]
+    return any(m["name"] == pref or m["name"].split(":")[0] == fam
+               for m in models()["list"] if "embed" not in m["name"])
 
 
 def embed(text):

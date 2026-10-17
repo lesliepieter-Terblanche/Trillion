@@ -69,11 +69,19 @@ SKILLS AND CONNECTORS (Skills page)
   once if "Cannot find the program npx" appears.
 - CHECK FOR DUPLICATES (button on the Skills page): scans your connectors and skills and flags any
   two that run the same program or cover the same ground, so you can remove the extra one.
+- WHAT'S BEING USED (button on the Skills page): shows how often each skill and connector has actually
+  been used, and flags the ones never used, each with an UNINSTALL button. You can also just ask her
+  "which skills aren't being used". ("Not used yet" counts from when tracking began, so fresh installs
+  start blank.)
 
 BUSINESS APPS (Apps page)
-- The apps are SerpBear (Google rankings), n8n and Activepieces (automations). Postiz, Listmonk,
+- The apps are SerpBear (Google rankings), n8n and Activepieces (automations), and under Knowledge:
+  SearXNG (a private search engine) and AnythingLLM (chat with your own documents). Postiz, Listmonk,
   Umami, Invoice Ninja and Chatwoot were removed on request; if any were installed, Trillion erases
   their containers, data, folders and saved keys the next time it starts with Docker running.
+- SearXNG lets Trillion search the web herself with no API key and nothing sent to Google: install it,
+  then just ask her to look something up. AnythingLLM is your own private document library you can chat
+  with; it uses your local Ollama brain, so it costs no tokens and nothing leaves the PC.
 - Reverse engineering (REA): a connector that looks inside apps, websites and programs without
   their source (github.com/morluto/rea, MIT). Owner only, and it runs without asking for approval.
   To reverse-engineer an app on your phone, just say "use REA on <app> on my phone": Trillion pulls
@@ -86,6 +94,20 @@ BUSINESS APPS (Apps page)
   does the work and reports back in the chat and on your phone. For that handoff, Claude Code must
   be installed and signed in to your Pro plan on this PC; adjust its command under the REA
   connector if needed (default "claude -p").
+
+THE SMART (BIGGER) BRAIN
+Trillion runs two local brains: a fast one for everyday chat and the full one for jobs. There is now an
+optional third - a bigger "smart" model (Mistral Small 24B, about 14 GB) that she uses automatically for
+coding and hard reasoning, while everyday chat stays on the fast model. It fits your 16 GB graphics card.
+Setup downloads it (skip with -SkipModelsHeavy); you can also get it any time by telling her "install the
+smart model". If it is not installed she simply uses the normal local model, so nothing breaks. Turn the
+routing off under Settings (heavy_answers) if you ever want everything on one model. All of this is local
+and free - no tokens, nothing leaves the PC.
+
+SMARTER MEMORY
+Her second brain (the facts she saves and searches) gets a proper local vector store when the optional
+"chromadb" part is installed - Setup does this automatically, and it falls back to the built-in search if
+it is missing, so it is safe either way. This keeps recall fast and sharp as the number of saved notes grows.
 
 SELF-CHECK (is everything working?)
 Trillion can test all her own parts live on this PC and show what is working.

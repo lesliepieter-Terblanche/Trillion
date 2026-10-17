@@ -1,5 +1,5 @@
 # Trillion setup. Run by double-clicking "1 - Setup.bat". Safe to run again at any time.
-param([switch]$SkipModels)
+param([switch]$SkipModels, [switch]$SkipModelsHeavy)
 $ErrorActionPreference = "Continue"
 Set-Location $PSScriptRoot
 
@@ -35,12 +35,24 @@ if (-not (Test-Path ".venv\Scripts\python.exe")) { python -m venv .venv }
 & .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 if ($LASTEXITCODE -ne 0) { Write-Host "Some parts failed to install. Check your internet and run Setup again." -ForegroundColor Red }
 
+# Optional: the smart knowledge store for the second brain. If it will not install, Trillion still works
+# (she falls back to her built-in memory search), so a failure here does not stop setup.
+Step "Adding the smart knowledge store (optional)"
+& .\.venv\Scripts\python.exe -m pip install --quiet chromadb
+if ($LASTEXITCODE -ne 0) { Write-Host "Skipped the knowledge store; Trillion's built-in memory still works." -ForegroundColor DarkYellow }
+
 if (-not $SkipModels) {
   Step "Downloading the local models (about 15 GB the first time)"
   if (-not (Works "ollama" "list")) { Start-Process "ollama" "serve" -WindowStyle Hidden; Start-Sleep 5 }
   foreach ($m in @("qwen2.5:3b", "nomic-embed-text", "qwen2.5:14b", "gemma3:4b")) {
     Write-Host "Model: $m"
     ollama pull $m
+  }
+  # The bigger "smart" brain for coding and hard reasoning (about 14 GB, fits your 16 GB card at Q4).
+  # Skipped with -SkipModelsHeavy; you can also get it later by telling Trillion "install the smart model".
+  if (-not $SkipModelsHeavy) {
+    Write-Host "Model: mistral-small:24b (the smart brain - about 14 GB)"
+    ollama pull mistral-small:24b
   }
 }
 

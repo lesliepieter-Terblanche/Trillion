@@ -56,10 +56,30 @@ APPS = {
         "connect": [],
         "signup": "Open Activepieces and create the first account. Invite each login from inside the app.",
     },
+    "searxng": {
+        "disk": 1,
+        "name": "Private search (SearXNG)", "port": 8899, "group": "Knowledge",
+        "what": "A private web search engine running on this PC. Trillion searches through it with no API key, and nothing "
+                "is sent to Google or tracked.",
+        "get": "own", "ram": "about 300 MB", "connect": [], "shared": True,
+        "signup": "Nothing to sign up. Once it says running, Trillion can search the web herself (just ask her to look something up).",
+        "note": "Keyless and private. Results are gathered from search engines without tracking you.",
+    },
+    "anythingllm": {
+        "disk": 3,
+        "name": "AnythingLLM", "port": 3005, "group": "Knowledge",
+        "what": "Your own private document library you can chat with. Drop in PDFs, Word files and notes, and it answers "
+                "from them using your local brain.",
+        "get": "own", "ram": "about 1 GB", "connect": [],
+        "signup": "Open AnythingLLM, create the first account, make a workspace and upload your documents. It is wired to "
+                  "your local Ollama brain, so asking it questions is free.",
+        "note": "Uses your local Ollama model, so there are no tokens to pay and nothing leaves the PC.",
+    },
 }
-GROUPS = ["Marketing", "Customers", "Accounting", "Automation"]
+GROUPS = ["Marketing", "Customers", "Accounting", "Automation", "Knowledge"]
 # the one port each app is opened on: (compose service, port inside the container)
-PUBLISH = {"serpbear": ("app", 3000), "n8n": ("n8n", 5678), "activepieces": ("app", 80)}
+PUBLISH = {"serpbear": ("app", 3000), "n8n": ("n8n", 5678), "activepieces": ("app", 80),
+           "searxng": ("searxng", 8080), "anythingllm": ("anythingllm", 3001)}
 MEM_CHOICES = (0, 6, 8, 10, 12, 16)
 _JOBS, _LOCK = {}, threading.Lock()
 _CACHE = {"t": 0, "v": None}
@@ -380,6 +400,56 @@ volumes:
   redis:
     container_name: trillion-activepieces-redis
 """
+    elif key == "searxng":
+        conf = dest / "searxng"
+        conf.mkdir(parents=True, exist_ok=True)
+        (conf / "settings.yml").write_text(f"""# written by Trillion
+use_default_settings: true
+server:
+  secret_key: {yaml_str(secret(key, 'secret', rnd))}
+  limiter: false
+  image_proxy: true
+search:
+  formats:
+    - html
+    - json
+""", encoding="utf-8")
+        (dest / "docker-compose.yml").write_text(f"""services:
+  searxng:
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    ports:
+      - {publish(key)}
+    volumes:
+      - ./searxng:/etc/searxng
+    environment:
+      - SEARXNG_BASE_URL={yaml_str(url + '/')}
+""", encoding="utf-8")
+    elif key == "anythingllm":
+        (dest / "storage").mkdir(parents=True, exist_ok=True)
+        (dest / "docker-compose.yml").write_text(f"""services:
+  anythingllm:
+    image: mintplexlabs/anythingllm:latest
+    restart: unless-stopped
+    ports:
+      - {publish(key)}
+    cap_add:
+      - SYS_ADMIN
+    environment:
+      - STORAGE_DIR=/app/server/storage
+      - LLM_PROVIDER=ollama
+      - OLLAMA_BASE_PATH=http://host.docker.internal:11434
+      - OLLAMA_MODEL_PREF=qwen2.5:14b
+      - OLLAMA_MODEL_TOKEN_LIMIT=8192
+      - EMBEDDING_ENGINE=native
+      - VECTOR_DB=lancedb
+      - WHISPER_PROVIDER=local
+      - TTS_PROVIDER=native
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./storage:/app/server/storage
+""", encoding="utf-8")
     if over:
         (dest / "docker-compose.override.yml").write_text(over, encoding="utf-8")
 

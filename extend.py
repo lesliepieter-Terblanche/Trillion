@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS user_skills(user_id INTEGER, slug TEXT, enabled INTEG
 CREATE TABLE IF NOT EXISTS connectors(id INTEGER PRIMARY KEY, name TEXT UNIQUE, description TEXT, command TEXT, created REAL);
 CREATE TABLE IF NOT EXISTS connector_access(connector_id INTEGER, user_id INTEGER, enabled INTEGER DEFAULT 1,
   PRIMARY KEY(connector_id, user_id));
+CREATE TABLE IF NOT EXISTS ext_usage(kind TEXT, slug TEXT, uses INTEGER DEFAULT 0, last REAL,
+  PRIMARY KEY(kind, slug));
 """
 
 
@@ -510,6 +512,48 @@ def _norm_cmd(cmd):
 
 def _words(name):
     return frozenset(w for w in re.findall(r"[a-z0-9]+", str(name).lower()) if len(w) > 2)
+
+
+# =====================================================================================
+# Usage: what is actually being used, so unused skills and connectors can be cleared out
+# =====================================================================================
+def mark_used(kind, slug):
+    """Record that a skill or connector was just used. Best-effort; never raises into the caller."""
+    try:
+        core.x("INSERT INTO ext_usage(kind,slug,uses,last) VALUES(?,?,1,?) "
+               "ON CONFLICT(kind,slug) DO UPDATE SET uses=uses+1, last=?",
+               (kind, slugify(slug), time.time(), time.time()))
+    except Exception:
+        pass
+
+
+def _usage(kind, slug):
+    r = core.q("SELECT uses, last FROM ext_usage WHERE kind=? AND slug=?", (kind, slugify(slug)), one=True)
+    return (r["uses"], r["last"]) if r else (0, None)
+
+
+def usage_report(user):
+    """What this login's skills (and, for the owner, the connectors) have been used for, with the unused ones
+    flagged so they can be uninstalled. 'Unused' means no recorded use since usage tracking began."""
+    skills = []
+    for s in list_skills(user["id"]):
+        if s["status"] != "active":
+            continue
+        uses, last = _usage("skill", s["slug"])
+        skills.append({"slug": s["slug"], "name": s["name"], "enabled": s["enabled"], "source": s["source"],
+                       "uses": uses, "last": last, "unused": uses == 0})
+    connectors = []
+    if user["is_admin"]:
+        for r in core.q("SELECT * FROM connectors ORDER BY name"):
+            uses, last = _usage("connector", r["name"])
+            live = LIVE.get(r["id"])
+            connectors.append({"id": r["id"], "name": r["name"], "uses": uses, "last": last,
+                               "unused": uses == 0, "running": bool(live and live.alive())})
+    skills.sort(key=lambda a: (a["uses"], a["name"].lower()))
+    connectors.sort(key=lambda a: (a["uses"], a["name"].lower()))
+    return {"skills": skills, "connectors": connectors,
+            "unused_skills": [s["name"] for s in skills if s["unused"]],
+            "unused_connectors": [c["name"] for c in connectors if c["unused"]]}
 
 
 def find_duplicates(user):

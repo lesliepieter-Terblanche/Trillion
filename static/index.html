@@ -792,8 +792,9 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
 <div class="view" id="v-skills">
   <h2>Skills</h2>
   <div class="muted">A skill is a written playbook for doing one kind of job well. Every skill starts switched on for every login. Switch off any you do not want her to use for yours.</div>
-  <div class="btns" style="justify-content:flex-start;margin:4px 0"><button class="btn" id="dupcheck" style="min-height:40px;font-size:13px">CHECK FOR DUPLICATES</button></div>
+  <div class="btns" style="justify-content:flex-start;margin:4px 0;gap:8px;flex-wrap:wrap"><button class="btn" id="dupcheck" style="min-height:40px;font-size:13px">CHECK FOR DUPLICATES</button><button class="btn" id="usagecheck" style="min-height:40px;font-size:13px">WHAT'S BEING USED</button></div>
   <div class="msg" id="dupmsg" style="overflow-wrap:anywhere"></div>
+  <div id="usagelist" style="margin:4px 0"></div>
   <div id="sklist" style="display:flex;flex-direction:column;gap:12px"></div>
   <div class="panel" id="skadd" hidden><b>Add a skill from GitHub</b>
     <div class="muted">Paste the address of a skill folder or SKILL.md on github.com. You see what it says before anything is installed.</div>
@@ -1409,6 +1410,27 @@ $('dupcheck').onclick=async()=>{const m=$('dupmsg');m.className='msg muted';m.te
     const rows=[...d.connectors,...d.skills].map(x=>'• '+x);
     m.className='msg';m.innerHTML='<b>Found these overlaps:</b><br>'+rows.map(esc).join('<br>')+'<br><span class="muted">Remove the extra one with its REMOVE button below.</span>';
   }catch(e){m.className='msg bad';m.textContent=e.message;}};
+$('usagecheck').onclick=()=>loadUsage();
+async function loadUsage(){
+  const box=$('usagelist');box.innerHTML='<div class="msg muted">Checking what you actually use...</div>';
+  let u;try{u=await (await api('/api/usage_audit')).json();}catch(e){box.innerHTML='<div class="msg bad">'+esc(e.message)+'</div>';return;}
+  const when=t=>t?new Date(t*1000).toLocaleDateString():'';
+  const row=(x,kind)=>{const used=!x.unused;
+    const info=used?('used '+x.uses+'×'+(x.last?' · last '+when(x.last):'')):'not used yet';
+    const tag=used?'':'<span style="color:var(--bad);font-weight:600">● unused</span> ';
+    const off=(kind==='skill'&&!x.enabled)?' <span class="muted">(switched off)</span>':'';
+    const del=`<button class="btn" data-${kind==='skill'?'usk':'usc'}="${kind==='skill'?x.slug:x.id}" style="min-height:34px;font-size:12px">UNINSTALL</button>`;
+    return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:7px 0;border-bottom:1px solid var(--edge)"><div>${tag}<b>${esc(x.name)}</b>${off}<br><span class="muted" style="font-size:12px">${esc(info)}</span></div>${del}</div>`;};
+  let h='<div class="panel" style="gap:4px"><div style="display:flex;justify-content:space-between;align-items:center"><b>Skills</b><span class="muted" style="font-size:12px">'+u.unused_skills.length+' not used yet</span></div>';
+  h+=(u.skills.length?u.skills.map(s=>row(s,'skill')).join(''):'<span class="muted">No skills installed.</span>')+'</div>';
+  if(u.connectors&&u.connectors.length!==undefined&&S&&S.user.is_admin){
+    h+='<div class="panel" style="gap:4px;margin-top:10px"><div style="display:flex;justify-content:space-between;align-items:center"><b>Connectors</b><span class="muted" style="font-size:12px">'+u.unused_connectors.length+' not used yet</span></div>';
+    h+=(u.connectors.length?u.connectors.map(c=>row(c,'conn')).join(''):'<span class="muted">No connectors installed.</span>')+'</div>';}
+  h+='<div class="muted" style="font-size:12px;margin-top:6px">“Not used yet” counts from when tracking began, so new installs start blank. Uninstalling a skill or connector removes it for every login.</div>';
+  box.innerHTML=h;
+  box.querySelectorAll('[data-usk]').forEach(b=>b.onclick=async()=>{if(!confirm('Uninstall this skill for every login?'))return;b.disabled=true;await api('/api/skills/'+b.dataset.usk,{method:'DELETE'});loadUsage();loadSkills();});
+  box.querySelectorAll('[data-usc]').forEach(b=>b.onclick=async()=>{if(!confirm('Uninstall this connector for every login?'))return;b.disabled=true;await api('/api/connectors/'+b.dataset.usc,{method:'DELETE'});loadUsage();loadSkills();});
+}
 async function loadSkills(){
   const adm=S&&S.user.is_admin;$('skadd').hidden=!adm;$('cnadd').hidden=!adm;
   const sk=await (await api('/api/skills')).json();

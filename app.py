@@ -175,6 +175,11 @@ def llm_chat(user, messages, tool_specs=None, fast=False, live=False):
         small = core.pick_local_model(s.get("fast_model") or "qwen2.5:3b")
         if small.split(":")[0] in ("qwen2.5", "gemma3", "llama3.2", "phi4-mini") and small != model:
             model = small
+    elif s.get("heavy_answers", True) and _wants_heavy(messages):
+        # a hard job (code, deep reasoning) goes to the bigger local brain, but only if it is actually installed
+        hv = s.get("heavy_model") or "mistral-small:24b"
+        if core.has_model(hv) and hv.split(":")[0] != model.split(":")[0]:
+            model = core.pick_local_model(hv)
     # Ollama's own chat endpoint, so the memory window can be set. The default window is too
     # small for the tool list and cuts the instructions off, which makes the model ramble.
     native = []
@@ -373,6 +378,35 @@ CLAIMS_PENDING = re.compile(r"\b(waiting for (?:your |my )?(?:ok|approval)|pendi
                             r"awaiting (?:your )?approval|approve it (?:on|in|from|via)|for your approval now)\b", re.I)
 SELFCHECK_RE = re.compile(r"\b(?:self[-\s]?check|health check|system check|run a check|are you (?:ok|working|healthy|production[-\s]?ready)|"
                           r"is everything (?:ok|working)|check (?:yourself|your systems|everything is working))\b", re.I)
+# "install the smart/bigger model" - pull the heavy local brain on demand
+PULL_HEAVY_RE = re.compile(r"\b(?:install|get|download|pull|set ?up|add)\b.{0,25}\b(?:smart(?:er)?|bigger|heav(?:y|ier)|mistral|24b)\b"
+                           r"(?:.{0,15}\b(?:model|brain)\b)?", re.I)
+# "which skills/connectors aren't being used" - the usage audit
+USAGE_RE = re.compile(r"\b(?:which|what|show|list)\b.{0,40}\b(?:skills?|connectors?|connections?)\b.{0,30}"
+                      r"\b(?:not|never|un)?\s?(?:used|using|unused|in use)\b"
+                      r"|\b(?:unused|idle)\b.{0,15}\b(?:skills?|connectors?|connections?)\b"
+                      r"|\b(?:skill|connector|connection)\s+usage\b", re.I)
+
+
+def pull_model_bg(user, name):
+    """Download a local model through Ollama in the background, then let the brain use it."""
+    uid = user["id"]
+
+    def go():
+        try:
+            with httpx.stream("POST", core.OLLAMA + "/api/pull", json={"model": name}, timeout=None) as r:
+                for _ in r.iter_lines():
+                    pass
+            core._model_cache["t"] = 0
+            core.log(uid, f"Smart model ready: {name}", "done")
+            try:
+                watch.alert(user, "info", "Smart model ready", f"{name} is installed. Trillion will use it for heavy jobs.")
+            except Exception:
+                pass
+        except Exception as e:
+            core.log(uid, f"Could not download {name}: {type(e).__name__}", "waiting")
+
+    threading.Thread(target=go, daemon=True).start()
 # reverse-engineering an app on the phone - run the tool directly (the local brain tends to only talk about it)
 REA_PHONE_RE = re.compile(r"\b(?:reverse[-\s]?engineer|use rea on|run rea on|do rea on|rea on|decompile|analy[sz]e|look inside|"
                           r"pull the apk of)\b\s+(?:the\s+)?(?P<app>.+?)(?:\s+app)?\s+(?:on|from)\s+(?:my|the|this)\s+(?:phone|screen)\b", re.I)
@@ -702,6 +736,26 @@ def phone_sentence(r):
     return out + f" The screen is {r.get('screen', 'off')}."
 
 
+# a hard job that is worth the slower, bigger local brain: coding and deep reasoning
+HEAVY_HINTS = re.compile(
+    r"\b(cod\w*|program\w*|script|function|class|regex|algorithm|refactor|debug\w*|stack ?trace|exception|compile|"
+    r"python|javascript|typescript|java\b|rust|golang|c\+\+|sql|bash|powershell|api|endpoint|json|yaml|docker|"
+    r"analy[sz]e|reason\w*|prove|derive|architect\w*|design\s+(?:a|the|my)\s+\w+|plan\s+out|strateg\w*|"
+    r"explain\s+in\s+detail|step\s*by\s*step|complex|complicated)\b", re.I)
+
+
+def _wants_heavy(messages):
+    """Does the latest user turn look like a hard job the bigger brain should take?"""
+    last = ""
+    for m in reversed(messages or []):
+        if m.get("role") == "user":
+            c = m.get("content")
+            last = c if isinstance(c, str) else " ".join(
+                p.get("text", "") for p in c if isinstance(p, dict)) if isinstance(c, list) else ""
+            break
+    return bool(last) and (len(last) > 400 or bool(HEAVY_HINTS.search(last)))
+
+
 # words that mean she has to DO something or look something up: those go to the full brain with its tools
 NEEDS_TOOLS = re.compile(
     r"\b(creat\w*|make|made|build|write|wrote|draft|generat\w*|open|launch|start|run|delet\w*|remov\w*|mov(?:e|ing)|renam\w*|cop(?:y|ies)|past\w*|"
@@ -1004,6 +1058,42 @@ def run_agent(user, text, files=None):
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="failed" if reply.startswith("I could not") else "completed", detail=reply[:200])
         return {"reply": reply, "task_id": tid, "provider": "built-in", "show": show}
+    if user["is_admin"] and PULL_HEAVY_RE.search(text) and not files:
+        hv = core.settings(user).get("heavy_model") or "mistral-small:24b"
+        BUSY[uid] = False
+        if core.has_model(hv):
+            reply = f"The smart model ({hv}) is already installed — I use it automatically for coding and heavy reasoning, and the fast model for everyday chat."
+        else:
+            pull_model_bg(user, hv)
+            reply = (f"Started downloading the smart model ({hv}) in the background. It's about 14 GB, so give it a while — "
+                     "I'll switch to it automatically for coding and deep reasoning once it's ready, and keep everyday chat on the fast local model.")
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="completed", detail="Smart model")
+        return {"reply": reply, "task_id": tid, "provider": "built-in"}
+    if USAGE_RE.search(text) and not files:
+        rep = extend.usage_report(user)
+        BUSY[uid] = False
+
+        def _line(x):
+            if x["unused"]:
+                return f"  - {x['name']}: not used yet"
+            when = time.strftime("%d %b", time.localtime(x["last"])) if x.get("last") else "?"
+            return f"  - {x['name']}: used {x['uses']}x (last {when})"
+
+        parts = []
+        if rep["skills"]:
+            parts.append(f"Skills ({len(rep['unused_skills'])} not used yet):")
+            parts += [_line(s) for s in rep["skills"]]
+        if user["is_admin"] and rep["connectors"]:
+            parts.append("")
+            parts.append(f"Connectors ({len(rep['unused_connectors'])} not used yet):")
+            parts += [_line(c) for c in rep["connectors"]]
+        parts.append("")
+        parts.append("Open the Skills page to see this with Uninstall buttons, or tell me 'remove the skill <name>'.")
+        reply = "\n".join(parts) if rep["skills"] or rep["connectors"] else "You have no installed skills or connectors yet."
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="completed", detail="Usage audit")
+        return {"reply": reply, "task_id": tid, "provider": "built-in"}
     if user["is_admin"] and SELFCHECK_RE.search(text) and not files:
         res = selfcheck.run(user, SITES, HEARING, TAILSCALE)
         BUSY[uid] = False
@@ -2508,7 +2598,7 @@ def messages(user=Depends(auth)):
 
 
 # ---------- settings and keys ----------
-EDITABLE = ["freevideo_url", "wake_word", "video_ai_images", "wa_inbox", "fast_answers", "theme", "quick_actions", "whatsapp_auto_contacts", "phone_own_number", "phone_full_control", "personality", "phone_country_code", "assistant_name", "brand", "accent", "site", "brain", "local_model", "cloud_model", "voice",
+EDITABLE = ["freevideo_url", "wake_word", "video_ai_images", "wa_inbox", "fast_answers", "theme", "quick_actions", "whatsapp_auto_contacts", "phone_own_number", "phone_full_control", "personality", "phone_country_code", "assistant_name", "brand", "accent", "site", "brain", "local_model", "heavy_model", "heavy_answers", "cloud_model", "voice",
             "eleven_voice_id", "daily_review"]
 
 
@@ -3195,6 +3285,12 @@ def skills_read(slug: str, user=Depends(auth)):
 def skills_delete(slug: str, user=Depends(admin)):
     extend.remove_skill(slug)
     return {"ok": True}
+
+
+@app.get("/api/usage_audit")
+def usage_audit(user=Depends(auth)):
+    """Which installed skills (and, for the owner, connectors) are being used, and which never have been."""
+    return extend.usage_report(user)
 
 
 # ---------- connectors ----------

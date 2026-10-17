@@ -36,6 +36,8 @@ SPECS = [
     fn("save_note", "Save something worth remembering to the second brain. domain is PERSONAL or WORK.",
        {"title": S, "body": S, "domain": S}, ["title", "body"]),
     fn("search_memory", "Search the second brain for things saved earlier.", {"query": S}),
+    fn("web_search", "Search the web privately through the local SearXNG engine (no API key, nothing sent to Google). "
+       "Returns titles, links and short snippets. Use this to look things up online.", {"query": S, "count": {"type": "integer"}}, ["query"]),
     fn("seo_rankings", "Google rankings of the user's websites for their tracked search words, from SerpBear.", {"domain": S}, []),
     fn("automations", "List the user's n8n automation workflows and whether each is on.", {}),
     fn("automation_switch", "Switch an n8n workflow on or off by its name.", {"name": S, "on": {"type": "boolean"}}),
@@ -172,6 +174,7 @@ def describe(name, a):
         "create_image": f"Creating a picture: {g('prompt')[:80]}",
         "create_powerpoint": f"Creating PowerPoint {g('path')}", "save_note": f"Remembering: {g('title')}",
         "search_memory": f"Searching memory for {g('query')}", "check_website": f"Checking {g('url')}",
+        "web_search": f"Searching the web for {g('query')}",
         "use_skill": f"Reading the skill {g('name')}", "draft_skill": f"Drafting a playbook: {g('name')}",
         "connector_tools": f"Checking what {g('connector')} can do",
         "connector_call": f"Using {g('connector')}: {g('tool')}",
@@ -423,17 +426,30 @@ def t_create_powerpoint(user, path, title="", slides=None):
 
 # ---------- memory ----------
 def add_note(uid, title, body, domain="PERSONAL"):
+    import vstore
     domain = "WORK" if str(domain).upper().startswith("W") else "PERSONAL"
     emb = core.embed(f"{title}\n{body}")
-    return core.x("INSERT INTO notes(user_id,title,body,domain,ts,emb) VALUES(?,?,?,?,?,?)",
-                  (uid, title[:200], body[:8000], domain, time.time(), json.dumps(emb) if emb else None))
+    nid = core.x("INSERT INTO notes(user_id,title,body,domain,ts,emb) VALUES(?,?,?,?,?,?)",
+                 (uid, title[:200], body[:8000], domain, time.time(), json.dumps(emb) if emb else None))
+    vstore.add(uid, nid, f"{title}\n{body}", emb, {"d": domain})   # best-effort; falls back to SQLite search
+    return nid
 
 
 def search_notes(uid, query, k=5):
-    rows = core.q("SELECT * FROM notes WHERE user_id=? ORDER BY ts DESC LIMIT 2000", (uid,))
+    import vstore
+    qe = core.embed(query) if query else None
+    # When Chroma is in play, let it pick the strongest candidates (it scales past a flat SQLite scan);
+    # otherwise fall back to the most recent notes. Either way the scoring below has the final say.
+    rows = []
+    if query and vstore.available():
+        ids = vstore.search(uid, query, qe, k=max(40, k * 8))
+        if ids:
+            marks = ",".join("?" * len(ids))
+            rows = core.q(f"SELECT * FROM notes WHERE user_id=? AND id IN ({marks})", (uid, *ids))
+    if not rows:
+        rows = core.q("SELECT * FROM notes WHERE user_id=? ORDER BY ts DESC LIMIT 2000", (uid,))
     if not rows:
         return []
-    qe = core.embed(query) if query else None
     scored = []
     words = [w for w in query.lower().split() if len(w) > 2]
     for r in rows:
@@ -458,6 +474,27 @@ def t_save_note(user, title, body, domain="PERSONAL"):
 
 def t_search_memory(user, query):
     return {"results": [{"title": n["title"], "body": n["body"][:1500]} for n in search_notes(user["id"], query)]}
+
+
+def t_web_search(user, query, count=6):
+    """Query the private local SearXNG engine (installed on the Apps page) and return clean results."""
+    import apps
+    try:
+        base = apps.base("searxng")
+    except Exception:
+        base = "http://127.0.0.1:8899"
+    try:
+        r = httpx.get(base + "/search", params={"q": query, "format": "json", "safesearch": 1},
+                      timeout=25, follow_redirects=True)
+        r.raise_for_status()
+        data = r.json()
+    except Exception:
+        return {"error": "Private web search (SearXNG) isn't installed or running yet. Install it on the Apps page, "
+                         "then try again."}
+    out = []
+    for x in (data.get("results") or [])[:max(1, min(int(count or 6), 12))]:
+        out.append({"title": x.get("title"), "url": x.get("url"), "snippet": (x.get("content") or "")[:300]})
+    return {"results": out} if out else {"results": [], "note": "No results found."}
 
 
 # ---------- web / system ----------
@@ -560,6 +597,7 @@ def t_use_skill(user, name):
     if not sk:
         return {"error": f"No switched-on skill called {name}.",
                 "available": [x["name"] for x in extend.enabled_skills(user["id"])]}
+    extend.mark_used("skill", sk["slug"])
     return {"skill": sk["name"], "instructions": (extend.skill_body(sk["slug"]) or "")[:14000],
             "note": "Follow these instructions with your own tools. You cannot run scripts the skill refers to."}
 
@@ -585,6 +623,7 @@ def t_connector_tools(user, connector, find=""):
     if not row:
         return {"error": f"No switched-on connector called {connector}.",
                 "available": [r["name"] for r in extend.enabled_connectors(user["id"])]}
+    extend.mark_used("connector", row["name"])
     tools = extend.client(row).tools()
     words = [w for w in re.findall(r"[a-z0-9]{3,}", str(find or "").lower())]
     if words:      # a long list narrowed down: tools whose name or description has the words, best matches first
@@ -606,6 +645,7 @@ def t_connector_call(user, connector, tool, arguments=None):
     row = extend.find_connector(user["id"], connector)
     if not row:
         return {"error": f"No switched-on connector called {connector}."}
+    extend.mark_used("connector", row["name"])
     if isinstance(arguments, str):
         try:
             arguments = json.loads(arguments)
