@@ -1957,6 +1957,22 @@ def call_in_background(user, topic="projects", items=None, fallback=None, openin
 DONE_CALLS = {}   # uid -> {"watch": set(task_ids) or None (any future task), "exclude": set(task_ids), "topic": str}
 
 
+def announce_done_bg(user):
+    """When a 'call me when done' job finishes, also announce it out loud on a Google Home (best-effort)."""
+    if not core.settings(user).get("call_done_announce", True):
+        return
+
+    def go():
+        try:
+            import cast
+            if cast.available():
+                cast.announce(f"{user['name']}, the job you asked about is finished.",
+                              core.settings(user).get("call_done_device") or None)
+        except Exception:
+            pass
+    threading.Thread(target=go, daemon=True).start()
+
+
 def _call_on_task_done(tid, status):
     """Fires when any task ends. If the user asked to be called when their work finished, ring them now."""
     for uid, p in list(DONE_CALLS.items()):
@@ -1969,6 +1985,7 @@ def _call_on_task_done(tid, status):
         u = core.q("SELECT * FROM users WHERE id=?", (uid,), one=True)
         if not u:
             continue
+        announce_done_bg(u)          # also say it out loud on a Google Home, if set up
         opening = "Hi, you asked me to call when the work was done - it's finished. Here's where things stand."
         call_in_background(u, p.get("topic", "projects"), opening=opening,
                            fallback=lambda u=u: watch.send(u, "Your job is done",
@@ -2661,7 +2678,7 @@ def messages(user=Depends(auth)):
 
 # ---------- settings and keys ----------
 EDITABLE = ["freevideo_url", "wake_word", "video_ai_images", "wa_inbox", "fast_answers", "theme", "quick_actions", "whatsapp_auto_contacts", "phone_own_number", "phone_full_control", "personality", "phone_country_code", "assistant_name", "brand", "accent", "site", "brain", "local_model", "heavy_model", "heavy_answers", "cloud_model", "voice",
-            "eleven_voice_id", "daily_review"]
+            "eleven_voice_id", "daily_review", "call_done_announce", "call_done_device"]
 
 
 @app.put("/api/settings")

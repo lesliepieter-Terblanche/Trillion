@@ -41,6 +41,8 @@ DEFAULT_SETTINGS = {
     "theme": "night",                  # colour mode: night, day, ocean, forest or royal
     "whatsapp_auto_contacts": False,   # send WhatsApps to saved contacts straight away, without the approval step
     "phone_country_code": "27",    # used to turn 082... into +2782... for WhatsApp
+    "call_done_announce": True,    # when a "call me when done" job finishes, also announce it on a Google Home
+    "call_done_device": "",        # which cast speaker to announce on (empty = the only/first one)
 }
 SECRET_NAMES = ["gemini", "anthropic", "elevenlabs", "pixabay"]
 LLM = None  # set by app.py: the brain, for jobs that need it outside the chat loop

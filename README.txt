@@ -105,7 +105,9 @@ Just ask her, for example:
   - "cast https://... to the TV", then "pause", "volume 30", "stop".
 For announcements she makes the speech into audio and the speaker fetches it from this PC, so the PC
 and the speaker must be on the same Wi-Fi (they are, through your Deco). She can also read a call's
-update out loud instead of only ringing you - ask her to.
+update out loud instead of only ringing you - ask her to. And when you say "call me when the project
+is done", she will also announce out loud on your Google Home that the job finished, as well as calling
+(turn that off with call_done_announce in Settings, or set call_done_device to pick which speaker).
 
 YOUR WI-FI (TP-Link Deco)
 Trillion can manage your TP-Link Deco mesh over the local network - no TP-Link cloud account, nothing
