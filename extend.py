@@ -14,7 +14,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS skills(slug TEXT PRIMARY KEY, name TEXT, description TEXT, source TEXT,
   status TEXT DEFAULT 'active', created REAL);
 CREATE TABLE IF NOT EXISTS user_skills(user_id INTEGER, slug TEXT, enabled INTEGER DEFAULT 1, PRIMARY KEY(user_id, slug));
-CREATE TABLE IF NOT EXISTS connectors(id INTEGER PRIMARY KEY, name TEXT UNIQUE, description TEXT, command TEXT, created REAL);
+CREATE TABLE IF NOT EXISTS connectors(id INTEGER PRIMARY KEY, name TEXT UNIQUE, description TEXT, command TEXT, env TEXT DEFAULT '', created REAL);
 CREATE TABLE IF NOT EXISTS connector_access(connector_id INTEGER, user_id INTEGER, enabled INTEGER DEFAULT 1,
   PRIMARY KEY(connector_id, user_id));
 CREATE TABLE IF NOT EXISTS ext_usage(kind TEXT, slug TEXT, uses INTEGER DEFAULT 0, last REAL,
@@ -29,6 +29,10 @@ def init():
         c.commit()
     finally:
         c.close()
+    try:                                   # older databases: add the per-connector env column
+        core.x("ALTER TABLE connectors ADD COLUMN env TEXT DEFAULT ''")
+    except Exception:
+        pass
     # 0.4.1: the Windows control connector needs the word "serve" on its command
     core.x("UPDATE connectors SET command='uvx windows-mcp serve' WHERE command='uvx windows-mcp'")
     starter_pack()
@@ -320,8 +324,8 @@ def resolve_command(parts):
 class MCP:
     """A minimal Model Context Protocol client: one helper program, talked to over stdin/stdout."""
 
-    def __init__(self, name, command):
-        self.name, self.command = name, command
+    def __init__(self, name, command, env=None):
+        self.name, self.command, self.env = name, command, env or {}
         self.proc, self.tools_cache, self.error = None, None, ""
         self._id, self._lock, self._pending, self._stderr = 0, threading.Lock(), {}, []
 
@@ -338,7 +342,8 @@ class MCP:
         self.proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                      text=True, encoding="utf-8", errors="replace", bufsize=1,
                                      cwd=str(core.DATA),
-                                     env=dict(os.environ, ANONYMIZED_TELEMETRY="false"))  # no usage reporting
+                                     env=dict(os.environ, ANONYMIZED_TELEMETRY="false",            # no usage reporting
+                                              **{str(k): str(v) for k, v in self.env.items()}))    # per-connector settings
         threading.Thread(target=self._read, daemon=True).start()
         threading.Thread(target=self._drain, daemon=True).start()
         try:
@@ -427,23 +432,96 @@ class MCP:
 LIVE = {}
 
 
+def _row_env(row):
+    try:
+        env = json.loads(row["env"]) if ("env" in row.keys() and row["env"]) else {}
+    except Exception:
+        env = {}
+    return env if isinstance(env, dict) else {}
+
+
+def connector_env(row):
+    """The environment this connector runs with: its saved settings, plus any secret injected at start time
+    (the Deco admin password is kept in the encrypted key store, never in the connectors table)."""
+    env = {str(k): str(v) for k, v in _row_env(row).items()}
+    if row["name"] == DECO_NAME:
+        owner = core.q("SELECT id FROM users WHERE is_admin=1 ORDER BY id LIMIT 1", one=True)
+        pw = core.get_secret(owner["id"], "deco_password") if owner else None
+        if pw:
+            env["DECO_PASSWORD"] = pw
+    return env
+
+
 def client(row):
+    env = connector_env(row)
     c = LIVE.get(row["id"])
-    if c is None or c.command != row["command"]:
+    if c is None or c.command != row["command"] or getattr(c, "env", {}) != env:
         if c:
             c.stop()
-        c = LIVE[row["id"]] = MCP(row["name"], row["command"])
+        c = LIVE[row["id"]] = MCP(row["name"], row["command"], env)
     return c
 
 
-def add_connector(name, description, command, owner_id):
+def add_connector(name, description, command, owner_id, env=None):
     name = re.sub(r"\s+", " ", name).strip()[:60]
     if not name or not command.strip():
         raise ValueError("A connector needs a name and a command.")
-    cid = core.x("INSERT INTO connectors(name,description,command,created) VALUES(?,?,?,?)",
-                 (name, description[:400], command.strip(), time.time()))
+    cid = core.x("INSERT INTO connectors(name,description,command,env,created) VALUES(?,?,?,?,?)",
+                 (name, description[:400], command.strip(), json.dumps(env) if env else "", time.time()))
     core.x("INSERT OR REPLACE INTO connector_access(connector_id,user_id,enabled) VALUES(?,?,1)", (cid, owner_id))
     return cid
+
+
+# =====================================================================================
+# TP-Link Deco: manage the mesh over the local network (vendored deco-mcp, MIT)
+# =====================================================================================
+DECO_NAME = "TP-Link Deco"
+DECO_DESC = ("Manage your TP-Link Deco mesh on the local network: see who is connected, the nodes and topology, "
+             "guest Wi-Fi and reservations, run a speed test, and - when you turn writes on - block a device or "
+             "reboot a node. Talks straight to the Deco with no TP-Link cloud account. Owner only. "
+             "(deco-mcp, github.com/fullo/deco-mcp, MIT licence)")
+
+
+def deco_bundle():
+    return str(core.BASE / "vendor" / "deco-mcp" / "deco-mcp.mjs")
+
+
+def deco_row():
+    return core.q("SELECT * FROM connectors WHERE name=?", (DECO_NAME,), one=True)
+
+
+def setup_deco(owner, host=None, password=None, allow_write=False, allow_dangerous=False):
+    """Create or update the Deco connector. The password (if given) goes to the encrypted key store, never the DB.
+    Reboots and blocking stay off unless writes are turned on; a reboot needs both writes and 'dangerous' on."""
+    host = (host or "192.168.68.1").strip()
+    env = {"DECO_HOST": host, "DECO_USERNAME": "admin", "DECO_VERIFY_TLS": "0",
+           "DECO_ALLOW_WRITE": "1" if allow_write else "0",
+           "DECO_ALLOW_DANGEROUS": "1" if (allow_write and allow_dangerous) else "0"}
+    cmd = f'node "{deco_bundle()}"'
+    row = deco_row()
+    if row:
+        core.x("UPDATE connectors SET command=?, env=?, description=? WHERE id=?",
+               (cmd, json.dumps(env), DECO_DESC, row["id"]))
+        cid = row["id"]
+        core.x("INSERT OR IGNORE INTO connector_access(connector_id,user_id,enabled) VALUES(?,?,1)", (cid, owner["id"]))
+    else:
+        cid = add_connector(DECO_NAME, DECO_DESC, cmd, owner["id"], env=env)
+    if password:
+        core.set_secret(owner["id"], "deco_password", password)
+    live = LIVE.pop(cid, None)          # restart so the new host/password/flags take effect
+    if live:
+        live.stop()
+    return cid
+
+
+def deco_status(owner):
+    row = deco_row()
+    env = _row_env(row) if row else {}
+    return {"configured": bool(row),
+            "has_password": bool(core.get_secret(owner["id"], "deco_password")),
+            "host": env.get("DECO_HOST", "192.168.68.1"),
+            "allow_write": env.get("DECO_ALLOW_WRITE") == "1",
+            "allow_dangerous": env.get("DECO_ALLOW_DANGEROUS") == "1"}
 
 
 def remove_connector(cid):

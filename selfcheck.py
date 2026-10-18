@@ -198,6 +198,22 @@ def _knowledge():
               "Run 'pip install chromadb' (Setup does this automatically) for faster, sharper recall.")
 
 
+def _deco(user):
+    try:
+        import extend
+        d = extend.deco_status(user)
+    except Exception:
+        return _c("TP-Link Deco", WARN, "Could not check the Deco connector.")
+    if d.get("configured") and d.get("has_password"):
+        extra = " (changes on)" if d.get("allow_write") else " (read-only)"
+        return _c("TP-Link Deco", OK, f"Set up for {d.get('host')}{extra}.")
+    if d.get("configured"):
+        return _c("TP-Link Deco", WARN, "Deco address saved but no admin password yet.",
+                  "Add your Deco password on the Skills page (Connectors > TP-Link Deco).")
+    return _c("TP-Link Deco", WARN, "Deco mesh not connected.",
+              "Set it up on the Skills page (Connectors > TP-Link Deco) if you want to manage your Wi-Fi.")
+
+
 def _disk():
     try:
         v = core.vitals().get("disk")
@@ -239,6 +255,7 @@ def run(user, sites=None, hearing=None, tailscale=None):
         _docker(),
         _search(),
         _knowledge(),
+        _deco(user),
         _backup(),
         _disk(),
         _secrets(),

@@ -814,6 +814,15 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <label class="field"><span>Command that starts it</span><input id="cncmd" placeholder="npx -y some-mcp-server"></label>
     <div><button class="btn pri" id="cnsave">ADD CONNECTOR</button> <span class="msg" id="cnmsg"></span></div>
   </div>
+  <div class="panel" id="decopanel" hidden style="margin-top:10px"><b>TP-Link Deco (your Wi-Fi mesh)</b>
+    <div class="muted" style="font-size:13px">Lets Trillion manage your Deco mesh on the local network - see who's connected, nodes, guest Wi-Fi, reservations and speed tests. Uses your Deco admin password (the one from the Deco app), kept encrypted on this PC; nothing goes to TP-Link. Then just ask her, e.g. "who's on my wifi".</div>
+    <label class="field"><span>Deco address</span><input id="dc-host" placeholder="192.168.68.1"></label>
+    <label class="field"><span>Deco admin password</span><input id="dc-pw" type="password" placeholder="leave blank to keep the saved one"></label>
+    <label style="display:flex;gap:8px;align-items:center;margin:4px 0"><input type="checkbox" id="dc-write"> <span>Allow changes (block/unblock a device, reservations, speed test)</span></label>
+    <label style="display:flex;gap:8px;align-items:center;margin:4px 0"><input type="checkbox" id="dc-danger"> <span>Also allow reboots and Wi-Fi changes (needs the box above on)</span></label>
+    <div class="bad" style="font-size:13px">On your X55 reads work; blocking and reboots depend on the firmware and may be app-only. Changes are off until you tick the boxes.</div>
+    <div><button class="btn pri" id="dc-save" style="min-height:40px">SAVE DECO</button> <span class="msg" id="dc-msg"></span></div>
+  </div>
 </div>
 
 <div class="view" id="v-settings">
@@ -1455,7 +1464,18 @@ async function loadSkills(){
     try{const r=await (await api('/api/connectors/'+b.dataset.cnt+'/test',{method:'POST'})).json();m.className='msg '+(r.ok?'ok':'bad');m.textContent=r.ok?'Works. It gives her '+r.tools.length+' tools: '+r.tools.slice(0,12).join(', ')+(r.tools.length>12?' ...':''):r.error;}catch(e){m.className='msg bad';m.textContent=e.message;}});
   if(adm){$('cncat').innerHTML=(cn.catalog||[]).map(c=>`<div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:10px"><div style="flex:1;min-width:200px"><b>${esc(c.name)}</b><div class="muted" style="font-size:13px">${esc(c.description)} Needs ${esc(c.needs)}.</div></div><button class="btn pri" data-cat="${esc(c.key)}">ADD</button></div>`).join('');
     document.querySelectorAll('[data-cat]').forEach(b=>b.onclick=async()=>{try{await api('/api/connectors',{json:{catalog:b.dataset.cat}});loadSkills();}catch(e){$('cnmsg').textContent=e.message;}});}
+  if(adm){$('decopanel').hidden=false;loadDeco();}
 }
+async function loadDeco(){
+  try{const d=await (await api('/api/deco')).json();
+    $('dc-host').value=d.host||'192.168.68.1';$('dc-write').checked=!!d.allow_write;$('dc-danger').checked=!!d.allow_dangerous;
+    const m=$('dc-msg');if(d.configured){m.className='msg ok';m.textContent=d.has_password?'Set up for '+d.host+'. Ask me "who’s on my wifi".':'Address saved, but no password yet - add it below.';}else{m.className='msg muted';m.textContent='Not set up yet.';}
+  }catch(e){}
+}
+$('dc-save').onclick=async()=>{const m=$('dc-msg');m.className='msg muted';m.textContent='Saving...';
+  try{const d=await (await api('/api/deco',{json:{host:$('dc-host').value,password:$('dc-pw').value,allow_write:$('dc-write').checked,allow_dangerous:$('dc-danger').checked}})).json();
+    $('dc-pw').value='';m.className='msg ok';m.textContent=d.has_password?'Saved. Try "who’s on my wifi", or open the connector above and press TEST.':'Saved the address. Now enter your Deco admin password and save again.';loadSkills();
+  }catch(e){m.className='msg bad';m.textContent=e.message;}};
 $('skform').onsubmit=async e=>{e.preventDefault();const url=$('skurl').value.trim();$('skprev').innerHTML='';$('skmsg').className='msg';$('skmsg').textContent='Fetching it...';
   try{const p=await (await api('/api/skills/preview',{json:{url}})).json();$('skmsg').textContent='';
     $('skprev').innerHTML=`<div style="border-left:2px solid var(--a);padding-left:14px;display:flex;flex-direction:column;gap:8px"><b style="font-size:17px">${esc(p.name)}</b><div class="muted">${esc(p.description)}</div>${p.has_scripts?'<div class="bad" style="font-size:14px">This skill refers to scripts or commands. She will follow its written steps but cannot run its scripts yet, so parts of it may not work.</div>':''}<pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto;background:var(--well);padding:12px;font-size:13px;margin:0">${esc(p.excerpt)}${p.length>1800?'\n...':''}</pre><div><button class="btn pri" id="skgo">INSTALL THIS SKILL</button></div></div>`;

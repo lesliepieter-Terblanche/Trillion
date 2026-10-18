@@ -95,6 +95,16 @@ BUSINESS APPS (Apps page)
   be installed and signed in to your Pro plan on this PC; adjust its command under the REA
   connector if needed (default "claude -p").
 
+YOUR WI-FI (TP-Link Deco)
+Trillion can manage your TP-Link Deco mesh over the local network - no TP-Link cloud account, nothing
+leaves the PC. Set it up on the Skills page under Connectors > "TP-Link Deco": enter the Deco address
+(usually 192.168.68.1) and your Deco admin password (the one from the Deco app). The password is kept
+encrypted on this PC. Then just ask her, for example "who's on my wifi" or "show my Deco network".
+By default she can only READ (who's connected, the nodes, guest Wi-Fi, reservations, a speed test).
+Blocking a device and rebooting a node are off until you tick the "Allow changes" boxes - and on some
+Deco firmware (yours is an X55) blocking and reboot can be app-only, so they may not work even then.
+Owner login only. (Built on the open deco-mcp project, MIT licence.)
+
 THE SMART (BIGGER) BRAIN
 Trillion runs two local brains: a fast one for everyday chat and the full one for jobs. There is now an
 optional third - a bigger "smart" model (Mistral Small 24B, about 14 GB) that she uses automatically for

@@ -1,0 +1,10 @@
+deco-mcp - MCP server for TP-Link Deco mesh routers (local API, no cloud)
+
+Source: https://github.com/fullo/deco-mcp
+License: MIT (declared in the project's package.json)
+Vendored: bundle/deco-mcp.mjs (the project's self-contained, zero-dependency build), copied verbatim.
+
+Trillion runs this as a connector: `node vendor/deco-mcp/deco-mcp.mjs`, reading DECO_HOST and
+DECO_PASSWORD from the environment (Trillion injects the password from its encrypted key store).
+Read tools are exposed by default; block/unblock and reboot stay gated behind DECO_ALLOW_WRITE /
+DECO_ALLOW_DANGEROUS, which Trillion only sets when the owner turns writes on.

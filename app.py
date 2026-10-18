@@ -3424,6 +3424,19 @@ def connectors_delete(cid: int, user=Depends(admin)):
     return {"ok": True}
 
 
+@app.get("/api/deco")
+def deco_get(user=Depends(admin)):
+    return extend.deco_status(user)
+
+
+@app.post("/api/deco")
+def deco_set(p: dict = Body(...), user=Depends(admin)):
+    extend.setup_deco(user, (p.get("host") or "").strip() or None, (p.get("password") or "").strip() or None,
+                      bool(p.get("allow_write")), bool(p.get("allow_dangerous")))
+    core.log(user["id"], "TP-Link Deco connector set up", "done")
+    return extend.deco_status(user)
+
+
 # ---------- owner view ----------
 @app.get("/api/admin/family")
 def family(user=Depends(admin)):
