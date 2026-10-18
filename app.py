@@ -47,6 +47,8 @@ for _u in core.q("SELECT * FROM users"):
         _raw["store_on"], _raw["store_set"] = _u["name"].lower() == "brandon", True
         core.save_settings(_u["id"], _raw)
 extend.init()
+import cameras
+cameras.init()
 import bible
 bible.init()
 video.init()
@@ -3439,6 +3441,73 @@ def connectors_toggle(cid: int, p: dict = Body(...), user=Depends(auth)):
 def connectors_delete(cid: int, user=Depends(admin)):
     extend.remove_connector(cid)
     return {"ok": True}
+
+
+@app.get("/cam/snap/{name}")
+def cam_snap(name: str):
+    """Serve a camera snapshot to the dashboard or a cast display on the LAN (no login: a display fetches it)."""
+    import cameras
+    p = cameras.snap_path(name)
+    if not p:
+        raise HTTPException(404)
+    return FileResponse(str(p), media_type="image/jpeg")
+
+
+@app.get("/api/cameras")
+def cameras_list(user=Depends(auth)):
+    import cameras
+    return {"cameras": cameras.listing()}
+
+
+@app.post("/api/cameras")
+def cameras_add(p: dict = Body(...), user=Depends(admin)):
+    import cameras
+    preset = (p.get("preset") or "").lower()
+    if preset == "okam":
+        url = cameras.okam_url(p.get("ip", ""), p.get("password", ""), p.get("lens", 0), p.get("user") or "admin")
+    elif preset == "wyze":
+        url = cameras.wyze_url(p.get("bridge_host") or "127.0.0.1", p.get("cam_name", ""))
+    else:
+        url = p.get("url", "")
+    onvif = None
+    if p.get("onvif_host"):
+        onvif = {"host": p["onvif_host"], "port": int(p.get("onvif_port") or 80),
+                 "user": p.get("onvif_user") or "admin", "pass": p.get("onvif_pass") or p.get("password") or ""}
+    cameras.add(p.get("name", ""), url, preset or "rtsp", onvif)
+    core.log(user["id"], f"Camera added: {p.get('name','')}", "done")
+    return {"cameras": cameras.listing()}
+
+
+@app.delete("/api/cameras/{cid}")
+def cameras_delete(cid: int, user=Depends(admin)):
+    import cameras
+    cameras.remove(cid)
+    return {"ok": True}
+
+
+@app.post("/api/cameras/{cid}/ptz")
+def cameras_ptz(cid: int, p: dict = Body(...), user=Depends(admin)):
+    import cameras
+    cam = core.q("SELECT * FROM cameras WHERE id=?", (cid,), one=True)
+    if not cam:
+        raise HTTPException(404)
+    try:
+        return {"moved": cameras.ptz(dict(cam), p.get("action", ""))}
+    except cameras.CameraError as e:
+        return JSONResponse({"error": str(e)}, status_code=200)
+
+
+@app.post("/api/cameras/{cid}/snapshot")
+def cameras_snapshot(cid: int, user=Depends(auth)):
+    import cameras, cast
+    cam = core.q("SELECT * FROM cameras WHERE id=?", (cid,), one=True)
+    if not cam:
+        raise HTTPException(404)
+    try:
+        fn = cameras.snapshot(dict(cam))
+    except cameras.CameraError as e:
+        return JSONResponse({"error": str(e)}, status_code=200)
+    return {"image_url": f"http://{cast.lan_ip()}:{cast.PORT}/cam/snap/{fn}", "name": cam["name"]}
 
 
 @app.get("/cast/audio/{name}")

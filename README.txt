@@ -95,6 +95,20 @@ BUSINESS APPS (Apps page)
   be installed and signed in to your Pro plan on this PC; adjust its command under the REA
   connector if needed (default "claude -p").
 
+CAMERAS (view them from Trillion)
+Trillion can show your RTSP cameras - all local, nothing to a cloud. Add them on the Phone page under
+Cameras (owner only), then just ask, for example "show me the front door" - she grabs a still off the
+camera and shows it, and can also put it on a Google Home display ("...on the kitchen screen").
+- O-Kam Pro cameras: pick the "O-Kam Pro" type, enter the camera's IP and its own password. She builds
+  the RTSP link (port 10554). A dual-lens cam has a second lens - add it as a second camera, lens 2.
+  If the camera supports ONVIF you can also tick pan/tilt and move it with the arrows (many models don't).
+- Wyze cameras: install "Wyze Bridge" on the Apps page first (needs Docker), sign in there with your Wyze
+  account once, then add each camera here with the "Wyze (via bridge)" type and the camera's name.
+- Any other camera: choose "Other" and paste its rtsp:// address.
+Make sure the PC can reach the camera on the network (if a camera sits on a separate IoT Wi-Fi that is
+walled off, allow it through on the router). Motion/person alerts and recording are a bigger, separate
+add (a local NVR fed by these same streams) - ask if you want that.
+
 GOOGLE HOME AND CHROMECAST (speak out loud and cast)
 Trillion can talk to your Google Home / Nest speakers and Chromecasts over the local network - no
 Google account, nothing to the cloud. Setup installs this automatically; if it is missing, run Setup

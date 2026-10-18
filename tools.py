@@ -45,6 +45,11 @@ SPECS = [
        {"url": S, "device": S, "content_type": S}, ["url"]),
     fn("cast_control", "Control a cast device: action is play, pause, stop or volume. For volume give level 0-100. "
        "device is optional.", {"action": S, "device": S, "level": {"type": "integer"}}, ["action"]),
+    fn("list_cameras", "List the cameras set up on this PC (front door, Wyze, etc.).", {}),
+    fn("camera_snapshot", "Take a still picture from a camera right now and show it. camera is the camera's name. "
+       "If display is given (a cast screen name), also put the picture on that screen.", {"camera": S, "display": S}, ["camera"]),
+    fn("camera_move", "Move a PTZ camera: action is left, right, up, down, zoom_in, zoom_out or stop. camera is its name. "
+       "Only works on cameras that support ONVIF.", {"camera": S, "action": S}, ["camera", "action"]),
     fn("seo_rankings", "Google rankings of the user's websites for their tracked search words, from SerpBear.", {"domain": S}, []),
     fn("automations", "List the user's n8n automation workflows and whether each is on.", {}),
     fn("automation_switch", "Switch an n8n workflow on or off by its name.", {"name": S, "on": {"type": "boolean"}}),
@@ -184,6 +189,8 @@ def describe(name, a):
         "web_search": f"Searching the web for {g('query')}",
         "announce": f"Announcing on the speaker: {g('text')[:60]}", "cast_media": f"Casting {g('url')[:60]}",
         "cast_control": f"Cast {g('action')}", "list_cast_devices": "Looking for cast devices",
+        "list_cameras": "Listing cameras", "camera_snapshot": f"Taking a picture from {g('camera')}",
+        "camera_move": f"Moving {g('camera')} {g('action')}",
         "use_skill": f"Reading the skill {g('name')}", "draft_skill": f"Drafting a playbook: {g('name')}",
         "connector_tools": f"Checking what {g('connector')} can do",
         "connector_call": f"Using {g('connector')}: {g('tool')}",
@@ -550,6 +557,48 @@ def t_cast_control(user, action, device="", level=None):
         return {"error": str(e)}
     except Exception as e:
         return {"error": f"Could not control the cast device: {type(e).__name__}."}
+
+
+# ---------- cameras ----------
+def t_list_cameras(user):
+    import cameras
+    cams = cameras.listing()
+    return {"cameras": cams} if cams else {"cameras": [], "note": "No cameras set up yet. Add one on the Cameras page."}
+
+
+def t_camera_snapshot(user, camera, display=""):
+    import cameras, cast
+    cam = cameras.find(camera)
+    if not cam:
+        return {"error": f"No camera called {camera}. Add it on the Cameras page.",
+                "cameras": [c["name"] for c in cameras.listing()]}
+    try:
+        fn = cameras.snapshot(cam)
+    except cameras.CameraError as e:
+        return {"error": str(e)}
+    except Exception as e:
+        return {"error": f"Could not take the picture: {type(e).__name__}."}
+    url = f"http://{cast.lan_ip()}:{cast.PORT}/cam/snap/{fn}"
+    out = {"camera": cam["name"], "image_url": url, "show": {"image": url}}
+    if display:
+        try:
+            out["shown_on"] = cast.cast_url(url, display, "image/jpeg", title=cam["name"])
+        except Exception as e:
+            out["display_error"] = f"Took the picture but could not put it on {display}: {type(e).__name__}."
+    return out
+
+
+def t_camera_move(user, camera, action):
+    import cameras
+    cam = cameras.find(camera)
+    if not cam:
+        return {"error": f"No camera called {camera}."}
+    try:
+        return {"camera": cam["name"], "moved": cameras.ptz(cam, action)}
+    except cameras.CameraError as e:
+        return {"error": str(e)}
+    except Exception as e:
+        return {"error": f"Could not move the camera: {type(e).__name__}."}
 
 
 # ---------- web / system ----------

@@ -65,6 +65,17 @@ APPS = {
         "signup": "Nothing to sign up. Once it says running, Trillion can search the web herself (just ask her to look something up).",
         "note": "Keyless and private. Results are gathered from search engines without tracking you.",
     },
+    "wyze-bridge": {
+        "disk": 2,
+        "name": "Wyze Bridge", "port": 5000, "group": "Cameras",
+        "what": "Brings your Wyze cameras onto the local network so Trillion can see them, without the Wyze cloud for "
+                "viewing. Sign in once with your Wyze account in its web page; each camera then has a local link.",
+        "get": "own", "ram": "about 300 MB", "connect": [], "shared": True,
+        "signup": "Open the Wyze Bridge page, sign in with your Wyze account (add a Wyze API key if it asks - free from "
+                  "the Wyze developer site). Your cameras appear. Then add each one on the Cameras page (Phone page) using "
+                  "the 'Wyze (via bridge)' type and the camera's name.",
+        "note": "Viewing is local once set up. Uses the open docker-wyze-bridge project.",
+    },
     "anythingllm": {
         "disk": 3,
         "name": "AnythingLLM", "port": 3005, "group": "Knowledge",
@@ -76,10 +87,10 @@ APPS = {
         "note": "Uses your local Ollama model, so there are no tokens to pay and nothing leaves the PC.",
     },
 }
-GROUPS = ["Marketing", "Customers", "Accounting", "Automation", "Knowledge"]
+GROUPS = ["Marketing", "Customers", "Accounting", "Automation", "Knowledge", "Cameras"]
 # the one port each app is opened on: (compose service, port inside the container)
 PUBLISH = {"serpbear": ("app", 3000), "n8n": ("n8n", 5678), "activepieces": ("app", 80),
-           "searxng": ("searxng", 8080), "anythingllm": ("anythingllm", 3001)}
+           "searxng": ("searxng", 8080), "anythingllm": ("anythingllm", 3001), "wyze-bridge": ("wyze-bridge", 5000)}
 MEM_CHOICES = (0, 6, 8, 10, 12, 16)
 _JOBS, _LOCK = {}, threading.Lock()
 _CACHE = {"t": 0, "v": None}
@@ -424,6 +435,22 @@ search:
       - ./searxng:/etc/searxng
     environment:
       - SEARXNG_BASE_URL={yaml_str(url + '/')}
+""", encoding="utf-8")
+    elif key == "wyze-bridge":
+        (dest / "tokens").mkdir(parents=True, exist_ok=True)
+        pfx = "127.0.0.1:" if prefs()["private"] else ""
+        (dest / "docker-compose.yml").write_text(f"""services:
+  wyze-bridge:
+    image: mrlt8/wyze-bridge:latest
+    restart: unless-stopped
+    ports:
+      - "{pfx}{a['port']}:5000"
+      - "{pfx}8554:8554"
+      - "{pfx}8888:8888"
+    environment:
+      - WB_AUTH=False
+    volumes:
+      - ./tokens:/tokens
 """, encoding="utf-8")
     elif key == "anythingllm":
         (dest / "storage").mkdir(parents=True, exist_ok=True)

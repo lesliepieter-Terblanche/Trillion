@@ -571,6 +571,23 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <details><summary class="muted" style="cursor:pointer">Nothing on the watch?</summary><div class="muted" style="font-size:13px;line-height:1.6">1. On the phone, open the Galaxy Wearable app, then Watch settings, Notifications, App notifications. Choose All apps and switch on <b>Shell</b> (that is the name Android gives alerts sent from the PC).<br>2. In the same Notifications screen, switch on <b>Show phone notifications on watch while using phone</b>, otherwise the watch stays quiet while the phone screen is on.<br>3. Check the phone shows the test alert at all. If it does not, the phone may block notifications from Shell: long-press the alert or open Settings, Notifications, and allow Shell.</div></details>
   </div>
   <datalist id="contacts"></datalist>
+  <div class="panel" id="campanel" style="margin-top:14px"><b>Cameras</b>
+    <div class="muted" style="font-size:13px">View your RTSP cameras here - the O-Kam PTZ, Wyze (through the bridge), or any ONVIF/RTSP camera. Trillion grabs a still off the camera; nothing goes to a cloud. You can also ask her "show me the front door".</div>
+    <div id="camlist" style="display:flex;flex-direction:column;gap:12px;margin-top:8px"></div>
+    <div id="camadd" hidden style="border-top:1px solid var(--edge);margin-top:10px;padding-top:10px"><b>Add a camera</b>
+      <label class="field"><span>Type</span><select id="cam-preset"><option value="okam">O-Kam Pro</option><option value="wyze">Wyze (via bridge)</option><option value="url">Other (RTSP address)</option></select></label>
+      <label class="field"><span>Name</span><input id="cam-name" placeholder="Front door"></label>
+      <div id="cam-okam"><label class="field"><span>Camera IP</span><input id="cam-ip" placeholder="192.168.68.107"></label>
+        <label class="field"><span>Camera password (RTSP)</span><input id="cam-pw" type="password" placeholder="the camera's own password"></label>
+        <label class="field"><span>Lens</span><select id="cam-lens"><option value="0">Main (lens 1)</option><option value="1">Second lens</option></select></label></div>
+      <div id="cam-wyze" hidden><label class="field"><span>Bridge address</span><input id="cam-bridge" placeholder="127.0.0.1"></label>
+        <label class="field"><span>Camera name in Wyze</span><input id="cam-wname" placeholder="Front Door"></label></div>
+      <div id="cam-urlbox" hidden><label class="field"><span>RTSP address</span><input id="cam-url" placeholder="rtsp://user:pass@ip:554/stream"></label></div>
+      <label style="display:flex;gap:8px;align-items:center;margin:4px 0"><input type="checkbox" id="cam-ptz"> <span>This camera can pan/tilt (set up ONVIF so I can move it)</span></label>
+      <div id="cam-onvif" hidden><label class="field"><span>ONVIF port</span><input id="cam-oport" placeholder="80" value="80"></label></div>
+      <div><button class="btn pri" id="cam-save" style="min-height:40px">ADD CAMERA</button> <span class="msg" id="cam-msg"></span></div>
+    </div>
+  </div>
 </div>
 
 <div class="view" id="v-commands">
@@ -1744,8 +1761,31 @@ async function loadPhonePage(){
   if(!S)return;fillPhoneSettings();const full=!!S.user.settings.phone_full_control;
   $('pp-cmds').innerHTML=PPC.filter(c=>!c[2]||full).map((c,i)=>`<button type="button" data-pc="${esc(c[1])}">${esc(c[0])}</button>`).join('')+(full?'':'<span class="muted" style="font-size:13px;align-self:center">Tick Full phone control below for Home, Back, volume and reading the screen.</span>');
   $('pp-cmds').querySelectorAll('[data-pc]').forEach(b=>b.onclick=()=>runHere(b.dataset.pc,$('pp-cmdmsg')));
-  ppUse();render();loadPhone();ulLoad();loadWA(true);loadContacts($('pp-cmsg'));wtLoad();mtLoad();ngLoad();vcLoad();
+  ppUse();render();loadPhone();ulLoad();loadWA(true);loadContacts($('pp-cmsg'));wtLoad();mtLoad();ngLoad();vcLoad();loadCameras();
 }
+async function loadCameras(){
+  const adm=S&&S.user.is_admin;$('camadd').hidden=!adm;
+  let cams=[];try{cams=(await (await api('/api/cameras')).json()).cameras||[];}catch(e){}
+  $('camlist').innerHTML=cams.map(c=>`<div class="panel" style="gap:8px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><b>${esc(c.name)}</b><span class="muted" style="font-size:12px">${esc(c.address)}${c.ptz?' · PTZ':''}</span></div>
+    <img id="camimg-${c.id}" alt="" style="max-width:100%;border-radius:8px;display:none">
+    <div class="btns" style="justify-content:flex-start"><button class="btn pri" data-camsnap="${c.id}" style="min-height:38px;font-size:13px">SNAPSHOT</button>${c.ptz?`<button class="btn" data-cammv="${c.id}" data-d="left">◄</button><button class="btn" data-cammv="${c.id}" data-d="right">►</button><button class="btn" data-cammv="${c.id}" data-d="up">▲</button><button class="btn" data-cammv="${c.id}" data-d="down">▼</button>`:''}${adm?`<button class="btn" data-camdel="${c.id}" style="min-height:38px;font-size:13px">REMOVE</button>`:''}</div>
+    <div class="msg" id="cammsg-${c.id}"></div></div>`).join('')||'<div class="muted">No cameras yet.</div>';
+  document.querySelectorAll('[data-camsnap]').forEach(b=>b.onclick=async()=>{const id=b.dataset.camsnap,m=$('cammsg-'+id);m.className='msg muted';m.textContent='Taking a picture...';
+    try{const r=await (await api('/api/cameras/'+id+'/snapshot',{method:'POST'})).json();if(r.error){m.className='msg bad';m.textContent=r.error;return;}
+      const img=$('camimg-'+id);img.src=r.image_url+'?t='+Date.now();img.style.display='block';m.textContent='';}catch(e){m.className='msg bad';m.textContent=e.message;}});
+  document.querySelectorAll('[data-cammv]').forEach(b=>b.onclick=async()=>{const id=b.dataset.cammv,m=$('cammsg-'+id);
+    try{const r=await (await api('/api/cameras/'+id+'/ptz',{json:{action:b.dataset.d}})).json();if(r.error){m.className='msg bad';m.textContent=r.error;}}catch(e){m.className='msg bad';m.textContent=e.message;}});
+  document.querySelectorAll('[data-camdel]').forEach(b=>b.onclick=async()=>{if(!confirm('Remove this camera?'))return;await api('/api/cameras/'+b.dataset.camdel,{method:'DELETE'});loadCameras();});
+}
+function camPreset(){const p=$('cam-preset').value;$('cam-okam').hidden=p!=='okam';$('cam-wyze').hidden=p!=='wyze';$('cam-urlbox').hidden=p!=='url';}
+document.addEventListener('change',e=>{if(e.target&&e.target.id==='cam-preset')camPreset();if(e.target&&e.target.id==='cam-ptz')$('cam-onvif').hidden=!e.target.checked;});
+$('cam-save')&&($('cam-save').onclick=async()=>{const m=$('cam-msg');const p=$('cam-preset').value;
+  const body={preset:p,name:$('cam-name').value};
+  if(p==='okam'){body.ip=$('cam-ip').value;body.password=$('cam-pw').value;body.lens=$('cam-lens').value;if($('cam-ptz').checked){body.onvif_host=$('cam-ip').value;body.onvif_port=$('cam-oport').value;body.onvif_pass=$('cam-pw').value;}}
+  else if(p==='wyze'){body.bridge_host=$('cam-bridge').value;body.cam_name=$('cam-wname').value;}
+  else{body.url=$('cam-url').value;}
+  m.className='msg muted';m.textContent='Adding...';
+  try{await api('/api/cameras',{json:body});$('cam-name').value=$('cam-pw').value='';m.className='msg ok';m.textContent='Added. Press SNAPSHOT to test it.';loadCameras();}catch(e){m.className='msg bad';m.textContent=e.message;}});
 async function wtLoad(){try{wtDraw(await (await api('/api/watch')).json());}catch(e){}}
 function wtDraw(w){$('wt-on').checked=w.on;$('wt-quiet').checked=w.quiet;$('wt-from').value=w.from;$('wt-to').value=w.to;
   $('wt-kinds').innerHTML=Object.entries(w.labels).map(([k,l])=>`<label class="tickrow"><input type="checkbox" data-wk="${k}" ${w.kinds[k]?'checked':''}><span>${esc(l)}</span></label>`).join('');

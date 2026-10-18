@@ -209,6 +209,18 @@ def _cast():
               "Run Setup again (or 'pip install pychromecast gTTS') to announce on speakers and cast media.")
 
 
+def _cameras():
+    try:
+        import cameras
+        n = len(cameras.all_cams())
+    except Exception:
+        return _c("Cameras", WARN, "Could not check cameras.")
+    if n:
+        return _c("Cameras", OK, f"{n} camera(s) set up.")
+    return _c("Cameras", WARN, "No cameras set up.",
+              "Add your cameras on the Phone page (Cameras) if you want to view them in Trillion.")
+
+
 def _deco(user):
     try:
         import extend
@@ -267,6 +279,7 @@ def run(user, sites=None, hearing=None, tailscale=None):
         _search(),
         _knowledge(),
         _cast(),
+        _cameras(),
         _deco(user),
         _backup(),
         _disk(),
