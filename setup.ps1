@@ -41,6 +41,11 @@ Step "Adding the smart knowledge store (optional)"
 & .\.venv\Scripts\python.exe -m pip install --quiet chromadb
 if ($LASTEXITCODE -ne 0) { Write-Host "Skipped the knowledge store; Trillion's built-in memory still works." -ForegroundColor DarkYellow }
 
+# Optional: casting to Google Home / Chromecast (and text-to-speech for announcements).
+Step "Adding casting to Google Home / Chromecast (optional)"
+& .\.venv\Scripts\python.exe -m pip install --quiet pychromecast gTTS
+if ($LASTEXITCODE -ne 0) { Write-Host "Skipped casting; everything else still works." -ForegroundColor DarkYellow }
+
 if (-not $SkipModels) {
   Step "Downloading the local models (about 15 GB the first time)"
   if (-not (Works "ollama" "list")) { Start-Process "ollama" "serve" -WindowStyle Hidden; Start-Sleep 5 }

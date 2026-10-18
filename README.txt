@@ -95,6 +95,18 @@ BUSINESS APPS (Apps page)
   be installed and signed in to your Pro plan on this PC; adjust its command under the REA
   connector if needed (default "claude -p").
 
+GOOGLE HOME AND CHROMECAST (speak out loud and cast)
+Trillion can talk to your Google Home / Nest speakers and Chromecasts over the local network - no
+Google account, nothing to the cloud. Setup installs this automatically; if it is missing, run Setup
+again (or 'pip install pychromecast gTTS'). No setup beyond that - your devices are found on the Wi-Fi.
+Just ask her, for example:
+  - "announce dinner is ready on the kitchen speaker" - she says it out loud on that Google Home.
+  - "what cast devices are there" - lists the speakers and Chromecasts she can see.
+  - "cast https://... to the TV", then "pause", "volume 30", "stop".
+For announcements she makes the speech into audio and the speaker fetches it from this PC, so the PC
+and the speaker must be on the same Wi-Fi (they are, through your Deco). She can also read a call's
+update out loud instead of only ringing you - ask her to.
+
 YOUR WI-FI (TP-Link Deco)
 Trillion can manage your TP-Link Deco mesh over the local network - no TP-Link cloud account, nothing
 leaves the PC. Set it up on the Skills page under Connectors > "TP-Link Deco": enter the Deco address

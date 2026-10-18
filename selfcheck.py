@@ -198,6 +198,17 @@ def _knowledge():
               "Run 'pip install chromadb' (Setup does this automatically) for faster, sharper recall.")
 
 
+def _cast():
+    try:
+        import cast
+        if cast.available():
+            return _c("Cast (Google Home / Chromecast)", OK, "pychromecast is installed; Trillion can announce and cast.")
+    except Exception:
+        pass
+    return _c("Cast (Google Home / Chromecast)", WARN, "Casting is not set up (pychromecast not installed).",
+              "Run Setup again (or 'pip install pychromecast gTTS') to announce on speakers and cast media.")
+
+
 def _deco(user):
     try:
         import extend
@@ -255,6 +266,7 @@ def run(user, sites=None, hearing=None, tailscale=None):
         _docker(),
         _search(),
         _knowledge(),
+        _cast(),
         _deco(user),
         _backup(),
         _disk(),

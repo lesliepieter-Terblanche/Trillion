@@ -38,6 +38,13 @@ SPECS = [
     fn("search_memory", "Search the second brain for things saved earlier.", {"query": S}),
     fn("web_search", "Search the web privately through the local SearXNG engine (no API key, nothing sent to Google). "
        "Returns titles, links and short snippets. Use this to look things up online.", {"query": S, "count": {"type": "integer"}}, ["query"]),
+    fn("list_cast_devices", "List the Google Home / Nest speakers and Chromecasts found on the local network.", {}),
+    fn("announce", "Say a short message out loud on a Google Home / cast speaker. device is the speaker's name "
+       "(optional - leave empty for the only/first one).", {"text": S, "device": S}, ["text"]),
+    fn("cast_media", "Play an audio or video URL on a Chromecast or speaker. device is optional.",
+       {"url": S, "device": S, "content_type": S}, ["url"]),
+    fn("cast_control", "Control a cast device: action is play, pause, stop or volume. For volume give level 0-100. "
+       "device is optional.", {"action": S, "device": S, "level": {"type": "integer"}}, ["action"]),
     fn("seo_rankings", "Google rankings of the user's websites for their tracked search words, from SerpBear.", {"domain": S}, []),
     fn("automations", "List the user's n8n automation workflows and whether each is on.", {}),
     fn("automation_switch", "Switch an n8n workflow on or off by its name.", {"name": S, "on": {"type": "boolean"}}),
@@ -175,6 +182,8 @@ def describe(name, a):
         "create_powerpoint": f"Creating PowerPoint {g('path')}", "save_note": f"Remembering: {g('title')}",
         "search_memory": f"Searching memory for {g('query')}", "check_website": f"Checking {g('url')}",
         "web_search": f"Searching the web for {g('query')}",
+        "announce": f"Announcing on the speaker: {g('text')[:60]}", "cast_media": f"Casting {g('url')[:60]}",
+        "cast_control": f"Cast {g('action')}", "list_cast_devices": "Looking for cast devices",
         "use_skill": f"Reading the skill {g('name')}", "draft_skill": f"Drafting a playbook: {g('name')}",
         "connector_tools": f"Checking what {g('connector')} can do",
         "connector_call": f"Using {g('connector')}: {g('tool')}",
@@ -495,6 +504,52 @@ def t_web_search(user, query, count=6):
     for x in (data.get("results") or [])[:max(1, min(int(count or 6), 12))]:
         out.append({"title": x.get("title"), "url": x.get("url"), "snippet": (x.get("content") or "")[:300]})
     return {"results": out} if out else {"results": [], "note": "No results found."}
+
+
+# ---------- cast: Google Home / Chromecast ----------
+def t_list_cast_devices(user):
+    import cast
+    if not cast.available():
+        return {"error": "Casting isn't set up yet (pychromecast not installed). Run Setup again to add it."}
+    try:
+        devs = cast.discover(force=True)
+    except Exception as e:
+        return {"error": f"Could not look for cast devices: {type(e).__name__}."}
+    return {"devices": devs} if devs else {"devices": [], "note": "No Google Home or Chromecast found on the network."}
+
+
+def t_announce(user, text, device=""):
+    import cast
+    try:
+        where = cast.announce(text, device or None)
+        return {"announced_on": where, "said": text[:200]}
+    except cast.CastError as e:
+        return {"error": str(e)}
+    except Exception as e:
+        return {"error": f"Could not announce: {type(e).__name__}."}
+
+
+def t_cast_media(user, url, device="", content_type=""):
+    import cast
+    if not re.match(r"https?://", url or ""):
+        return {"error": "Give a full http(s) link to the audio or video to play."}
+    ctype = content_type or ("video/mp4" if re.search(r"\.(mp4|m3u8|webm)(\?|$)", url, re.I) else "audio/mpeg")
+    try:
+        return {"casting_on": cast.cast_url(url, device or None, ctype)}
+    except cast.CastError as e:
+        return {"error": str(e)}
+    except Exception as e:
+        return {"error": f"Could not cast: {type(e).__name__}."}
+
+
+def t_cast_control(user, action, device="", level=None):
+    import cast
+    try:
+        return {"device": cast.control(action, device or None, level), "action": action}
+    except cast.CastError as e:
+        return {"error": str(e)}
+    except Exception as e:
+        return {"error": f"Could not control the cast device: {type(e).__name__}."}
 
 
 # ---------- web / system ----------

@@ -3424,6 +3424,22 @@ def connectors_delete(cid: int, user=Depends(admin)):
     return {"ok": True}
 
 
+@app.get("/cast/audio/{name}")
+def cast_audio(name: str):
+    """Serve a generated announcement audio file to a cast device on the LAN (no login: the speaker fetches it)."""
+    import cast as _cast
+    p = _cast.audio_path(name)
+    if not p:
+        raise HTTPException(404)
+    return FileResponse(str(p), media_type="audio/mpeg" if name.endswith(".mp3") else "audio/wav")
+
+
+@app.get("/api/cast")
+def cast_list(user=Depends(auth)):
+    import cast as _cast
+    return {"available": _cast.available(), "devices": _cast.discover() if _cast.available() else []}
+
+
 @app.get("/api/deco")
 def deco_get(user=Depends(admin)):
     return extend.deco_status(user)
