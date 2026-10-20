@@ -296,4 +296,12 @@ def ptz(cam, action, seconds=0.6):
     except CameraError:
         raise
     except Exception as e:
-        raise CameraError(f"Could not move {cam['name']}: {type(e).__name__}. It may not support ONVIF control.")
+        detail = (str(e) or "").strip().splitlines()[0] if str(e).strip() else type(e).__name__
+        low = detail.lower()
+        if any(w in low for w in ("refused", "timed out", "timeout", "unreachable", "no route", "getaddrinfo", "connection")):
+            hint = " - the ONVIF port is probably wrong (O-Kam usually uses 8000, not 80). Edit the camera and set ONVIF port to 8000."
+        elif any(w in low for w in ("auth", "401", "unauthorized", "not authorized", "sender not authorized", "password")):
+            hint = " - the ONVIF username/password is being rejected. For O-Kam it is usually admin plus the password you set in the O-Kam app."
+        else:
+            hint = " - this camera may simply not support ONVIF control (some O-Kam models only move from the O-Kam app)."
+        raise CameraError(f"Could not move {cam['name']}: {detail[:180]}{hint}")
