@@ -67,7 +67,7 @@ APPS = {
     },
     "wyze-bridge": {
         "disk": 2,
-        "name": "Wyze Bridge", "port": 5000, "group": "Cameras",
+        "name": "Wyze Bridge", "port": 5000, "group": "Cameras", "serve_https": 8443,
         "what": "Brings your Wyze cameras onto the local network so Trillion can see them, without the Wyze cloud for "
                 "viewing. Sign in once with your Wyze account in its web page; each camera then has a local link.",
         "get": "own", "ram": "about 300 MB", "connect": [], "shared": True,
@@ -270,12 +270,19 @@ def tailscale_exe():
     return c if os.path.exists(c) else None
 
 
-def share_on_tailscale(port, on=True):
-    """Make an app that only listens on this PC reachable from your own Tailscale devices, and nowhere else."""
+def share_on_tailscale(port, on=True, https_port=None):
+    """Make an app that only listens on this PC reachable from your own Tailscale devices, and nowhere else.
+    A browser-facing app passes https_port: served over Tailscale HTTPS (a real cert) so phones that have
+    seen the HTTPS dashboard don't force-upgrade a plain http:// link and fail. Tailscale HTTPS ports are
+    limited to 443/8443/10000; 443 is the dashboard, so apps use 8443 or 10000."""
     exe = tailscale_exe()
     if not exe:
         return False
-    args = [exe, "serve", "--bg", f"--http={port}", f"http://127.0.0.1:{port}"] if on else [exe, "serve", f"--http={port}", "off"]
+    if https_port:
+        args = ([exe, "serve", "--bg", f"--https={https_port}", f"http://127.0.0.1:{port}"] if on
+                else [exe, "serve", f"--https={https_port}", "off"])
+    else:
+        args = [exe, "serve", "--bg", f"--http={port}", f"http://127.0.0.1:{port}"] if on else [exe, "serve", f"--http={port}", "off"]
     try:
         r = subprocess.run(args, capture_output=True, text=True, timeout=30, creationflags=NO_WINDOW)
         return r.returncode == 0
@@ -545,7 +552,7 @@ def _install(key, host):
         if code != 0:
             raise AppError("Docker could not start it. " + _tail(out))
         _set(key, detail="Waiting for it to answer")
-        shared = share_on_tailscale(a["port"]) if prefs()["private"] else None
+        shared = share_on_tailscale(a["port"], https_port=a.get("serve_https")) if prefs()["private"] else None
         if shared is False:
             _set(key, detail="Running on this PC. Tailscale could not share it with your phone; see the Apps page.")
         if wait_up(key):
@@ -634,7 +641,7 @@ def apply_access(host):
             code, out = compose(key, "up", "-d", timeout=900)
             if code != 0:
                 raise AppError(_tail(out))
-            share_on_tailscale(APPS[key]["port"], on=prefs()["private"])
+            share_on_tailscale(APPS[key]["port"], on=prefs()["private"], https_port=APPS[key].get("serve_https"))
             done.append(APPS[key]["name"])
         except AppError as e:
             failed.append(f"{APPS[key]['name']}: {e}")
@@ -642,13 +649,16 @@ def apply_access(host):
     return {"done": done, "failed": failed}
 
 
-def listing(user, host):
+def listing(user, host, ts_dns=None):
     st = docker_state()
     projects = running_projects() if st["running"] else {}
     rows = {r["key"]: dict(r) for r in core.q("SELECT * FROM apps")}
     # In private mode every app binds to 127.0.0.1, so it is only reachable on this PC as localhost -
-    # linking it by the Tailscale/LAN address would 404. Open these locally instead.
-    link_host = "localhost" if prefs()["private"] else host
+    # linking it by the Tailscale/LAN address would 404. Open these locally instead. A browser-facing
+    # app with serve_https is reached over Tailscale HTTPS at its Tailscale name, which works from the
+    # PC and from phones alike (and avoids the HTTPS-upgrade failure of a plain http link).
+    private = prefs()["private"]
+    link_host = "localhost" if private else host
     out = []
     for key, a in APPS.items():
         r = rows.get(key) or {"status": "none", "detail": ""}
@@ -657,8 +667,13 @@ def listing(user, host):
         if status in ("installed", "stopped") and st["running"]:
             status = "running" if "running" in live else ("stopped" if live else status)
         conn = connection(user, key)
+        sp = a.get("serve_https")
+        if sp and private and ts_dns:
+            app_url = f"https://{ts_dns}:{sp}/"
+        else:
+            app_url = f"http://{link_host}:{a['port']}"
         item = {"key": key, "name": a["name"], "what": a["what"], "group": a["group"], "ram": a["ram"], "status": status,
-                "detail": r.get("detail") or "", "url": f"http://{link_host}:{a['port']}", "port": a["port"],
+                "detail": r.get("detail") or "", "url": app_url, "port": a["port"],
                 "connect": [{"field": f, "label": l, "hint": h} for f, l, h in a["connect"]],
                 "connected": bool(conn) or a.get("shared", False) and status == "running",
                 "auto": not a["connect"], "signup": a["signup"], "note": a.get("note", ""),

@@ -1585,7 +1585,7 @@ def app_host(request):
 
 @app.get("/api/apps")
 def apps_list(request: Request, user=Depends(auth)):
-    return apps.listing(user, app_host(request))
+    return apps.listing(user, app_host(request), (TAILSCALE.get("v") or {}).get("dns"))
 
 
 @app.post("/api/apps/docker")
