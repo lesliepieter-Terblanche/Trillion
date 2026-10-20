@@ -126,6 +126,15 @@ update out loud instead of only ringing you - ask her to. And when you say "call
 is done", she will also announce out loud on your Google Home that the job finished, as well as calling
 (turn that off with call_done_announce in Settings, or set call_done_device to pick which speaker).
 
+SCRAPE DATA FROM A SITE (Websites page)
+Point Trillion at a web page and say what you want - "every product with its name and price", listings,
+contacts - and she returns it as a table you can download to CSV. It runs on your LOCAL brain (Ollama) via
+ScrapeGraphAI, in its OWN isolated environment under data/scrape-env, so it never touches Trillion's own
+packages and nothing leaves the PC. One-time setup: open the Websites page -> "Scrape data from a site" ->
+SET UP THE SCRAPER (a few minutes, installs a browser and the library). Three kinds, and in chat she asks
+which fits: one page, search the web, or several pages. Or just say "scrape ..." and she'll ask. Camera and
+site passwords and everything else stay local as always.
+
 MORNING BRIEFING (your day, start of day)
 One friendly rundown at a time you choose, pulling together what Trillion already knows: what's waiting
 on you (same items as the check-ins - approvals, call-backs, unanswered WhatsApps, a site that's down),

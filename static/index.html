@@ -721,6 +721,21 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="sr-go">READ THE SITE</button></div>
     <div class="msg" id="sr-msg"></div>
   </div>
+  <div class="panel" id="scpanel"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><b>Scrape data from a site</b><span class="pill" id="sc-pill"></span></div>
+    <div class="muted" style="font-size:13px">Point me at a page and say what to pull - products and prices, listings, contacts - and I return it as a table you can download. Runs on your local brain; nothing leaves the PC. In chat I'll first ask which kind of scrape fits.</div>
+    <div id="sc-setup" hidden><div class="muted" style="font-size:13px" id="sc-setupmsg">The scraper needs a one-time setup (a few minutes; it installs in its own space so it can't affect Trillion).</div>
+      <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="sc-install">SET UP THE SCRAPER</button></div></div>
+    <div id="sc-form" hidden>
+      <label class="field"><span>Which kind of scrape?</span><select id="sc-mode"></select></label>
+      <div class="muted" id="sc-hint" style="font-size:12px;margin:-4px 0 4px"></div>
+      <label class="field" id="sc-urlbox"><span>Page address</span><input id="sc-url" placeholder="https://example.com/shop" inputmode="url" autocomplete="off"></label>
+      <label class="field" id="sc-urlsbox" hidden><span>Page addresses (one per line)</span><textarea id="sc-urls" rows="3" placeholder="https://...&#10;https://..."></textarea></label>
+      <label class="field"><span id="sc-plab">What should I pull?</span><textarea id="sc-prompt" rows="2" placeholder="Every product with its name and price"></textarea></label>
+      <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="sc-run">SCRAPE</button><button class="btn" id="sc-dl" hidden>DOWNLOAD CSV</button></div>
+    </div>
+    <div class="msg" id="sc-msg"></div>
+    <div id="sc-result" style="overflow:auto;margin-top:8px"></div>
+  </div>
   <div class="panel"><b>Clone a website</b>
     <div class="cl-modes"><button type="button" data-clm="copy" class="on"><b>Copy a site</b><span>A full working copy: every page, picture and style, as files and folders</span></button>
       <button type="button" data-clm="rebuild"><b>Rebuild in a style</b><span>A new site for your business in the layout and look of another one</span></button></div>
@@ -1786,7 +1801,7 @@ async function loadPhonePage(){
   if(!S)return;fillPhoneSettings();const full=!!S.user.settings.phone_full_control;
   $('pp-cmds').innerHTML=PPC.filter(c=>!c[2]||full).map((c,i)=>`<button type="button" data-pc="${esc(c[1])}">${esc(c[0])}</button>`).join('')+(full?'':'<span class="muted" style="font-size:13px;align-self:center">Tick Full phone control below for Home, Back, volume and reading the screen.</span>');
   $('pp-cmds').querySelectorAll('[data-pc]').forEach(b=>b.onclick=()=>runHere(b.dataset.pc,$('pp-cmdmsg')));
-  ppUse();render();loadPhone();ulLoad();loadWA(true);loadContacts($('pp-cmsg'));wtLoad();mtLoad();ngLoad();mbLoad();vcLoad();loadCameras();
+  ppUse();render();loadPhone();ulLoad();loadWA(true);loadContacts($('pp-cmsg'));wtLoad();mtLoad();ngLoad();mbLoad();vcLoad();loadCameras();scLoad();
 }
 async function loadCameras(){
   const adm=S&&S.user.is_admin;$('camadd').hidden=!adm;
@@ -2267,6 +2282,39 @@ function mbDraw(n){const p=n.prefs;$('mb-on').checked=p.on;$('mb-time').value=p.
 $('mb-speak')&&($('mb-speak').onchange=()=>{$('mb-devbox').hidden=!$('mb-speak').checked;});
 $('mb-save')&&($('mb-save').onclick=async()=>{const m=$('mb-msg');try{mbDraw(await (await api('/api/morning/prefs',{json:{on:$('mb-on').checked,time:$('mb-time').value,phone:$('mb-phone').checked,store:$('mb-store').checked,verse:$('mb-verse').checked,speak:$('mb-speak').checked,device:$('mb-device').value}})).json());m.className='msg ok';m.textContent='Saved.';}catch(e){m.className='msg bad';m.textContent=e.message;}});
 $('mb-now')&&($('mb-now').onclick=async()=>{const m=$('mb-msg');m.className='msg muted';m.textContent='Putting it together...';try{const r=await (await api('/api/morning/now',{json:{}})).json();mbDraw(r);const s=r.result.sent||{};m.className='msg ok';m.textContent='Sent to the chat'+(s.phone?' and your phone':'')+(s.spoken?' and the speaker':'')+'.';}catch(e){m.className='msg bad';m.textContent=e.message;}});
+
+// ---------- scrape a site ----------
+let scRows=null;
+async function scLoad(){try{scDraw(await (await api('/api/scrape')).json());}catch(e){}}
+function scDraw(s){const ready=s.ready,job=s.job||{};
+  $('sc-pill').textContent=ready?'ready':(job.running?'setting up…':'not set up');$('sc-pill').className='pill'+(ready?' on':'');
+  $('sc-setup').hidden=ready;$('sc-form').hidden=!ready;
+  if(!ready){$('sc-setupmsg').textContent=job.running?(job.status||'Setting up…'):(job.error?('Setup failed: '+job.error):"The scraper needs a one-time setup (a few minutes; it installs in its own space so it can't affect Trillion).");$('sc-install').disabled=!!job.running;}
+  const sel=$('sc-mode');if(sel&&!sel.dataset.filled){sel.innerHTML=(s.modes||[]).map(m=>`<option value="${m.key}">${esc(m.label)}</option>`).join('');sel.dataset.filled='1';}
+  scModeUI();}
+function scModeUI(){const m=($('sc-mode')&&$('sc-mode').value)||'page';$('sc-urlbox').hidden=m!=='page';$('sc-urlsbox').hidden=m!=='multi';
+  const hints={page:'Pull data off a single web page.',search:'Find and scrape the top results for a question - no address needed.',multi:'Ask the same thing across several pages you list.'};
+  $('sc-hint').textContent=hints[m]||'';$('sc-plab').textContent=m==='search'?'What should I search for and pull?':'What should I pull?';}
+$('sc-mode')&&($('sc-mode').onchange=scModeUI);
+$('sc-install')&&($('sc-install').onclick=async()=>{const m=$('sc-msg');m.className='msg muted';m.textContent="Setting up in the background - you can carry on. Ready in a few minutes.";try{await api('/api/scrape/install',{json:{}});}catch(e){}
+  const t=setInterval(async()=>{try{const s=await (await api('/api/scrape')).json();scDraw(s);if(s.ready){clearInterval(t);m.className='msg ok';m.textContent='Scraper ready.';}else if(s.job&&!s.job.running&&s.job.error){clearInterval(t);m.className='msg bad';m.textContent='Setup failed: '+s.job.error;}}catch(e){}},5000);});
+$('sc-run')&&($('sc-run').onclick=async()=>{const m=$('sc-msg'),mode=$('sc-mode').value,body={mode,prompt:$('sc-prompt').value};
+  if(mode==='page')body.url=$('sc-url').value.trim();if(mode==='multi')body.urls=$('sc-urls').value.trim();
+  m.className='msg muted';m.textContent='Scraping with your local brain… a minute or two.';$('sc-result').innerHTML='';$('sc-dl').hidden=true;scRows=null;
+  try{const r=await (await api('/api/scrape/run',{json:body})).json();if(!r.ok){m.className='msg bad';m.textContent=r.error||'Did not work.';return;}
+    m.className='msg ok';m.textContent='Done.';scRender(r.data);}catch(e){m.className='msg bad';m.textContent=e.message;}});
+function scRender(data){let rows=null;
+  if(Array.isArray(data)&&data.length&&data.every(x=>x&&typeof x==='object'&&!Array.isArray(x)))rows=data;
+  else if(data&&typeof data==='object')for(const k in data){const v=data[k];if(Array.isArray(v)&&v.length&&v.every(x=>x&&typeof x==='object')){rows=v;break;}}
+  if(rows){scRows=rows;const cols=[];rows.slice(0,200).forEach(r=>Object.keys(r).forEach(k=>{if(!cols.includes(k))cols.push(k);}));
+    $('sc-result').innerHTML='<table style="border-collapse:collapse;font-size:13px;min-width:100%"><tr>'+cols.map(c=>`<th style="border:1px solid var(--edge2);padding:4px 6px;text-align:left">${esc(c)}</th>`).join('')+'</tr>'+
+      rows.slice(0,200).map(r=>'<tr>'+cols.map(c=>`<td style="border:1px solid var(--edge2);padding:4px 6px">${esc(String(r[c]==null?'':r[c]))}</td>`).join('')+'</tr>').join('')+'</table>';
+    $('sc-dl').hidden=false;$('sc-dl').dataset.cols=JSON.stringify(cols);}
+  else{$('sc-result').innerHTML='<pre style="white-space:pre-wrap;font-size:12px">'+esc(JSON.stringify(data,null,2))+'</pre>';}}
+$('sc-dl')&&($('sc-dl').onclick=()=>{if(!scRows)return;const cols=JSON.parse($('sc-dl').dataset.cols||'[]');
+  const q=v=>{v=String(v==null?'':v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
+  const csv=[cols.join(',')].concat(scRows.map(r=>cols.map(c=>q(r[c])).join(','))).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='scrape.csv';a.click();});
 
 // ---------- calls from trillion ----------
 let VC=null;

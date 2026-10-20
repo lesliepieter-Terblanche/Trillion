@@ -63,6 +63,7 @@ import backup
 import meeting
 import nudge
 import morning
+import scrape
 import voicecall
 gumroad.init()
 routines.init()
@@ -391,6 +392,139 @@ USAGE_RE = re.compile(r"\b(?:which|what|show|list)\b.{0,40}\b(?:skills?|connecto
                       r"|\b(?:skill|connector|connection)\s+usage\b", re.I)
 MORNING_RE = re.compile(r"\b(?:morning|daily|today'?s)\s+(?:brief(?:ing)?|rundown|summary|update)\b"
                         r"|\bbrief\s+me\b|\bwhat'?s?\s+(?:my|on my)\s+(?:day|plate)\b", re.I)
+SCRAPE_RE = re.compile(r"\bscrape\b|\b(?:pull|grab|extract|harvest)\b.{0,50}\b(?:from|off)\b.{0,30}https?://"
+                       r"|\bget\b.{0,40}\bfrom (?:this|the) (?:page|site|url|website)\b", re.I)
+SCRAPE_URL_RE = re.compile(r"https?://[^\s,]+", re.I)
+PENDING_SCRAPE = {}          # uid -> {prompt, urls, mode, ts}
+
+
+def _scrape_mode_pick(text):
+    t = (text or "").strip().lower()
+    if re.fullmatch(r"\s*3\s*", t) or re.search(r"\bseveral\b|\bmultiple\b|\bmany\b|\bmulti\b|\bthese pages\b|\bfew pages\b", t):
+        return "multi"
+    if re.fullmatch(r"\s*2\s*", t) or re.search(r"\bsearch\b|\bweb\b|\bgoogle\b|\btop results?\b", t):
+        return "search"
+    if re.fullmatch(r"\s*1\s*", t) or re.search(r"\bone page\b|\bthis (?:one )?page\b|\bsingle page\b|\bjust (?:this|one) page\b|\bpage\b", t):
+        return "page"
+    return None
+
+
+def _scrape_prompt(text):
+    """What to pull - the message minus the trigger words and any URLs."""
+    t = SCRAPE_URL_RE.sub("", text or "")
+    t = re.sub(r"\b(?:please|can you|could you|scrape|pull|grab|extract|harvest|get)\b", " ", t, flags=re.I)
+    t = re.sub(r"\bfrom (?:this|the)? ?(?:page|site|url|website)?\b", " ", t, flags=re.I)
+    t = re.sub(r"\s+", " ", t).strip(" .,:-")
+    return re.sub(r"\s+\b(?:from|off|at|on|in|of)\s*$", "", t, flags=re.I).strip(" .,:-")
+
+
+def _builtin_reply(uid, tid, reply, detail=""):
+    BUSY[uid] = False
+    core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+    core.set_task(tid, status="completed", detail=(detail or reply)[:200])
+    return {"reply": reply, "task_id": tid, "provider": "built-in"}
+
+
+def _scrape_table(data):
+    """Render a scrape result as a markdown table when it's row-like, else pretty JSON."""
+    rows = None
+    if isinstance(data, list) and data and all(isinstance(x, dict) for x in data):
+        rows = data
+    elif isinstance(data, dict):
+        for v in data.values():
+            if isinstance(v, list) and v and all(isinstance(x, dict) for x in v):
+                rows = v
+                break
+    if rows:
+        cols = []
+        for r in rows[:30]:
+            for k in r:
+                if k not in cols:
+                    cols.append(str(k))
+        cols = cols[:8]
+        out = ["| " + " | ".join(cols) + " |", "|" + "|".join(["---"] * len(cols)) + "|"]
+        for r in rows[:30]:
+            out.append("| " + " | ".join(str(r.get(c, ""))[:60].replace("\n", " ").replace("|", "/") for c in cols) + " |")
+        if len(rows) > 30:
+            out.append(f"...and {len(rows) - 30} more rows")
+        return "\n".join(out)
+    try:
+        return "```\n" + json.dumps(data, indent=2, default=str)[:2500] + "\n```"
+    except Exception:
+        return str(data)[:2000]
+
+
+def scrape_in_background(user, mode, prompt, source):
+    def done(res):
+        if res.get("ok"):
+            msg = "Here's what I scraped:\n\n" + _scrape_table(res["data"])
+        else:
+            msg = "The scrape didn't work: " + str(res.get("error", "unknown"))
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (user["id"], "assistant", msg, time.time()))
+        try:
+            watch.send(user, "Scrape done" if res.get("ok") else "Scrape failed", msg[:120].replace("\n", " "))
+        except Exception:
+            pass
+    scrape.run_async(mode, prompt, source, done)
+
+
+def _scrape_launch_or_ask(user, uid, tid, pend):
+    mode = pend["mode"]
+    prompt = pend.get("prompt") or ""
+    urls = pend.get("urls") or []
+    if mode == "search":
+        if not prompt:
+            return _builtin_reply(uid, tid, "What should I search for and pull? For example: \"best vape deals, with the product name and price\".", "scrape: need query")
+        source = None
+    elif mode == "page":
+        if not urls:
+            return _builtin_reply(uid, tid, "Paste the web address of the page you want scraped.", "scrape: need url")
+        source = urls[0]
+    else:  # multi
+        if not urls:
+            return _builtin_reply(uid, tid, "Paste the web addresses (two or more) you want scraped, separated by spaces.", "scrape: need urls")
+        source = urls
+    PENDING_SCRAPE.pop(uid, None)
+    label = {"page": "this page", "search": "the web", "multi": "several pages"}[mode]
+    scrape_in_background(user, mode, prompt, source)
+    return _builtin_reply(uid, tid, f"On it — scraping {label} with your local brain. This takes a minute or two; I'll post the results right here when it's done.", "scrape running")
+
+
+def scrape_chat(user, uid, tid, text):
+    """Returns a reply dict if this message is part of a scrape, else None so normal handling continues.
+    First time round it asks which 'skill' (page / search / several) to use."""
+    now = time.time()
+    pend = PENDING_SCRAPE.get(uid)
+    if pend and now - pend["ts"] > 900:
+        PENDING_SCRAPE.pop(uid, None)
+        pend = None
+    if pend:
+        urls = SCRAPE_URL_RE.findall(text)
+        if not pend.get("mode"):
+            mode = _scrape_mode_pick(text)
+            if not mode:
+                PENDING_SCRAPE.pop(uid, None)       # they said something unrelated - don't trap them
+                return None
+            pend["mode"] = mode
+        if urls:
+            pend["urls"] = urls
+        if not pend.get("prompt"):
+            p = _scrape_prompt(text)
+            if p:
+                pend["prompt"] = p
+        pend["ts"] = now
+        return _scrape_launch_or_ask(user, uid, tid, pend)
+    if SCRAPE_RE.search(text):
+        if not scrape.ready():
+            return _builtin_reply(uid, tid, "I can scrape sites, but the scraper isn't set up yet. Open the Scrape panel on the Tools page and press Set up (one-time, a few minutes to install), then ask me again.", "scrape: not installed")
+        PENDING_SCRAPE[uid] = {"prompt": _scrape_prompt(text), "urls": SCRAPE_URL_RE.findall(text), "mode": None, "ts": now}
+        return _builtin_reply(uid, tid,
+            "Sure — what kind of scrape?\n"
+            "1) This one page — pull data off a single web address\n"
+            "2) Search the web — find and scrape the top results for a question\n"
+            "3) Several pages — the same question across a few addresses\n"
+            "Reply 1, 2 or 3 (or use the Scrape panel on the Tools page).", "scrape: asking which skill")
+    return None
 
 
 def pull_model_bg(user, name):
@@ -996,6 +1130,9 @@ def run_agent(user, text, files=None):
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="completed", detail="morning briefing")
         return {"reply": reply, "task_id": tid, "provider": "built-in"}
+    sc = scrape_chat(user, uid, tid, text)
+    if sc is not None:
+        return sc
     mt = meeting.parse(text)
     if mt:
         if mt[0] == "on":
@@ -2046,6 +2183,29 @@ def morning_prefs(p: dict = Body(...), user=Depends(auth)):
 def morning_now(user=Depends(auth)):
     res = morning.send_now(user, SITES)
     return dict(morning.state(user), result=res)
+
+
+@app.get("/api/scrape")
+def scrape_get(user=Depends(auth)):
+    return scrape.state()
+
+
+@app.post("/api/scrape/install")
+def scrape_install(user=Depends(admin)):
+    return scrape.start_install(user)
+
+
+@app.post("/api/scrape/run")
+def scrape_run(p: dict = Body(...), user=Depends(auth)):
+    mode = (p.get("mode") or "page").strip()
+    prompt = (p.get("prompt") or "").strip()
+    if mode == "page":
+        source = (p.get("url") or "").strip()
+    elif mode == "multi":
+        source = [u for u in re.split(r"\s+", (p.get("urls") or "").strip()) if u]
+    else:
+        source = None
+    return scrape.run(mode, prompt, source)       # sync def endpoint: runs in a threadpool, won't block the server
 
 
 @app.get("/api/call")
