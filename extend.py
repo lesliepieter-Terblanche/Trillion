@@ -490,10 +490,19 @@ def deco_row():
     return core.q("SELECT * FROM connectors WHERE name=?", (DECO_NAME,), one=True)
 
 
+def _clean_deco_host(h):
+    """The bundle builds http://<host> itself, so store only a bare host/IP - strip any
+    scheme, path, trailing slash or stray spaces a pasted address might carry."""
+    h = (h or "").strip()
+    h = re.sub(r"^\s*https?://", "", h, flags=re.I)   # drop http:// or https://
+    h = h.split("/")[0].split("?")[0].strip()          # drop any /path or ?query
+    return h or None
+
+
 def setup_deco(owner, host=None, password=None, allow_write=False, allow_dangerous=False):
     """Create or update the Deco connector. The password (if given) goes to the encrypted key store, never the DB.
     Reboots and blocking stay off unless writes are turned on; a reboot needs both writes and 'dangerous' on."""
-    host = (host or "192.168.68.1").strip()
+    host = _clean_deco_host(host) or "192.168.68.1"
     env = {"DECO_HOST": host, "DECO_USERNAME": "admin", "DECO_VERIFY_TLS": "0",
            "DECO_ALLOW_WRITE": "1" if allow_write else "0",
            "DECO_ALLOW_DANGEROUS": "1" if (allow_write and allow_dangerous) else "0"}
