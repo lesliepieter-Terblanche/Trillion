@@ -97,8 +97,10 @@ BUSINESS APPS (Apps page)
 
 CAMERAS (view them from Trillion)
 Trillion can show your RTSP cameras - all local, nothing to a cloud. Add them on the Phone page under
-Cameras (owner only), then just ask, for example "show me the front door" - she grabs a still off the
-camera and shows it, and can also put it on a Google Home display ("...on the kitchen screen").
+Cameras (owner only). Each camera has two buttons: LIVE (a continuous video feed that plays right in the
+dashboard, on the PC or on your phone over Tailscale) and SNAPSHOT (a single still). You can also just
+ask, for example "show me the front door" - she grabs a still and can put it on a Google Home display
+("...on the kitchen screen"). Camera passwords are stored encrypted, never in plain text.
 - O-Kam Pro cameras: pick the "O-Kam Pro" type, enter the camera's IP and its own password. She builds
   the RTSP link (port 10554). A dual-lens cam has a second lens - add it as a second camera, lens 2.
   If the camera supports ONVIF you can also tick pan/tilt and move it with the arrows (many models don't).

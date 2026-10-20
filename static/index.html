@@ -1768,13 +1768,22 @@ async function loadCameras(){
   let cams=[];try{cams=(await (await api('/api/cameras')).json()).cameras||[];}catch(e){}
   $('camlist').innerHTML=cams.map(c=>`<div class="panel" style="gap:8px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><b>${esc(c.name)}</b><span class="muted" style="font-size:12px">${esc(c.address)}${c.ptz?' · PTZ':''}</span></div>
     <img id="camimg-${c.id}" alt="" style="max-width:100%;border-radius:8px;display:none">
-    <div class="btns" style="justify-content:flex-start"><button class="btn pri" data-camsnap="${c.id}" style="min-height:38px;font-size:13px">SNAPSHOT</button>${c.ptz?`<button class="btn" data-cammv="${c.id}" data-d="left">◄</button><button class="btn" data-cammv="${c.id}" data-d="right">►</button><button class="btn" data-cammv="${c.id}" data-d="up">▲</button><button class="btn" data-cammv="${c.id}" data-d="down">▼</button>`:''}${adm?`<button class="btn" data-camdel="${c.id}" style="min-height:38px;font-size:13px">REMOVE</button>`:''}</div>
+    <div class="btns" style="justify-content:flex-start"><button class="btn pri" data-camlive="${c.id}" style="min-height:38px;font-size:13px">LIVE</button><button class="btn" data-camstop="${c.id}" style="min-height:38px;font-size:13px;display:none">STOP</button><button class="btn" data-camsnap="${c.id}" style="min-height:38px;font-size:13px">SNAPSHOT</button>${c.ptz?`<button class="btn" data-cammv="${c.id}" data-d="left">◄</button><button class="btn" data-cammv="${c.id}" data-d="right">►</button><button class="btn" data-cammv="${c.id}" data-d="up">▲</button><button class="btn" data-cammv="${c.id}" data-d="down">▼</button>`:''}${adm?`<button class="btn" data-camdel="${c.id}" style="min-height:38px;font-size:13px">REMOVE</button>`:''}</div>
     <div class="msg" id="cammsg-${c.id}"></div></div>`).join('')||'<div class="muted">No cameras yet.</div>';
   document.querySelectorAll('[data-camsnap]').forEach(b=>b.onclick=async()=>{const id=b.dataset.camsnap,m=$('cammsg-'+id);m.className='msg muted';m.textContent='Taking a picture...';
     try{const r=await (await api('/api/cameras/'+id+'/snapshot',{method:'POST'})).json();if(r.error){m.className='msg bad';m.textContent=r.error;return;}
       const img=$('camimg-'+id);img.src=r.image_url+'?t='+Date.now();img.style.display='block';m.textContent='';}catch(e){m.className='msg bad';m.textContent=e.message;}});
   document.querySelectorAll('[data-cammv]').forEach(b=>b.onclick=async()=>{const id=b.dataset.cammv,m=$('cammsg-'+id);
     try{const r=await (await api('/api/cameras/'+id+'/ptz',{json:{action:b.dataset.d}})).json();if(r.error){m.className='msg bad';m.textContent=r.error;}}catch(e){m.className='msg bad';m.textContent=e.message;}});
+  document.querySelectorAll('[data-camlive]').forEach(b=>b.onclick=()=>{const id=b.dataset.camlive,img=$('camimg-'+id),m=$('cammsg-'+id);
+    m.className='msg muted';m.textContent='Connecting to live view (give it a few seconds)...';
+    img.onerror=()=>{m.className='msg bad';m.textContent='Could not start live view. The camera may be busy (close it in its own app) or unreachable.';};
+    img.onload=()=>{m.textContent='';};
+    img.src='/cam/live/'+id+'?t='+Date.now();img.style.display='block';
+    b.style.display='none';document.querySelector('[data-camstop="'+id+'"]').style.display='';});
+  document.querySelectorAll('[data-camstop]').forEach(b=>b.onclick=()=>{const id=b.dataset.camstop,img=$('camimg-'+id);
+    img.src='';img.style.display='none';$('cammsg-'+id).textContent='';
+    b.style.display='none';document.querySelector('[data-camlive="'+id+'"]').style.display='';});
   document.querySelectorAll('[data-camdel]').forEach(b=>b.onclick=async()=>{if(!confirm('Remove this camera?'))return;await api('/api/cameras/'+b.dataset.camdel,{method:'DELETE'});loadCameras();});
 }
 function camPreset(){const p=$('cam-preset').value;$('cam-okam').hidden=p!=='okam';$('cam-wyze').hidden=p!=='wyze';$('cam-urlbox').hidden=p!=='url';}
@@ -1785,7 +1794,7 @@ $('cam-save')&&($('cam-save').onclick=async()=>{const m=$('cam-msg');const p=$('
   else if(p==='wyze'){body.bridge_host=$('cam-bridge').value;body.cam_name=$('cam-wname').value;}
   else{body.url=$('cam-url').value;}
   m.className='msg muted';m.textContent='Adding...';
-  try{await api('/api/cameras',{json:body});$('cam-name').value=$('cam-pw').value='';m.className='msg ok';m.textContent='Added. Press SNAPSHOT to test it.';loadCameras();}catch(e){m.className='msg bad';m.textContent=e.message;}});
+  try{await api('/api/cameras',{json:body});$('cam-name').value=$('cam-pw').value='';m.className='msg ok';m.textContent='Added. Press LIVE to watch it, or SNAPSHOT to test.';loadCameras();}catch(e){m.className='msg bad';m.textContent=e.message;}});
 async function wtLoad(){try{wtDraw(await (await api('/api/watch')).json());}catch(e){}}
 function wtDraw(w){$('wt-on').checked=w.on;$('wt-quiet').checked=w.quiet;$('wt-from').value=w.from;$('wt-to').value=w.to;
   $('wt-kinds').innerHTML=Object.entries(w.labels).map(([k,l])=>`<label class="tickrow"><input type="checkbox" data-wk="${k}" ${w.kinds[k]?'checked':''}><span>${esc(l)}</span></label>`).join('');

@@ -5,7 +5,7 @@ from urllib.parse import urlparse as urlparse_
 import httpx
 from fastapi import FastAPI, Request, Response, HTTPException, Depends, Body
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 
 import core
 import extend
@@ -3508,6 +3508,19 @@ def cameras_snapshot(cid: int, user=Depends(auth)):
     except cameras.CameraError as e:
         return JSONResponse({"error": str(e)}, status_code=200)
     return {"image_url": f"http://{cast.lan_ip()}:{cast.PORT}/cam/snap/{fn}", "name": cam["name"]}
+
+
+@app.get("/cam/live/{cid}")
+def cameras_live(cid: int, user=Depends(auth), fps: int = 8, q: int = 6, h: int = 480):
+    """Live view: a continuous MJPEG stream the dashboard shows in a plain <img>. Logged-in users only
+    (the session cookie rides along with the image request). One ffmpeg per viewer, killed on disconnect."""
+    import cameras
+    cam = core.q("SELECT * FROM cameras WHERE id=?", (cid,), one=True)
+    if not cam:
+        raise HTTPException(404)
+    gen = cameras.mjpeg_stream(dict(cam), fps=fps, quality=q, height=h)
+    return StreamingResponse(gen, media_type=f"multipart/x-mixed-replace; boundary={cameras.MJPEG_BOUNDARY}",
+                             headers={"Cache-Control": "no-store"})
 
 
 @app.get("/cast/audio/{name}")

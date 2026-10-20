@@ -1,11 +1,14 @@
 """Cameras: view your RTSP cameras (O-Kam Pro PTZ, Wyze via the bridge, any ONVIF/RTSP cam) from Trillion.
 
-Everything is local: Trillion grabs a still frame straight off the camera's RTSP stream with ffmpeg
-(which it already has), saves it, and serves it to the dashboard / your phone, or casts it to a Nest
-display. PTZ (moving the camera) is best-effort over ONVIF, which only some models support.
+Everything is local. Trillion can show a camera two ways, both straight off its RTSP stream with ffmpeg
+(which it already has): a still SNAPSHOT (saved and also castable to a Nest display), and a continuous
+LIVE view (an MJPEG stream the dashboard plays in a plain <img>, so it works on the PC and on your phone
+over Tailscale). PTZ (moving the camera) is best-effort over ONVIF, which only some models support.
 
 Cameras are managed by the owner and visible to every login (they are the household's cameras).
-Passwords are the camera's own RTSP credentials, kept in this database on the PC; nothing goes to a cloud.
+Passwords are the camera's own RTSP/ONVIF credentials. They are kept ENCRYPTED in the key store and put
+back into the stream URL only at runtime - never written to a plaintext database column - and nothing
+goes to a cloud.
 """
 import json
 import re
@@ -27,6 +30,68 @@ class CameraError(Exception):
 def init():
     core.x("""CREATE TABLE IF NOT EXISTS cameras(id INTEGER PRIMARY KEY, name TEXT, url TEXT, kind TEXT DEFAULT 'rtsp',
               onvif TEXT DEFAULT '', created REAL)""")
+    _migrate_passwords()
+
+
+def _owner_id():
+    o = core.q("SELECT id FROM users WHERE is_admin=1 ORDER BY id LIMIT 1", one=True)
+    return o["id"] if o else None
+
+
+_PW_IN_URL = re.compile(r"^(rtsp://[^:/@]+):([^@/]+)@(.*)$", re.I)
+
+
+def _split_pw(url):
+    """Split 'rtsp://user:pass@rest' -> ('rtsp://user@rest', 'pass'). No password -> (url, None)."""
+    m = _PW_IN_URL.match((url or "").strip())
+    if not m:
+        return (url or "").strip(), None
+    return f"{m.group(1)}@{m.group(3)}", m.group(2)
+
+
+def _inject_pw(url, pw):
+    """Put a password back into 'rtsp://user@rest' -> 'rtsp://user:pass@rest'."""
+    if not pw:
+        return url
+    m = re.match(r"^(rtsp://[^:/@]+)@(.*)$", url or "", re.I)
+    return f"{m.group(1)}:{pw}@{m.group(2)}" if m else url
+
+
+def resolve_url(cam):
+    """The full RTSP URL with the password put back from the encrypted store, used only at runtime.
+    Falls back to the stored URL as-is (covers manual full-URL cameras and any un-migrated row)."""
+    url = cam.get("url") or ""
+    if _PW_IN_URL.match(url):          # already carries a password (legacy / manual entry)
+        return url
+    oid = _owner_id()
+    pw = core.get_secret(oid, f"cam_pw_{cam['id']}") if oid else None
+    return _inject_pw(url, pw) if pw else url
+
+
+def _migrate_passwords():
+    """One-off: lift any password embedded in a stored URL into the encrypted secret store."""
+    oid = _owner_id()
+    if not oid:
+        return
+    for r in core.q("SELECT * FROM cameras"):
+        stripped, pw = _split_pw(r["url"])
+        if pw:
+            try:
+                core.set_secret(oid, f"cam_pw_{r['id']}", pw)
+                core.x("UPDATE cameras SET url=? WHERE id=?", (stripped, r["id"]))
+            except Exception:
+                pass
+        # ONVIF password hidden out of the plaintext JSON column too
+        try:
+            cfg = json.loads(r["onvif"] or "{}")
+        except Exception:
+            cfg = {}
+        if cfg.get("pass"):
+            try:
+                core.set_secret(oid, f"cam_onvif_{r['id']}", cfg.pop("pass"))
+                core.x("UPDATE cameras SET onvif=? WHERE id=?", (json.dumps(cfg) if cfg else "", r["id"]))
+            except Exception:
+                pass
 
 
 # ---------- presets: build the fiddly RTSP URL for common cameras ----------
@@ -47,12 +112,32 @@ def add(name, url, kind="rtsp", onvif=None):
     url = (url or "").strip()
     if not name or not re.match(r"rtsp://", url, re.I):
         raise CameraError("A camera needs a name and an rtsp:// address.")
-    return core.x("INSERT INTO cameras(name,url,kind,onvif,created) VALUES(?,?,?,?,?)",
-                  (name, url, kind, json.dumps(onvif) if onvif else "", time.time()))
+    stripped, pw = _split_pw(url)                      # keep the password out of the DB column
+    onvif_pw = (onvif or {}).pop("pass", None) if isinstance(onvif, dict) else None
+    cid = core.x("INSERT INTO cameras(name,url,kind,onvif,created) VALUES(?,?,?,?,?)",
+                 (name, stripped, kind, json.dumps(onvif) if onvif else "", time.time()))
+    oid = _owner_id()
+    if oid:
+        if pw:
+            core.set_secret(oid, f"cam_pw_{cid}", pw)
+        if onvif_pw:
+            core.set_secret(oid, f"cam_onvif_{cid}", onvif_pw)
+    return cid
+
+
+def remove_secrets(cid):
+    oid = _owner_id()
+    if oid:
+        for nm in (f"cam_pw_{cid}", f"cam_onvif_{cid}"):
+            try:
+                core.x("DELETE FROM secrets WHERE user_id=? AND name=?", (oid, nm))
+            except Exception:
+                pass
 
 
 def remove(cid):
     core.x("DELETE FROM cameras WHERE id=?", (int(cid),))
+    remove_secrets(int(cid))
 
 
 def all_cams():
@@ -91,10 +176,11 @@ def snapshot(cam, timeout=25):
     """Grab one frame from the camera's RTSP stream. Returns the saved filename (in SNAP_DIR)."""
     fn = f"cam{cam['id']}_{int(time.time())}.jpg"
     out = SNAP_DIR / fn
+    url = resolve_url(cam)
     cmd = [_ffmpeg(), "-nostdin", "-y"]
-    if str(cam["url"]).lower().startswith("rtsp://"):
+    if str(url).lower().startswith("rtsp://"):
         cmd += ["-rtsp_transport", "tcp"]          # TCP is far more reliable than UDP for RTSP snapshots
-    cmd += ["-i", cam["url"], "-frames:v", "1", "-q:v", "3", str(out)]
+    cmd += ["-i", url, "-frames:v", "1", "-q:v", "3", str(out)]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -126,6 +212,46 @@ def snap_path(name):
     return p
 
 
+# ---------- live view (MJPEG over HTTP, plays in a plain <img>) ----------
+MJPEG_BOUNDARY = "ffmpeg"   # the boundary ffmpeg's mpjpeg muxer emits
+
+
+def live_cmd(cam, fps=8, quality=6, height=0):
+    """ffmpeg argv that turns the camera's RTSP stream into an MJPEG multipart stream on stdout.
+    Low frame rate + optional downscale keeps it light enough for a phone over Tailscale."""
+    url = resolve_url(cam)
+    cmd = [_ffmpeg(), "-nostdin", "-loglevel", "error"]
+    if str(url).lower().startswith("rtsp://"):
+        cmd += ["-rtsp_transport", "tcp", "-fflags", "nobuffer", "-flags", "low_delay"]
+    cmd += ["-i", url, "-an", "-r", str(max(1, min(int(fps), 20)))]
+    if int(height) > 0:
+        cmd += ["-vf", f"scale=-2:{int(height)}"]
+    cmd += ["-q:v", str(max(2, min(int(quality), 15))), "-f", "mpjpeg", "-"]
+    return cmd
+
+
+def mjpeg_stream(cam, fps=8, quality=6, height=0, idle_limit=180):
+    """Generator: spawn ffmpeg and pipe its MJPEG bytes straight through. Kills ffmpeg when the
+    viewer disconnects (the generator is closed) or no data arrives for idle_limit seconds."""
+    proc = subprocess.Popen(live_cmd(cam, fps, quality, height),
+                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    start = time.time()
+    try:
+        while True:
+            chunk = proc.stdout.read(65536)
+            if not chunk:
+                break
+            start = time.time()
+            yield chunk
+            if time.time() - start > idle_limit:
+                break
+    finally:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
 # ---------- PTZ (best-effort, ONVIF) ----------
 _MOVES = {"left": (-0.5, 0, 0), "right": (0.5, 0, 0), "up": (0, 0.5, 0), "down": (0, -0.5, 0),
           "zoom_in": (0, 0, 0.5), "zoom_out": (0, 0, -0.5)}
@@ -145,9 +271,12 @@ def ptz(cam, action, seconds=0.6):
         from onvif import ONVIFCamera
     except Exception:
         raise CameraError("Moving a camera needs the 'onvif-zeep' part. Run Setup again, or 'pip install onvif-zeep'.")
+    oid = _owner_id()
+    onvif_pw = cfg.get("pass") or (core.get_secret(oid, f"cam_onvif_{cam['id']}") if oid else None) \
+        or (core.get_secret(oid, f"cam_pw_{cam['id']}") if oid else None) or ""
     action = (action or "").lower()
     try:
-        cam_o = ONVIFCamera(cfg["host"], int(cfg.get("port", 80)), cfg.get("user", "admin"), cfg.get("pass", ""))
+        cam_o = ONVIFCamera(cfg["host"], int(cfg.get("port", 80)), cfg.get("user", "admin"), onvif_pw)
         media = cam_o.create_media_service()
         ptz_s = cam_o.create_ptz_service()
         token = media.GetProfiles()[0].token
