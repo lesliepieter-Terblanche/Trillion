@@ -646,6 +646,9 @@ def listing(user, host):
     st = docker_state()
     projects = running_projects() if st["running"] else {}
     rows = {r["key"]: dict(r) for r in core.q("SELECT * FROM apps")}
+    # In private mode every app binds to 127.0.0.1, so it is only reachable on this PC as localhost -
+    # linking it by the Tailscale/LAN address would 404. Open these locally instead.
+    link_host = "localhost" if prefs()["private"] else host
     out = []
     for key, a in APPS.items():
         r = rows.get(key) or {"status": "none", "detail": ""}
@@ -655,7 +658,7 @@ def listing(user, host):
             status = "running" if "running" in live else ("stopped" if live else status)
         conn = connection(user, key)
         item = {"key": key, "name": a["name"], "what": a["what"], "group": a["group"], "ram": a["ram"], "status": status,
-                "detail": r.get("detail") or "", "url": f"http://{host}:{a['port']}", "port": a["port"],
+                "detail": r.get("detail") or "", "url": f"http://{link_host}:{a['port']}", "port": a["port"],
                 "connect": [{"field": f, "label": l, "hint": h} for f, l, h in a["connect"]],
                 "connected": bool(conn) or a.get("shared", False) and status == "running",
                 "auto": not a["connect"], "signup": a["signup"], "note": a.get("note", ""),
