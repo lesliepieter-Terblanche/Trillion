@@ -1768,8 +1768,9 @@ async function loadCameras(){
   let cams=[];try{cams=(await (await api('/api/cameras')).json()).cameras||[];}catch(e){}
   $('camlist').innerHTML=cams.map(c=>`<div class="panel" style="gap:8px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><b>${esc(c.name)}</b><span class="muted" style="font-size:12px">${esc(c.address)}${c.ptz?' · PTZ':''}</span></div>
     <img id="camimg-${c.id}" alt="" style="max-width:100%;border-radius:8px;display:none">
-    <div class="btns" style="justify-content:flex-start"><button class="btn pri" data-camlive="${c.id}" style="min-height:38px;font-size:13px">LIVE</button><button class="btn" data-camstop="${c.id}" style="min-height:38px;font-size:13px;display:none">STOP</button><button class="btn" data-camsnap="${c.id}" style="min-height:38px;font-size:13px">SNAPSHOT</button>${c.ptz?`<button class="btn" data-cammv="${c.id}" data-d="left">◄</button><button class="btn" data-cammv="${c.id}" data-d="right">►</button><button class="btn" data-cammv="${c.id}" data-d="up">▲</button><button class="btn" data-cammv="${c.id}" data-d="down">▼</button>`:''}${adm?`<button class="btn" data-camdel="${c.id}" style="min-height:38px;font-size:13px">REMOVE</button>`:''}</div>
-    <div class="msg" id="cammsg-${c.id}"></div></div>`).join('')||'<div class="muted">No cameras yet.</div>';
+    <div class="btns" style="justify-content:flex-start"><button class="btn pri" data-camlive="${c.id}" style="min-height:38px;font-size:13px">LIVE</button><button class="btn" data-camstop="${c.id}" style="min-height:38px;font-size:13px;display:none">STOP</button><button class="btn" data-camsnap="${c.id}" style="min-height:38px;font-size:13px">SNAPSHOT</button>${c.ptz?`<button class="btn" data-cammv="${c.id}" data-d="left">◄</button><button class="btn" data-cammv="${c.id}" data-d="right">►</button><button class="btn" data-cammv="${c.id}" data-d="up">▲</button><button class="btn" data-cammv="${c.id}" data-d="down">▼</button>`:''}</div>
+    <div class="msg" id="cammsg-${c.id}"></div>
+    ${adm?`<div style="margin-top:6px;text-align:right"><button class="btn" data-camdel="${c.id}" data-camname="${esc(c.name)}" style="min-height:30px;font-size:11px;opacity:.55">Remove camera</button></div>`:''}</div>`).join('')||'<div class="muted">No cameras yet.</div>';
   document.querySelectorAll('[data-camsnap]').forEach(b=>b.onclick=async()=>{const id=b.dataset.camsnap,m=$('cammsg-'+id);m.className='msg muted';m.textContent='Taking a picture...';
     try{const r=await (await api('/api/cameras/'+id+'/snapshot',{method:'POST'})).json();if(r.error){m.className='msg bad';m.textContent=r.error;return;}
       const img=$('camimg-'+id);img.src=r.image_url+'?t='+Date.now();img.style.display='block';m.textContent='';}catch(e){m.className='msg bad';m.textContent=e.message;}});
@@ -1784,7 +1785,7 @@ async function loadCameras(){
   document.querySelectorAll('[data-camstop]').forEach(b=>b.onclick=()=>{const id=b.dataset.camstop,img=$('camimg-'+id);
     img.src='';img.style.display='none';$('cammsg-'+id).textContent='';
     b.style.display='none';document.querySelector('[data-camlive="'+id+'"]').style.display='';});
-  document.querySelectorAll('[data-camdel]').forEach(b=>b.onclick=async()=>{if(!confirm('Remove this camera?'))return;await api('/api/cameras/'+b.dataset.camdel,{method:'DELETE'});loadCameras();});
+  document.querySelectorAll('[data-camdel]').forEach(b=>b.onclick=async()=>{if(!confirm('Remove '+(b.dataset.camname||'this camera')+' from Trillion? You will have to add it again.'))return;await api('/api/cameras/'+b.dataset.camdel,{method:'DELETE'});loadCameras();});
 }
 function camPreset(){const p=$('cam-preset').value;$('cam-okam').hidden=p!=='okam';$('cam-wyze').hidden=p!=='wyze';$('cam-urlbox').hidden=p!=='url';}
 document.addEventListener('change',e=>{if(e.target&&e.target.id==='cam-preset')camPreset();if(e.target&&e.target.id==='cam-ptz')$('cam-onvif').hidden=!e.target.checked;});

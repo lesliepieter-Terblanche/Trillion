@@ -14,5 +14,6 @@ numpy
 Pillow
 av>=11
 mitmproxy>=10
+onvif-zeep>=0.2.12
 nvidia-cublas-cu12; platform_system != 'Darwin'
 nvidia-cudnn-cu12>=9,<10; platform_system != 'Darwin'
