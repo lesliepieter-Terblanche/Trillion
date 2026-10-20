@@ -125,6 +125,16 @@ update out loud instead of only ringing you - ask her to. And when you say "call
 is done", she will also announce out loud on your Google Home that the job finished, as well as calling
 (turn that off with call_done_announce in Settings, or set call_done_device to pick which speaker).
 
+MORNING BRIEFING (your day, start of day)
+One friendly rundown at a time you choose, pulling together what Trillion already knows: what's waiting
+on you (same items as the check-ins - approvals, call-backs, unanswered WhatsApps, a site that's down),
+a snapshot of your Gumroad store, and, if you want it, the morning Bible verse. It comes to the chat and
+your phone, and can be read aloud on a Google Home. Turn it on under Check-ins -> Morning briefing (pick
+the time, the speaker, and whether to include the store and verse). Or just say "morning briefing" /
+"brief me" / "what's on my day" any time and she puts it together on the spot. All local, nothing leaves
+the PC. (This is the "good morning, here's your day" counterpart to the check-ins, which chase you when
+something needs you.)
+
 YOUR WI-FI (TP-Link Deco)
 Trillion can manage your TP-Link Deco mesh over the local network - no TP-Link cloud account, nothing
 leaves the PC. Set it up on the Skills page under Connectors > "TP-Link Deco": enter the Deco address

@@ -62,6 +62,7 @@ import storage
 import backup
 import meeting
 import nudge
+import morning
 import voicecall
 gumroad.init()
 routines.init()
@@ -388,6 +389,8 @@ USAGE_RE = re.compile(r"\b(?:which|what|show|list)\b.{0,40}\b(?:skills?|connecto
                       r"\b(?:not|never|un)?\s?(?:used|using|unused|in use)\b"
                       r"|\b(?:unused|idle)\b.{0,15}\b(?:skills?|connectors?|connections?)\b"
                       r"|\b(?:skill|connector|connection)\s+usage\b", re.I)
+MORNING_RE = re.compile(r"\b(?:morning|daily|today'?s)\s+(?:brief(?:ing)?|rundown|summary|update)\b"
+                        r"|\bbrief\s+me\b|\bwhat'?s?\s+(?:my|on my)\s+(?:day|plate)\b", re.I)
 
 
 def pull_model_bg(user, name):
@@ -985,6 +988,13 @@ def run_agent(user, text, files=None):
         BUSY[uid] = False
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="completed", detail=reply[:200])
+        return {"reply": reply, "task_id": tid, "provider": "built-in"}
+    if MORNING_RE.search(text) and len(text) < 60:
+        res = morning.send_now(user, SITES)
+        reply = res["title"] + "\n" + "\n".join(res["lines"])
+        BUSY[uid] = False
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="completed", detail="morning briefing")
         return {"reply": reply, "task_id": tid, "provider": "built-in"}
     mt = meeting.parse(text)
     if mt:
@@ -2019,6 +2029,23 @@ def nudge_done(p: dict = Body(...), user=Depends(auth)):
 def nudge_test(user=Depends(auth)):
     res = nudge.check(user, SITES, force=True) or {"sent": False, "items": 0}
     return dict(nudge.state(user, SITES), result=res)
+
+
+@app.get("/api/morning")
+def morning_get(user=Depends(auth)):
+    return morning.state(user)
+
+
+@app.post("/api/morning/prefs")
+def morning_prefs(p: dict = Body(...), user=Depends(auth)):
+    morning.save_prefs(user, p)
+    return morning.state(core.q("SELECT * FROM users WHERE id=?", (user["id"],), one=True))
+
+
+@app.post("/api/morning/now")
+def morning_now(user=Depends(auth)):
+    res = morning.send_now(user, SITES)
+    return dict(morning.state(user), result=res)
 
 
 @app.get("/api/call")
@@ -3674,6 +3701,10 @@ def background():
                     pass
                 try:
                     nudge.check(u, SITES, now)
+                except Exception:
+                    pass
+                try:
+                    morning.check(u, SITES, now)
                 except Exception:
                     pass
             try:

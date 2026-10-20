@@ -559,6 +559,18 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="ng-save">SAVE</button><button class="btn" id="ng-test">CHECK NOW</button></div>
     <div class="msg" id="ng-msg"></div>
   </div>
+  <div class="panel" id="mb-panel"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><b>Morning briefing</b><span class="pill" id="mb-pill"></span></div>
+    <div class="muted" style="font-size:13px">One friendly start-of-day rundown at the time you choose: what's waiting on you, a snapshot of your Gumroad store, and (if you like) the morning verse. Comes to the chat and your phone, and can be read aloud on a Google Home. Just say "morning briefing" any time.</div>
+    <label class="tickrow"><input type="checkbox" id="mb-on"><span><b>Send me a morning briefing</b></span></label>
+    <label class="field"><span>At</span><input type="time" id="mb-time" style="max-width:140px"></label>
+    <label class="tickrow"><input type="checkbox" id="mb-phone"><span><b>Also send it to my phone</b></span></label>
+    <label class="tickrow"><input type="checkbox" id="mb-store"><span><b>Include my Gumroad store snapshot</b></span></label>
+    <label class="tickrow"><input type="checkbox" id="mb-verse"><span><b>Include the morning Bible verse</b></span></label>
+    <label class="tickrow"><input type="checkbox" id="mb-speak"><span><b>Read it aloud on a Google Home</b></span></label>
+    <label class="field" id="mb-devbox" hidden><span>On this speaker (blank = all / default)</span><select id="mb-device" style="max-width:280px"></select></label>
+    <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="mb-save">SAVE</button><button class="btn" id="mb-now">SEND NOW</button></div>
+    <div class="msg" id="mb-msg"></div>
+  </div>
   <div class="panel" id="wt-panel"><b>Watch alerts</b>
     <div class="muted" style="font-size:13px">She posts a short notification on your phone and your watch shows it, the same way it shows WhatsApps. Nothing is installed on the watch. Alerts go to your own phone only.</div>
     <div class="msg" id="wt-state"></div>
@@ -1761,7 +1773,7 @@ async function loadPhonePage(){
   if(!S)return;fillPhoneSettings();const full=!!S.user.settings.phone_full_control;
   $('pp-cmds').innerHTML=PPC.filter(c=>!c[2]||full).map((c,i)=>`<button type="button" data-pc="${esc(c[1])}">${esc(c[0])}</button>`).join('')+(full?'':'<span class="muted" style="font-size:13px;align-self:center">Tick Full phone control below for Home, Back, volume and reading the screen.</span>');
   $('pp-cmds').querySelectorAll('[data-pc]').forEach(b=>b.onclick=()=>runHere(b.dataset.pc,$('pp-cmdmsg')));
-  ppUse();render();loadPhone();ulLoad();loadWA(true);loadContacts($('pp-cmsg'));wtLoad();mtLoad();ngLoad();vcLoad();loadCameras();
+  ppUse();render();loadPhone();ulLoad();loadWA(true);loadContacts($('pp-cmsg'));wtLoad();mtLoad();ngLoad();mbLoad();vcLoad();loadCameras();
 }
 async function loadCameras(){
   const adm=S&&S.user.is_admin;$('camadd').hidden=!adm;
@@ -2232,6 +2244,16 @@ function ngDraw(n){const p=n.prefs;$('ng-on').checked=p.on;$('ng-times').value=p
   $('ng-items').querySelectorAll('[data-ngd]').forEach(b=>b.onclick=async()=>{try{ngDraw(await (await api('/api/nudge/done',{json:{key:n.items[+b.dataset.ngd].key}})).json());}catch(e){}});}
 $('ng-save').onclick=async()=>{const m=$('ng-msg');try{ngDraw(await (await api('/api/nudge/prefs',{json:{on:$('ng-on').checked,times:$('ng-times').value,ring:$('ng-ring').checked,ring_from:$('ng-from').value,ring_to:$('ng-to').value}})).json());m.className='msg ok';m.textContent='Saved.';}catch(e){m.className='msg bad';m.textContent=e.message;}};
 $('ng-test').onclick=async()=>{const m=$('ng-msg');m.className='msg muted';m.textContent='Checking...';try{const r=await (await api('/api/nudge/test',{json:{}})).json();ngDraw(r);m.className='msg ok';m.textContent=r.result.items?'Sent '+r.result.items+' to your phone'+(r.result.phone?'':' (the phone did not answer; it is in the chat)')+'.':'Nothing is waiting on you.';}catch(e){m.className='msg bad';m.textContent=e.message;}};
+
+// ---------- morning briefing ----------
+async function mbLoad(){try{mbDraw(await (await api('/api/morning')).json());}catch(e){}}
+function mbDraw(n){const p=n.prefs;$('mb-on').checked=p.on;$('mb-time').value=p.time;$('mb-phone').checked=p.phone;$('mb-store').checked=p.store;$('mb-verse').checked=p.verse;$('mb-speak').checked=p.speak;
+  $('mb-pill').textContent=p.on?'on at '+p.time:'off';$('mb-pill').className='pill'+(p.on?' on':'');
+  const dev=$('mb-device');dev.innerHTML='<option value="">All / default</option>'+(n.cast_devices||[]).map(d=>`<option${d===p.device?' selected':''}>${esc(d)}</option>`).join('');
+  $('mb-devbox').hidden=!$('mb-speak').checked;}
+$('mb-speak')&&($('mb-speak').onchange=()=>{$('mb-devbox').hidden=!$('mb-speak').checked;});
+$('mb-save')&&($('mb-save').onclick=async()=>{const m=$('mb-msg');try{mbDraw(await (await api('/api/morning/prefs',{json:{on:$('mb-on').checked,time:$('mb-time').value,phone:$('mb-phone').checked,store:$('mb-store').checked,verse:$('mb-verse').checked,speak:$('mb-speak').checked,device:$('mb-device').value}})).json());m.className='msg ok';m.textContent='Saved.';}catch(e){m.className='msg bad';m.textContent=e.message;}});
+$('mb-now')&&($('mb-now').onclick=async()=>{const m=$('mb-msg');m.className='msg muted';m.textContent='Putting it together...';try{const r=await (await api('/api/morning/now',{json:{}})).json();mbDraw(r);const s=r.result.sent||{};m.className='msg ok';m.textContent='Sent to the chat'+(s.phone?' and your phone':'')+(s.spoken?' and the speaker':'')+'.';}catch(e){m.className='msg bad';m.textContent=e.message;}});
 
 // ---------- calls from trillion ----------
 let VC=null;
