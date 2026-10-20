@@ -15,6 +15,7 @@ WHAT WORKS IN THIS VERSION
 - Three logins (Pieter = owner, Brandon, Lewellyn), each with their own dashboard, branding,
   settings, keys, memory and history
 - Local brain through Ollama; type or hold the MIC button and speak
+- Cut her off while she's talking: tap the orb, press STOP, or hit Esc (in voice mode she goes straight back to listening)
 - Files and folders: list, find, read, write, copy, move, rename, open
 - Deleting files and running commands always wait for approval on the dashboard
 - Creates Word, Excel and PowerPoint files, and notes

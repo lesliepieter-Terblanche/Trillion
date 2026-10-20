@@ -1021,9 +1021,9 @@ function render(){
   $('stage').className='hero'+(S.busy?' busy':'')+(voiceOn&&!S.busy&&!talking?' listening':'');
   if(Date.now()<hold){}
   else if(S.busy&&prog[0]){$('kicker').textContent='NOW WORKING';$('big').textContent=prog[0].detail||'Thinking';$('sub').textContent=prog[0].title;}
-  else if(voiceOn&&!sending){$('kicker').textContent=talking?'SPEAKING':(vSpoke?'HEARING YOU':'LISTENING');$('big').textContent=talking?'Answering':(s.wake_word?'Say "'+(s.assistant_name||'Trillion')+'"':'Speak any time');$('sub').textContent=s.wake_word?'Wake word is on: start with my name. Untick VOICE to stop.':'Voice mode is on. Untick VOICE to stop.';}
+  else if(voiceOn&&!sending){$('kicker').textContent=talking?'SPEAKING':(vSpoke?'HEARING YOU':'LISTENING');$('big').textContent=talking?'Answering':(s.wake_word?'Say "'+(s.assistant_name||'Trillion')+'"':'Speak any time');$('sub').textContent=talking?'Tap the orb, press STOP or hit Esc to cut me off.':(s.wake_word?'Wake word is on: start with my name. Untick VOICE to stop.':'Voice mode is on. Untick VOICE to stop.');}
   else if(!sending){$('kicker').textContent='READY';$('big').textContent='Standing by';$('sub').textContent='Type below, or tick VOICE and just talk.';}
-  $('stop').hidden=!S.busy;
+  $('stop').hidden=!(S.busy||speaking());
   const ph=S.phone||{};
   if(!ph.linked){$('phsum').textContent='NOT LINKED';$('phsum').className='tag muted';$('phpanel').innerHTML='<div class="muted" style="font-size:14px">Link your phone on the Phone page.</div>';}
   else if(ph.pending){$('phsum').textContent='CHECKING';$('phsum').className='tag muted';$('phpanel').innerHTML='<div class="muted" style="font-size:14px">First reading is on its way.</div>';}
@@ -1175,16 +1175,29 @@ $('talk').onsubmit=e=>{e.preventDefault();
   if(sending)return;
   const ok=PEND.filter(a=>a.id);PEND.forEach(a=>a.url&&URL.revokeObjectURL(a.url));PEND=[];drawAtts();
   send($('say').value.trim(),false,ok);};
-$('stop').onclick=()=>api('/api/stop',{method:'POST'});
+$('stop').onclick=(e)=>{e.stopPropagation();if(speaking())stopSpeaking();if(S&&S.busy)api('/api/stop',{method:'POST'});};
+$('stage')&&($('stage').onclick=()=>{if(speaking())stopSpeaking();});   // tap the orb to cut her off
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&speaking())stopSpeaking();});
 $('clear').onclick=async()=>{await api('/api/messages/clear',{method:'POST'});loadChat();};
 
+// what's playing right now, so she can be cut off mid-sentence
+let curAudio=null,curEnd=null,curUrl=null;
+function speaking(){return !!(curAudio||curEnd||('speechSynthesis' in window&&speechSynthesis.speaking));}
+function stopSpeaking(){
+  try{if(curAudio){curAudio.onended=curAudio.onerror=null;curAudio.pause();curAudio.src='';}}catch(e){}
+  try{if(curUrl)URL.revokeObjectURL(curUrl);}catch(e){}curAudio=null;curUrl=null;
+  try{if('speechSynthesis' in window)speechSynthesis.cancel();}catch(e){}
+  const e=curEnd;curEnd=null;talking=false;stopBtn();if(e)e();   // resolve say() so voice mode goes back to listening
+}
+function stopBtn(){try{$('stop').hidden=!(speaking()||(S&&S.busy));}catch(e){}}
 function say(text){
   // resolves when she has finished speaking, so listening can pause meanwhile
   return new Promise(async done=>{
-    let finished=false;const end=()=>{if(!finished){finished=true;done();}};
+    let finished=false;const end=()=>{if(!finished){finished=true;curEnd=null;curAudio=null;stopBtn();done();}};
+    curEnd=end;$('stop').hidden=false;
     setTimeout(end,Math.min(240000,4000+text.length*90));
     try{const r=await api('/api/tts',{json:{text}});
-      if(r.status===200){const a=new Audio(URL.createObjectURL(await r.blob()));a.onended=end;a.onerror=end;a.play().catch(end);return;}}catch(e){}
+      if(r.status===200){curUrl=URL.createObjectURL(await r.blob());const a=new Audio(curUrl);curAudio=a;a.onended=end;a.onerror=end;a.play().catch(end);return;}}catch(e){}
     if('speechSynthesis' in window){speechSynthesis.cancel();
       // one sentence at a time: some browsers cut a long speech off part-way
       let parts=[text];try{parts=text.split(new RegExp('(?<=[.!?])\\s+')).filter(Boolean);}catch(e){}
