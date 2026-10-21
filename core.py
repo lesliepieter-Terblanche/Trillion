@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS notes(id INTEGER PRIMARY KEY, user_id INTEGER, title 
   domain TEXT DEFAULT 'PERSONAL', ts REAL, emb TEXT);
 CREATE TABLE IF NOT EXISTS usage(day TEXT, user_id INTEGER, provider TEXT, calls INTEGER DEFAULT 0,
   PRIMARY KEY(day, user_id, provider));
+CREATE TABLE IF NOT EXISTS steps(id INTEGER PRIMARY KEY, task_id INTEGER, ts REAL, kind TEXT, name TEXT, label TEXT DEFAULT '');
 """
 
 
@@ -241,6 +242,32 @@ def set_task(tid, status=None, detail=None):
                 fn(tid, status)
             except Exception:
                 pass
+
+
+def add_step(task_id, kind, name, label=""):
+    """Record one stop on a job's path (kind: model, skill, connector, tool). Consecutive identical
+    stops are collapsed, so the workflow reads as a clean chain rather than a flood of repeats."""
+    if not task_id:
+        return
+    name = (name or "")[:60]
+    try:
+        last = q("SELECT kind, name FROM steps WHERE task_id=? ORDER BY id DESC LIMIT 1", (task_id,), one=True)
+        if last and last["kind"] == kind and last["name"] == name:
+            return
+        x("INSERT INTO steps(task_id,ts,kind,name,label) VALUES(?,?,?,?,?)", (task_id, time.time(), kind, name, (label or "")[:140]))
+    except Exception:
+        pass
+
+
+def steps_for(task_id):
+    return [dict(r) for r in q("SELECT ts, kind, name, label FROM steps WHERE task_id=? ORDER BY id", (task_id,))]
+
+
+def prune_steps(keep_seconds=86400):
+    try:
+        x("DELETE FROM steps WHERE ts < ?", (time.time() - keep_seconds,))
+    except Exception:
+        pass
 
 
 def today():

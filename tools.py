@@ -228,6 +228,14 @@ def execute(user, name, args, task_id=None, approved=False, direct=False):
     try:
         if name not in {s["function"]["name"] for s in SPECS}:
             return {"error": f"Unknown tool {name}"}
+        if task_id:                                   # record this stop on the job's path for the workflow view
+            if name == "use_skill":
+                core.add_step(task_id, "skill", str(args.get("name") or args.get("skill") or "skill"), "reading skill")
+            elif name in ("connector_tools", "connector_call"):
+                core.add_step(task_id, "connector", str(args.get("connector") or "connector"),
+                              f"using {args.get('tool')}" if args.get("tool") else "checking")
+            else:
+                core.add_step(task_id, "tool", name, describe(name, args)[:120])
         if name == "run_command" and not user["is_admin"]:
             return {"error": "Only the owner login can run commands."}
         if name == "phone_shell" and not user["is_admin"]:

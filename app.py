@@ -87,7 +87,7 @@ for _u in core.q("SELECT * FROM users"):
                     core.x("UPDATE routines SET sections=? WHERE id=?", (json.dumps(_secs), _r["id"]))
 app = FastAPI(title="Trillion")
 COOKIE = "trillion"
-BUSY, STOP, SITES, LAST_PROVIDER = {}, set(), {}, {}
+BUSY, STOP, SITES, LAST_PROVIDER, LAST_MODEL = {}, set(), {}, {}, {}
 VERSION = tools.version()
 tools.RUNNING = VERSION
 
@@ -171,6 +171,7 @@ def llm_chat(user, messages, tool_specs=None, fast=False, live=False):
             r.raise_for_status()
             core.bump_usage(uid, brain)
             LAST_PROVIDER[uid] = brain
+            LAST_MODEL[uid] = f"{brain}: {s.get('cloud_model') or 'gemini-2.5-flash'}"
             return r.json()["choices"][0]["message"]
         except Exception as e:
             core.log(uid, f"Cloud brain ({brain}) failed, used the local one instead: {type(e).__name__}", "waiting")
@@ -202,6 +203,8 @@ def llm_chat(user, messages, tool_specs=None, fast=False, live=False):
             m["tool_calls"] = fixed
         m.pop("tool_call_id", None)
         native.append(m)
+    LAST_MODEL[uid] = model
+    LAST_PROVIDER[uid] = "local"
     req = {"model": model, "messages": native, "stream": True, "keep_alive": "4h",
            "options": {"num_ctx": 6144 if fast else int(s.get("context_size", 12288)), "temperature": 0.2}}
     if tool_specs:
@@ -1473,6 +1476,7 @@ def run_agent(user, text, files=None):
                 reply, status = "Stopped.", "failed"
                 break
             m = llm_chat(user, msgs, specs, fast=fast, live=True)
+            core.add_step(tid, "model", LAST_MODEL.get(uid, "local brain"), "thinking")
             calls = m.get("tool_calls") or []
             if not calls:
                 reply = (m.get("content") or "").strip() or "Done."
@@ -2576,6 +2580,31 @@ def stop(user=Depends(auth)):
     return {"ok": True}
 
 
+@app.get("/api/workflow")
+def workflow(user=Depends(auth)):
+    """Live view data: each running (or just-finished) job, its department, the model on it now, and the
+    ordered chain of stops it has taken through models, skills, connectors and tools."""
+    uid = user["id"]
+    dept = {"WORK": "Work", "PERSONAL": "Personal"}
+
+    def pack(t):
+        steps = core.steps_for(t["id"])
+        model = next((s["name"] for s in reversed(steps) if s["kind"] == "model"), "")
+        return {"id": t["id"], "title": t["title"], "detail": t["detail"], "status": t["status"],
+                "department": dept.get((t["domain"] or "").upper(), (t["domain"] or "General").title()),
+                "started": t["created"], "updated": t["updated"], "model": model, "steps": steps}
+
+    running = [pack(t) for t in core.q(
+        "SELECT * FROM tasks WHERE user_id=? AND status IN ('in_progress','waiting') ORDER BY id DESC", (uid,))]
+    for j in running:
+        if not j["model"]:
+            j["model"] = LAST_MODEL.get(uid, "local brain")
+    recent = [p for p in (pack(t) for t in core.q(
+        "SELECT * FROM tasks WHERE user_id=? AND status IN ('completed','failed') AND updated>=? ORDER BY id DESC LIMIT 8",
+        (uid, core.day_start()))) if p["steps"]]
+    return {"running": running, "recent": recent, "busy": bool(BUSY.get(uid)), "now": time.time()}
+
+
 @app.post("/api/tasks/clear")
 def tasks_clear(p: dict = Body(...), user=Depends(auth)):
     """Clear the job queue: one job, or everything stuck/failed/done. Cancelling a running job also
@@ -2601,6 +2630,10 @@ def tasks_clear(p: dict = Body(...), user=Depends(auth)):
         core.x("DELETE FROM tasks WHERE user_id=?", (uid,))
     else:
         return JSONResponse({"error": "Nothing to clear - pass an id or a scope."}, status_code=200)
+    try:
+        core.x("DELETE FROM steps WHERE task_id NOT IN (SELECT id FROM tasks)")   # drop the path of any job we just removed
+    except Exception:
+        pass
     return {"ok": True, "freed": freed}
 
 
@@ -3902,6 +3935,7 @@ def background():
             except Exception:
                 pass
             if now.hour == 23 and now.minute >= 30:
+                core.prune_steps()                    # drop old workflow trails
                 for u in core.q("SELECT * FROM users"):
                     s = core.settings(u)
                     if s.get("daily_review") and s.get("last_review") != core.today():
