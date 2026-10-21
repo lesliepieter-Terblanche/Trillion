@@ -272,6 +272,28 @@ PERSONA_HELLO = {"professional": "Understood. Professional mode from here on.",
 
 
 
+def _jobs_block(uid):
+    ds = core.day_start()
+    running = core.q("SELECT title, status, detail, created FROM tasks WHERE user_id=? AND status IN "
+                     "('in_progress','waiting') ORDER BY id DESC LIMIT 8", (uid,))
+    done_today = core.q("SELECT COUNT(*) c FROM tasks WHERE user_id=? AND status='completed' AND updated>=?",
+                        (uid, ds), one=True)["c"]
+    recent = core.q("SELECT title FROM tasks WHERE user_id=? AND status='completed' AND updated>=? ORDER BY id DESC LIMIT 6",
+                    (uid, ds))
+
+    def _ago(c):
+        mm = int((time.time() - c) // 60)
+        return f"{mm} min" if mm < 90 else f"{mm // 60} h"
+    if running:
+        lines = "\n".join(f"- {r['title']} — {r['detail'] or 'working on it'} (started {_ago(r['created'])} ago)"
+                          + (" [waiting for your OK on the dashboard]" if r["status"] == "waiting" else "")
+                          for r in running)
+    else:
+        lines = "- Nothing is running right now."
+    recent_line = ", ".join(r["title"] for r in recent) if recent else "nothing yet"
+    return f"{len(running)} job(s) running, {done_today} finished today.\n{lines}\nFinished today: {recent_line}."
+
+
 def system_prompt(user, text):
     s = core.settings(user)
     mem = tools.search_notes(user["id"], text, k=4)
@@ -292,11 +314,15 @@ How to work:
 - You can update your own software from GitHub with update_self (owner only).
 - On the user's phone, never confirm a payment or purchase, delete anything, or send a message by tapping unless the user asked for exactly that in this request.
 - When the user tells you a lasting fact or preference, save it with save_note.
+- When the user asks what you are working on, how a project or job is going, for progress, an update or feedback on one, answer from "What you are working on right now" below. Never say you don't know about your own projects - that list is the truth.
 - Always reply in English.
 - Replies are spoken aloud: keep them short and natural, no markdown, no lists.
 
 Your personality: {PERSONAS.get(s.get('personality'), PERSONAS['professional'])[1]}
 {PERSONA_RULE}
+
+What you are working on right now (use this to answer anything about your projects, progress or feedback):
+{_jobs_block(user['id'])}
 
 Relevant things you remember:
 {memory}
@@ -398,6 +424,12 @@ MORNING_RE = re.compile(r"\b(?:morning|daily|today'?s)\s+(?:brief(?:ing)?|rundow
                         r"|\bbrief\s+me\b|\bwhat'?s?\s+(?:my|on my)\s+(?:day|plate)\b", re.I)
 SCRAPE_RE = re.compile(r"\bscrape\b|\b(?:pull|grab|extract|harvest)\b.{0,50}\b(?:from|off)\b.{0,30}https?://"
                        r"|\bget\b.{0,40}\bfrom (?:this|the) (?:page|site|url|website)\b", re.I)
+PROJECTS_RE = re.compile(r"\bwhat(?:'?s| is| are)?\s+(?:you\s+)?(?:working on|running)\b"
+                         r"|\bwhat are you (?:doing|busy with)\b"
+                         r"|\b(?:my|the|any|your|current(?:ly)?)\s+(?:running\s+)?(?:projects?|jobs?)\b"
+                         r"|\bproject\s+(?:status|progress|update|feedback|list)\b"
+                         r"|\b(?:list|show)\b.{0,15}\b(?:projects?|jobs?)\b"
+                         r"|\brecall\b.{0,20}\bprojects?\b|\bany\s+(?:projects?|jobs?)\s+running\b", re.I)
 SCRAPE_URL_RE = re.compile(r"https?://[^\s,]+", re.I)
 PENDING_SCRAPE = {}          # uid -> {prompt, urls, mode, ts}
 
@@ -1140,6 +1172,19 @@ def run_agent(user, text, files=None):
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="completed", detail="morning briefing")
         return {"reply": reply, "task_id": tid, "provider": "built-in"}
+    if PROJECTS_RE.search(text) and len(text) < 80 and not NEEDS_TOOLS.search(text):
+        ds = core.day_start()
+        running = core.q("SELECT title, status, detail FROM tasks WHERE user_id=? AND status IN "
+                         "('in_progress','waiting') ORDER BY id DESC LIMIT 8", (uid,))
+        done_today = core.q("SELECT COUNT(*) c FROM tasks WHERE user_id=? AND status='completed' AND updated>=?",
+                            (uid, ds), one=True)["c"]
+        if running:
+            parts = "; ".join(f"{r['title']} — {r['detail'] or 'working on it'}"
+                              + (" (waiting for your OK)" if r["status"] == "waiting" else "") for r in running)
+            reply = f"You have {len(running)} running: {parts}. {done_today} finished today."
+        else:
+            reply = f"Nothing is running right now. {done_today} finished today."
+        return _chat_reply(uid, tid, reply)
     sc = scrape_chat(user, uid, tid, text)
     if sc is not None:
         return sc
