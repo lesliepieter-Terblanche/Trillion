@@ -1071,15 +1071,17 @@ function render(){
   if(ph.linked&&!ph.pending&&!ph.ok)probs.push({t:'Phone not reachable',s:ph.error||''});
   if(S.tailscale&&S.tailscale.installed&&!S.tailscale.running)probs.push({t:'Tailscale is not connected',s:'Remote access will not work until it is.'});
   if(S.hearing&&S.hearing!=='ready'&&S.hearing!=='loading')probs.push({t:'Hearing is not available',s:String(S.hearing)});
-  failed.forEach(t=>probs.push({t:'Did not finish: '+t.title,s:(t.detail||'')+' · '+hm(t.created)}));
+  failed.forEach(t=>probs.push({t:'Did not finish: '+t.title,s:(t.detail||'')+' · '+hm(t.created),id:t.id}));
   const N={wait:S.approvals.length,run:prog.length,done:doneT.length,prob:probs.length};
   for(const k in N){$('t-'+k).textContent=N[k];const b=document.querySelector('#htiles [data-t="'+k+'"]');b.classList.toggle('hot',N[k]>0);b.classList.toggle('on',TILE===k);}
   const li=(t,sub)=>`<div class="row"><div>${esc(t)}${sub?`<small>${esc(sub)}</small>`:''}</div></div>`;
+  const lic=(t,sub,id,word)=>`<div class="row"><div>${esc(t)}${sub?`<small>${esc(sub)}</small>`:''}</div>${id!=null?`<button class="btn" data-tc="${id}" style="min-height:32px;font-size:12px;opacity:.75">${word||'Clear'}</button>`:''}</div>`;
+  const clrAll=(scope,word)=>`<button class="btn" data-tcs="${scope}" style="min-height:30px;font-size:12px;opacity:.7;margin-left:8px">${word}</button>`;
   $('hlist').hidden=!TILE;
   if(TILE==='wait')$('hlist').innerHTML='<b>Waiting on you</b>'+(S.approvals.map(a=>`<div class="wait"><b>${esc(a.summary)}</b><div class="two"><button class="btn red" data-a="${a.id}" data-d="approve">Approve</button><button class="btn" data-a="${a.id}" data-d="decline">Decline</button></div></div>`).join('')||'<div class="muted">Nothing needs you right now.</div>');
-  else if(TILE==='run')$('hlist').innerHTML='<b>Running now</b>'+(prog.map(t=>li(t.title,t.detail)).join('')||'<div class="muted">Nothing is running.</div>');
-  else if(TILE==='done')$('hlist').innerHTML='<b>Done today</b>'+(doneT.slice(0,25).map(t=>li(t.title,hm(t.created))).join('')||'<div class="muted">Nothing finished yet today.</div>');
-  else if(TILE==='prob')$('hlist').innerHTML='<b>Problems</b>'+(probs.map(x=>li(x.t,x.s)).join('')||'<div class="ok">No problems. Everything is working.</div>');
+  else if(TILE==='run')$('hlist').innerHTML='<b>Running now'+(prog.length?clrAll('running','Stop & clear all'):'')+'</b>'+(prog.map(t=>lic(t.title,t.detail,t.id,'Cancel')).join('')||'<div class="muted">Nothing is running.</div>');
+  else if(TILE==='done')$('hlist').innerHTML='<b>Done today'+(doneT.length?clrAll('done','Clear'):'')+'</b>'+(doneT.slice(0,25).map(t=>lic(t.title,hm(t.created),t.id)).join('')||'<div class="muted">Nothing finished yet today.</div>');
+  else if(TILE==='prob')$('hlist').innerHTML='<b>Problems'+(failed.length?clrAll('problems','Clear failed jobs'):'')+'</b>'+(probs.map(x=>lic(x.t,x.s,x.id)).join('')||'<div class="ok">No problems. Everything is working.</div>');
   const dot=(k,ok,label)=>`<button type="button" data-s="${k}"><span class="dot ${ok===true?'ok':(ok===false?'bad':'')}"></span>${label}</button>`;
   $('more').innerHTML=dot('brain',S.models.ok,'BRAIN')+dot('pc',v.cpu<92,'PC '+v.cpu.toFixed(0)+'%')
     +dot('phone',!ph.linked||ph.pending?null:!!ph.ok,'PHONE'+(ph.linked&&ph.ok&&ph.battery_percent!==undefined?' '+ph.battery_percent+'%':(ph.linked?'':' NOT LINKED')))
@@ -1091,6 +1093,8 @@ function render(){
   if($('pp-stats')&&VIEW==='phone')$('pp-stats').innerHTML=ph.linked?$('phpanel').innerHTML.replace('id="phnow"','id="phnow2"'):'<div class="muted">No phone is linked yet. Use the Link box on this page.</div>';
   {const b2=$('phnow2');if(b2)b2.onclick=async()=>{b2.disabled=true;b2.textContent='READING...';try{await api('/api/phone/refresh',{method:'POST'});}catch(e){}tick();};}
   document.querySelectorAll('[data-a]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await api('/api/approvals/'+b.dataset.a,{json:{decision:b.dataset.d}});}catch(e){alertMsg(e.message)}tick();});
+  document.querySelectorAll('[data-tc]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await api('/api/tasks/clear',{json:{id:+b.dataset.tc}});}catch(e){alertMsg(e.message);}tick();});
+  document.querySelectorAll('[data-tcs]').forEach(b=>b.onclick=async()=>{const sc=b.dataset.tcs;if(sc==='running'&&!confirm('Stop and clear everything running now?'))return;b.disabled=true;try{await api('/api/tasks/clear',{json:{scope:sc}});}catch(e){alertMsg(e.message);}tick();});
   $('prog').innerHTML=prog.map(t=>`<div class="next">${esc(t.title)}</div>`).join('')||'<div class="muted" style="font-size:14px">Nothing running.</div>';
   $('done').textContent=done.length;
   const col={in_progress:'var(--blue)',waiting:'var(--red)',completed:'var(--green)',failed:'var(--mute)'};

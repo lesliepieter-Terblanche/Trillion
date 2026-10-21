@@ -2572,7 +2572,36 @@ def selfcheck_get(user=Depends(admin)):
 @app.post("/api/stop")
 def stop(user=Depends(auth)):
     STOP.add(user["id"])
+    BUSY[user["id"]] = False      # also free the lock, in case the worker already died and left it stuck
     return {"ok": True}
+
+
+@app.post("/api/tasks/clear")
+def tasks_clear(p: dict = Body(...), user=Depends(auth)):
+    """Clear the job queue: one job, or everything stuck/failed/done. Cancelling a running job also
+    breaks its loop (STOP) and frees the 'busy' lock so new work can start - the fix for a stuck queue."""
+    uid = user["id"]
+    tid = p.get("id")
+    scope = (p.get("scope") or "").lower()
+    freed = False
+    if tid is not None:
+        row = core.q("SELECT status FROM tasks WHERE id=? AND user_id=?", (int(tid), uid), one=True)
+        if row and row["status"] in ("in_progress", "waiting"):
+            STOP.add(uid); BUSY[uid] = False; freed = True
+        core.x("DELETE FROM tasks WHERE id=? AND user_id=?", (int(tid), uid))
+    elif scope == "running":
+        STOP.add(uid); BUSY[uid] = False; freed = True
+        core.x("DELETE FROM tasks WHERE user_id=? AND status IN ('in_progress','waiting')", (uid,))
+    elif scope == "problems":
+        core.x("DELETE FROM tasks WHERE user_id=? AND status='failed'", (uid,))
+    elif scope == "done":
+        core.x("DELETE FROM tasks WHERE user_id=? AND status='completed'", (uid,))
+    elif scope == "all":
+        STOP.add(uid); BUSY[uid] = False; freed = True
+        core.x("DELETE FROM tasks WHERE user_id=?", (uid,))
+    else:
+        return JSONResponse({"error": "Nothing to clear - pass an id or a scope."}, status_code=200)
+    return {"ok": True, "freed": freed}
 
 
 @app.post("/api/approvals/{aid}")
