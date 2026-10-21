@@ -64,6 +64,7 @@ import meeting
 import nudge
 import morning
 import scrape
+import evolve
 import voicecall
 gumroad.init()
 routines.init()
@@ -2614,6 +2615,29 @@ def workflow(user=Depends(auth)):
     return {"running": running, "recent": recent, "busy": bool(BUSY.get(uid)), "now": time.time()}
 
 
+@app.get("/api/evolve")
+def evolve_get(user=Depends(auth)):
+    return evolve.state(user)
+
+
+@app.post("/api/evolve/apply")
+def evolve_apply(p: dict = Body(...), user=Depends(auth)):
+    evolve.apply(user, int(p.get("id")))
+    return evolve.state(user)
+
+
+@app.post("/api/evolve/dismiss")
+def evolve_dismiss(p: dict = Body(...), user=Depends(auth)):
+    evolve.dismiss(user, int(p.get("id")))
+    return evolve.state(user)
+
+
+@app.post("/api/evolve/auto")
+def evolve_auto(p: dict = Body(...), user=Depends(auth)):
+    evolve.set_auto(user, bool(p.get("on")))
+    return evolve.state(core.q("SELECT * FROM users WHERE id=?", (user["id"],), one=True))
+
+
 @app.post("/api/tasks/clear")
 def tasks_clear(p: dict = Body(...), user=Depends(auth)):
     """Clear the job queue: one job, or everything stuck/failed/done. Cancelling a running job also
@@ -3947,11 +3971,16 @@ def background():
                 core.prune_steps()                    # drop old workflow trails
                 for u in core.q("SELECT * FROM users"):
                     s = core.settings(u)
-                    if s.get("daily_review") and s.get("last_review") != core.today():
+                    if s.get("last_review") != core.today():
                         s["last_review"] = core.today()
                         core.save_settings(u["id"], s)
+                        if s.get("daily_review"):
+                            try:
+                                daily_review(u)          # learn lasting knowledge from the day
+                            except Exception:
+                                pass
                         try:
-                            daily_review(u)
+                            evolve.suggest(u, llm_chat)  # spot what to automate; apply safe ones if allowed
                         except Exception:
                             pass
         except Exception:

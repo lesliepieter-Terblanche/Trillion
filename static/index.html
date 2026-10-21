@@ -465,6 +465,12 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
   <div class="muted" id="wfnote">What Trillion is working on right now - and the path each job takes through your local brain, skills and connectors, live.</div>
   <div id="wf-running" style="margin-top:10px"></div>
   <div id="wf-recent"></div>
+  <div class="panel" id="ev-panel" style="margin-top:14px"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><b>Learning &amp; automation</b>
+    <label class="tickrow" style="margin:0"><input type="checkbox" id="ev-auto"><span style="font-size:13px">Switch on safe automations by herself</span></label></div>
+    <div class="muted" style="font-size:13px">Every night Trillion learns from the day's conversations and looks for things you do by hand that she could take over. Safe, reversible ones (a morning briefing, check-ins) she can switch on herself if you allow it above; anything that sends, pays or deletes always waits for you.</div>
+    <div id="ev-suggest" style="display:flex;flex-direction:column;gap:8px;margin-top:8px"></div>
+    <div id="ev-learned" style="margin-top:10px"></div>
+  </div>
 </div>
 
 <div class="view" id="v-projects">
@@ -2327,8 +2333,15 @@ function wfDraw(d){
   $('wf-running').innerHTML=(d.running&&d.running.length)?d.running.map(j=>wfJob(j,false)).join(''):'<div class="muted">Nothing running right now. Give Trillion a job and watch it flow through here, live.</div>';
   $('wf-recent').innerHTML=(d.recent&&d.recent.length)?'<h3 style="margin:18px 0 6px">Just finished</h3>'+d.recent.map(j=>wfJob(j,true)).join(''):'';
   $('wf-running').querySelectorAll('[data-tc]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await api('/api/tasks/clear',{json:{id:+b.dataset.tc}});}catch(e){}wfLoad();});}
-async function wfLoad(){try{wfDraw(await (await api('/api/workflow')).json());}catch(e){}
+async function wfLoad(){try{wfDraw(await (await api('/api/workflow')).json());}catch(e){}evLoad();
   clearInterval(wfTimer);wfTimer=setInterval(async()=>{if(VIEW!=='workflow'){clearInterval(wfTimer);return;}try{wfDraw(await (await api('/api/workflow')).json());}catch(e){}},2500);}
+async function evLoad(){try{evDraw(await (await api('/api/evolve')).json());}catch(e){}}
+function evDraw(d){$('ev-auto').checked=!!d.auto;
+  $('ev-suggest').innerHTML=(d.suggestions&&d.suggestions.length)?d.suggestions.map(s=>`<div class="row"><div><b>${esc(s.title)}</b>${s.detail?`<small>${esc(s.detail)}${s.kind==='tip'&&s.say?' — say: "'+esc(s.say)+'"':''}</small>`:''}</div><div class="two">${s.kind!=='tip'?`<button class="btn pri" data-eva="${s.id}" style="min-height:32px;font-size:12px">Set it up</button>`:`<button class="btn" data-eva="${s.id}" style="min-height:32px;font-size:12px">Got it</button>`}<button class="btn" data-evd="${s.id}" style="min-height:32px;font-size:12px;opacity:.6">Dismiss</button></div></div>`).join(''):'<div class="muted" style="font-size:13px">No automation ideas yet — she proposes them as patterns show up, usually after a few days of use.</div>';
+  const L=d.learned||[];$('ev-learned').innerHTML=L.length?'<div class="muted" style="font-size:12px;margin-bottom:4px">Recently learned</div>'+L.slice(0,6).map(x=>`<div class="row"><div>${esc(x.title.replace(/^Learned /,''))}${x.body?`<small>${esc(x.body)}</small>`:''}</div></div>`).join(''):'';
+  $('ev-suggest').querySelectorAll('[data-eva]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{evDraw(await (await api('/api/evolve/apply',{json:{id:+b.dataset.eva}})).json());}catch(e){}});
+  $('ev-suggest').querySelectorAll('[data-evd]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{evDraw(await (await api('/api/evolve/dismiss',{json:{id:+b.dataset.evd}})).json());}catch(e){}});}
+$('ev-auto')&&($('ev-auto').onchange=async()=>{try{evDraw(await (await api('/api/evolve/auto',{json:{on:$('ev-auto').checked}})).json());}catch(e){}});
 
 // ---------- scrape a site ----------
 let scRows=null;

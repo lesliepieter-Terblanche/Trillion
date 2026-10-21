@@ -19,6 +19,7 @@ WHAT WORKS IN THIS VERSION
 - Clear the job queue from the Home tiles: Cancel a stuck running job (frees her to work again), or Clear failed/finished jobs; STOP also frees a stuck "busy" lock
 - Workflow page: watch what's running live - each job shows its department and the path it takes through your local brain, skills, connectors and tools, with the current step pulsing; Cancel a job from there too
 - A project is only something she DID (used a tool, sent, made, called, scraped, ran). Just chatting or asking a question is not a project and never clutters the queue, tiles or workflow
+- She evolves daily: every night she learns lasting knowledge from the whole day's conversation (on by default), AND looks for things you do by hand that she could automate. Safe, reversible automations (morning briefing, check-ins) she can switch on herself if you allow it on the Workflow page; anything that sends, pays or deletes always waits for your OK
 - Files and folders: list, find, read, write, copy, move, rename, open
 - Deleting files and running commands always wait for approval on the dashboard
 - Creates Word, Excel and PowerPoint files, and notes

@@ -29,6 +29,7 @@ DEFAULT_SETTINGS = {
     "roots": [],                   # folders this login may touch; ["*"] = whole PC
     "personality": "professional", # professional | warm | witty
     "daily_review": True,
+    "auto_evolve": False,
     "phone_full_control": False,   # read the screen, tap, type, swipe: off until the login switches it on
     "quick_actions": ["whatsapp", "ring", "find", "briefing", "video", "openwa"],   # the buttons on this login's home screen
     "phone_auto_unlock": False,        # unlock the phone by herself with the saved code when a command needs it
