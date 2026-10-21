@@ -895,6 +895,13 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <div class="bad" style="font-size:13px">On your X55 reads work; blocking and reboots depend on the firmware and may be app-only. Changes are off until you tick the boxes.</div>
     <div><button class="btn pri" id="dc-save" style="min-height:40px">SAVE DECO</button> <span class="msg" id="dc-msg"></span></div>
   </div>
+  <div class="panel" id="empanel" hidden style="margin-top:10px"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><b>Emergent.sh (your apps)</b><span class="pill" id="em-pill"></span></div>
+    <div class="muted" style="font-size:13px">Lets Trillion manage your Emergent apps (like TrueHome): list your projects and build status, start a build from a prompt, answer the build agent, wake a sleeping app, get the live preview and screenshots, and check your credit balance. Uses your Emergent login; the password is kept encrypted on this PC. Then just ask, e.g. "list my emergent projects" or "how's my TrueHome build". Note: starting a build spends your Emergent credits.</div>
+    <label class="field"><span>Emergent email</span><input id="em-email" placeholder="you@example.com" autocomplete="off" inputmode="email"></label>
+    <label class="field"><span>Emergent password</span><input id="em-pw" type="password" placeholder="leave blank to keep the saved one"></label>
+    <div class="muted" style="font-size:12px">This is a community connector (@openclaw/emergent-mcp). It's fetched on first use and signs in to your Emergent account; it isn't made by Emergent.</div>
+    <div><button class="btn pri" id="em-save" style="min-height:40px">SAVE EMERGENT</button> <span class="msg" id="em-msg"></span></div>
+  </div>
 </div>
 
 <div class="view" id="v-settings">
@@ -1553,8 +1560,18 @@ async function loadSkills(){
     try{const r=await (await api('/api/connectors/'+b.dataset.cnt+'/test',{method:'POST'})).json();m.className='msg '+(r.ok?'ok':'bad');m.textContent=r.ok?'Works. It gives her '+r.tools.length+' tools: '+r.tools.slice(0,12).join(', ')+(r.tools.length>12?' ...':''):r.error;}catch(e){m.className='msg bad';m.textContent=e.message;}});
   if(adm){$('cncat').innerHTML=(cn.catalog||[]).map(c=>`<div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:10px"><div style="flex:1;min-width:200px"><b>${esc(c.name)}</b><div class="muted" style="font-size:13px">${esc(c.description)} Needs ${esc(c.needs)}.</div></div><button class="btn pri" data-cat="${esc(c.key)}">ADD</button></div>`).join('');
     document.querySelectorAll('[data-cat]').forEach(b=>b.onclick=async()=>{try{await api('/api/connectors',{json:{catalog:b.dataset.cat}});loadSkills();}catch(e){$('cnmsg').textContent=e.message;}});}
-  if(adm){$('decopanel').hidden=false;loadDeco();}
+  if(adm){$('decopanel').hidden=false;loadDeco();$('empanel').hidden=false;loadEmergent();}
 }
+async function loadEmergent(){
+  try{const d=await (await api('/api/emergent')).json();
+    $('em-email').value=d.email||'';
+    const m=$('em-msg');if(d.configured){m.className='msg ok';m.textContent=d.has_password?'Connected as '+(d.email||'your account')+'. Ask me "list my emergent projects".':'Email saved, but no password yet - add it below.';}else{m.className='msg muted';m.textContent='Not set up yet.';}
+  }catch(e){}
+}
+$('em-save')&&($('em-save').onclick=async()=>{const m=$('em-msg');m.className='msg muted';m.textContent='Saving...';
+  try{const d=await (await api('/api/emergent',{json:{email:$('em-email').value,password:$('em-pw').value}})).json();
+    $('em-pw').value='';m.className='msg ok';m.textContent=d.has_password?'Saved. Try "list my emergent projects" or "how many emergent credits do I have".':'Saved the email. Now enter your Emergent password and save again.';loadSkills();
+  }catch(e){m.className='msg bad';m.textContent=e.message;}});
 async function loadDeco(){
   try{const d=await (await api('/api/deco')).json();
     $('dc-host').value=d.host||'192.168.68.1';$('dc-write').checked=!!d.allow_write;$('dc-danger').checked=!!d.allow_dangerous;

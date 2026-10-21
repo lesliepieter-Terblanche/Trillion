@@ -149,6 +149,16 @@ the time, the speaker, and whether to include the store and verse). Or just say 
 the PC. (This is the "good morning, here's your day" counterpart to the check-ins, which chase you when
 something needs you.)
 
+EMERGENT.SH (manage your apps, Websites/Connectors page)
+Trillion can manage your Emergent.sh apps (like TrueHome): list your projects and their build status, start
+a build from a prompt and wait for it, answer the build agent's questions, wake a sleeping app, get the live
+preview and screenshots, and check your credit balance. Set it up under Skills -> Connectors -> "Emergent.sh"
+(owner only): enter your Emergent email and password - the password is kept ENCRYPTED on the PC, never in
+plain text. Then just ask, e.g. "list my emergent projects", "how's my TrueHome build", "how many emergent
+credits do I have". It uses the community @openclaw/emergent-mcp server (fetched on first use, signs in to
+your Emergent account - not made by Emergent). Note: starting a build spends your Emergent credits, so she
+only builds when you ask.
+
 YOUR WI-FI (TP-Link Deco)
 Trillion can manage your TP-Link Deco mesh over the local network - no TP-Link cloud account, nothing
 leaves the PC. Set it up on the Skills page under Connectors > "TP-Link Deco": enter the Deco address

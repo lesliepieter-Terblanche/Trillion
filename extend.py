@@ -444,11 +444,15 @@ def connector_env(row):
     """The environment this connector runs with: its saved settings, plus any secret injected at start time
     (the Deco admin password is kept in the encrypted key store, never in the connectors table)."""
     env = {str(k): str(v) for k, v in _row_env(row).items()}
+    owner = core.q("SELECT id FROM users WHERE is_admin=1 ORDER BY id LIMIT 1", one=True)
     if row["name"] == DECO_NAME:
-        owner = core.q("SELECT id FROM users WHERE is_admin=1 ORDER BY id LIMIT 1", one=True)
         pw = core.get_secret(owner["id"], "deco_password") if owner else None
         if pw:
             env["DECO_PASSWORD"] = pw
+    if row["name"] == EMERGENT_NAME:
+        pw = core.get_secret(owner["id"], "emergent_password") if owner else None
+        if pw:
+            env["EMERGENT_PASSWORD"] = pw
     return env
 
 
@@ -531,6 +535,50 @@ def deco_status(owner):
             "host": env.get("DECO_HOST", "192.168.68.1"),
             "allow_write": env.get("DECO_ALLOW_WRITE") == "1",
             "allow_dangerous": env.get("DECO_ALLOW_DANGEROUS") == "1"}
+
+
+# =====================================================================================
+# Emergent.sh: manage your Emergent apps (community @openclaw/emergent-mcp, run via npx)
+# =====================================================================================
+EMERGENT_NAME = "Emergent"
+EMERGENT_DESC = ("Manage your Emergent.sh apps: list your projects and their build status, start a build from a "
+                 "prompt and wait for it, answer the build agent's questions, wake a sleeping app, get the live "
+                 "preview and screenshots, and check your credit balance. Uses your Emergent login; the password "
+                 "is kept in the encrypted key store. Owner only. Note: building spends your Emergent credits. "
+                 "(community server @openclaw/emergent-mcp)")
+
+
+def emergent_row():
+    return core.q("SELECT * FROM connectors WHERE name=?", (EMERGENT_NAME,), one=True)
+
+
+def setup_emergent(owner, email=None, password=None):
+    """Create or update the Emergent connector. The password (if given) goes to the encrypted key store, never
+    the DB; the email is stored as a plain setting. Runs the community MCP via npx (fetched on first use)."""
+    env = {"EMERGENT_EMAIL": (email or (_row_env(emergent_row()) if emergent_row() else {}).get("EMERGENT_EMAIL", "")).strip()}
+    cmd = "npx -y @openclaw/emergent-mcp"
+    row = emergent_row()
+    if row:
+        core.x("UPDATE connectors SET command=?, env=?, description=? WHERE id=?",
+               (cmd, json.dumps(env), EMERGENT_DESC, row["id"]))
+        cid = row["id"]
+        core.x("INSERT OR IGNORE INTO connector_access(connector_id,user_id,enabled) VALUES(?,?,1)", (cid, owner["id"]))
+    else:
+        cid = add_connector(EMERGENT_NAME, EMERGENT_DESC, cmd, owner["id"], env=env)
+    if password:
+        core.set_secret(owner["id"], "emergent_password", password)
+    live = LIVE.pop(cid, None)          # restart so the new email/password take effect
+    if live:
+        live.stop()
+    return cid
+
+
+def emergent_status(owner):
+    row = emergent_row()
+    env = _row_env(row) if row else {}
+    return {"configured": bool(row),
+            "has_password": bool(core.get_secret(owner["id"], "emergent_password")),
+            "email": env.get("EMERGENT_EMAIL", "")}
 
 
 def remove_connector(cid):

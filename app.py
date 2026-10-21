@@ -3879,6 +3879,18 @@ def deco_set(p: dict = Body(...), user=Depends(admin)):
     return extend.deco_status(user)
 
 
+@app.get("/api/emergent")
+def emergent_get(user=Depends(admin)):
+    return extend.emergent_status(user)
+
+
+@app.post("/api/emergent")
+def emergent_set(p: dict = Body(...), user=Depends(admin)):
+    extend.setup_emergent(user, (p.get("email") or "").strip() or None, (p.get("password") or "").strip() or None)
+    core.log(user["id"], "Emergent.sh connector set up", "done")
+    return extend.emergent_status(user)
+
+
 # ---------- owner view ----------
 @app.get("/api/admin/family")
 def family(user=Depends(admin)):
