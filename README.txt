@@ -18,6 +18,7 @@ WHAT WORKS IN THIS VERSION
 - Cut her off while she's talking: tap the orb, press STOP, or hit Esc (in voice mode she goes straight back to listening)
 - Clear the job queue from the Home tiles: Cancel a stuck running job (frees her to work again), or Clear failed/finished jobs; STOP also frees a stuck "busy" lock
 - Workflow page: watch what's running live - each job shows its department and the path it takes through your local brain, skills, connectors and tools, with the current step pulsing; Cancel a job from there too
+- A project is only something she DID (used a tool, sent, made, called, scraped, ran). Just chatting or asking a question is not a project and never clutters the queue, tiles or workflow
 - Files and folders: list, find, read, write, copy, move, rename, open
 - Deleting files and running commands always wait for approval on the dashboard
 - Creates Word, Excel and PowerPoint files, and notes

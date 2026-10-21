@@ -428,6 +428,16 @@ def _builtin_reply(uid, tid, reply, detail=""):
     return {"reply": reply, "task_id": tid, "provider": "built-in"}
 
 
+def _chat_reply(uid, tid, reply):
+    """For a built-in that just answers a question (version, what's-outstanding, a report): it's a chat,
+    not a project, so drop the task row it was given."""
+    BUSY[uid] = False
+    core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+    core.x("DELETE FROM tasks WHERE id=?", (tid,))
+    core.x("DELETE FROM steps WHERE task_id=?", (tid,))
+    return {"reply": reply, "task_id": None, "provider": "built-in"}
+
+
 def _scrape_table(data):
     """Render a scrape result as a markdown table when it's row-like, else pretty JSON."""
     rows = None
@@ -1121,11 +1131,7 @@ def run_agent(user, text, files=None):
         core.set_task(tid, status="completed", detail=reply[:200])
         return {"reply": reply, "task_id": tid, "provider": "built-in"}
     if nudge.ASK.search(text) and len(text) < 90:
-        reply = nudge.answer(user, SITES)
-        BUSY[uid] = False
-        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
-        core.set_task(tid, status="completed", detail=reply[:200])
-        return {"reply": reply, "task_id": tid, "provider": "built-in"}
+        return _chat_reply(uid, tid, nudge.answer(user, SITES))
     if MORNING_RE.search(text) and len(text) < 60:
         res = morning.send_now(user, SITES)
         reply = res["title"] + "\n" + "\n".join(res["lines"])
@@ -1171,10 +1177,7 @@ def run_agent(user, text, files=None):
         reply = (f"I am running version {VERSION}. WhatsApps to saved contacts: "
                  + ("sent straight away, no approval." if st.get("whatsapp_auto_contacts") else "wait for your approval (switch is off on the Phone page).")
                  + " Full phone control: " + ("on." if st.get("phone_full_control") else "off."))
-        BUSY[uid] = False
-        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
-        core.set_task(tid, status="completed", detail=reply[:200])
-        return {"reply": reply, "task_id": tid, "provider": "built-in"}
+        return _chat_reply(uid, tid, reply)
     if UPDATE_RE.search(text):  # never leave this one to the model's judgement
         res = tools.execute(user, "update_self", {}, task_id=tid)
         reply = update_reply(res)
@@ -1257,9 +1260,7 @@ def run_agent(user, text, files=None):
         parts.append("")
         parts.append("Open the Skills page to see this with Uninstall buttons, or tell me 'remove the skill <name>'.")
         reply = "\n".join(parts) if rep["skills"] or rep["connectors"] else "You have no installed skills or connectors yet."
-        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
-        core.set_task(tid, status="completed", detail="Usage audit")
-        return {"reply": reply, "task_id": tid, "provider": "built-in"}
+        return _chat_reply(uid, tid, reply)
     if user["is_admin"] and SELFCHECK_RE.search(text) and not files:
         res = selfcheck.run(user, SITES, HEARING, TAILSCALE)
         BUSY[uid] = False
@@ -1469,15 +1470,17 @@ def run_agent(user, text, files=None):
     LIVE.pop(uid, None)
     msgs = [{"role": "system", "content": system_prompt(user, text) + (
         "\n\nThis turn is a plain question: you have no tools now. Just answer it, briefly and directly." if fast else "")}] + [dict(h) for h in hist]
-    status, waiting, reply = "completed", False, ""
+    status, waiting, reply, used_tools = "completed", False, "", False
     try:
         for _ in range(10):
             if uid in STOP:
                 reply, status = "Stopped.", "failed"
                 break
             m = llm_chat(user, msgs, specs, fast=fast, live=True)
-            core.add_step(tid, "model", LAST_MODEL.get(uid, "local brain"), "thinking")
             calls = m.get("tool_calls") or []
+            if calls:
+                used_tools = True
+                core.add_step(tid, "model", LAST_MODEL.get(uid, "local brain"), "thinking")
             if not calls:
                 reply = (m.get("content") or "").strip() or "Done."
                 break
@@ -1516,7 +1519,13 @@ def run_agent(user, text, files=None):
     if file_notes:
         reply = (reply + "\n\n" + " ".join(file_notes)).strip()
     core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
-    core.set_task(tid, status="waiting" if waiting and status == "completed" else status, detail=reply[:200])
+    if not used_tools and status == "completed":
+        # a normal chat (she just answered, did nothing) is not a project - keep it out of the queue and tiles
+        core.x("DELETE FROM tasks WHERE id=?", (tid,))
+        core.x("DELETE FROM steps WHERE task_id=?", (tid,))
+        tid = None
+    else:
+        core.set_task(tid, status="waiting" if waiting and status == "completed" else status, detail=reply[:200])
     core.log(uid, f"Answered by {LAST_PROVIDER.get(uid, 'local')}", "info")
     return {"reply": reply, "task_id": tid, "provider": LAST_PROVIDER.get(uid, "local")}
 
