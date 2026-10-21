@@ -8,7 +8,7 @@ import re, json, time, html, datetime, ipaddress
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from email.utils import parsedate_to_datetime
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote as _urlquote
 from xml.etree import ElementTree as ET
 
 import httpx
@@ -502,6 +502,45 @@ def sec_news(user, cfg, ctx):
             "lines": [{"t": i["title"], "s": i["src"], "href": i["link"]} for i in mixed[:8]]}
 
 
+# a request that names a subject: "news on the war", "latest on load shedding", "what's happening with X"
+NEWS_TOPIC = re.compile(
+    r"\bnews\b(?:[^.?!]*?)\b(?:on|about|regarding|concerning|around|re)\b\s+(.+?)[?.!]*$"
+    r"|\b(?:latest|update[sd]?|what'?s(?:\s+the)?\s+latest)\b\s+(?:news\s+)?(?:on|about|with|regarding)\s+(.+?)[?.!]*$"
+    r"|\bwhat'?s\s+(?:happening|going on|new)\s+(?:with|in|on|about)\s+(.+?)[?.!]*$", re.I)
+
+
+def _news_topic(text):
+    m = NEWS_TOPIC.search(text or "")
+    if not m:
+        return None
+    topic = next((g for g in m.groups() if g), "") or ""
+    topic = re.sub(r"\b(please|today|now|right now|latest|currently)\b", "", topic, flags=re.I)
+    topic = topic.strip(" .,:;'\"").strip()
+    return topic if 2 <= len(topic) <= 80 else None
+
+
+def topical_news(topic, count=3):
+    """Fresh headlines about a specific subject, via Google News' free RSS search - no API key, nothing stored."""
+    url = f"https://news.google.com/rss/search?q={_urlquote(topic)}&hl=en-ZA&gl=ZA&ceid=ZA:en"
+    try:
+        items = fetch_feed(url)
+    except Exception:
+        raise Miss(f"I could not get news on {topic} just now.")
+    if not items:
+        raise Miss(f"I did not find recent news on {topic}.")
+
+    def split_src(t):
+        return (t.rsplit(" - ", 1) + [""])[:2] if " - " in t else (t, "Google News")
+    rows = []
+    for i in items[:8]:
+        h, s = split_src(i["title"])
+        rows.append({"t": h.strip(), "s": (s or "Google News").strip(), "href": i["link"]})
+    lead = [f"On {topic}: ", "Also: ", "And: ", "Then: ", "Next: ", "Lastly: "]
+    say = " ".join((lead[n] if n < len(lead) else "Also: ") + rows[n]["t"].rstrip(".!?") + "."
+                   for n in range(min(int(count or 3), len(rows))))
+    return {"title": f"News: {topic}", "wide": True, "say": say, "sub": "", "lines": rows}
+
+
 # ---------- financials ----------
 FIAT = set("AUD BGN BRL CAD CHF CNY CZK DKK EUR GBP HKD HUF IDR ILS INR ISK JPY KRW MXN MYR NOK NZD PHP PLN RON SEK SGD "
            "THB TRY USD ZAR".split())
@@ -836,13 +875,24 @@ def ask(user, text, sites=None):
         if m and m.group(1).strip().lower() not in ("today", "tomorrow", "the morning", "the week"):
             cfg["city"] = m.group(1).strip()
     label = BY_TYPE[kind]["label"]
-    try:
-        card = RUNNERS[kind](user, cfg, {"sites": sites})
-    except Miss as e:
-        card = {"title": label, "error": str(e), "say": str(e)}
-    except Exception as e:
-        core.log(user["id"], f"The {label.lower()} could not be fetched ({type(e).__name__}: {e})"[:300], "waiting")
-        card = {"title": label, "error": "I could not get this just now.", "say": f"I could not get the {label.lower()} just now."}
+    card = None
+    if kind == "news":                               # "news on the war" -> fresh topical search, not the routine feeds
+        topic = _news_topic(text)
+        if topic:
+            try:
+                card = topical_news(topic, cfg.get("count") or 3)
+            except Miss as e:
+                card = {"title": f"News: {topic}", "error": str(e), "say": str(e)}
+            except Exception:
+                card = {"title": "News", "error": "I could not get that news just now.", "say": "I could not get that news just now."}
+    if card is None:
+        try:
+            card = RUNNERS[kind](user, cfg, {"sites": sites})
+        except Miss as e:
+            card = {"title": label, "error": str(e), "say": str(e)}
+        except Exception as e:
+            core.log(user["id"], f"The {label.lower()} could not be fetched ({type(e).__name__}: {e})"[:300], "waiting")
+            card = {"title": label, "error": "I could not get this just now.", "say": f"I could not get the {label.lower()} just now."}
     card["type"] = kind
     now = datetime.datetime.now()
     brief = {"id": None, "routine": label, "ts": time.time(), "title": label,
