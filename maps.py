@@ -104,29 +104,46 @@ def _photo_urls(key, photos, n=6):
 
 
 _DETAIL_FIELDS = ("name,types,formatted_address,formatted_phone_number,international_phone_number,"
-                  "rating,user_ratings_total,opening_hours,reviews,photos,website")
+                  "rating,user_ratings_total,opening_hours,reviews,photos,website,editorial_summary")
 
 
 def _details_by_id(key, place_id):
+    """Returns (result, status). status is the Google status ('OK','REQUEST_DENIED',…) or an error tag."""
     try:
-        det = httpx.get("https://maps.googleapis.com/maps/api/place/details/json",
-                        params={"place_id": place_id, "key": key, "fields": _DETAIL_FIELDS},
-                        timeout=15, headers=UA).json()
-        return det.get("result") or {}
-    except Exception:
-        return {}
+        j = httpx.get("https://maps.googleapis.com/maps/api/place/details/json",
+                      params={"place_id": place_id, "key": key, "fields": _DETAIL_FIELDS},
+                      timeout=15, headers=UA).json()
+        return j.get("result") or {}, j.get("status", "")
+    except Exception as e:
+        return {}, "error:" + type(e).__name__
+
+
+def _find_place_id(key, query):
+    """Find a place_id for a free-text query. Tries Find Place, then Text Search. Returns (place_id, status)."""
+    try:
+        fp = httpx.get("https://maps.googleapis.com/maps/api/place/findplacefromtext/json",
+                       params={"input": query, "inputtype": "textquery", "fields": "place_id", "key": key},
+                       timeout=15, headers=UA).json()
+        st = fp.get("status", "")
+        cands = fp.get("candidates") or []
+        if cands:
+            return cands[0].get("place_id"), st
+        if st in ("REQUEST_DENIED", "OVER_QUERY_LIMIT", "INVALID_REQUEST"):
+            return None, st                      # a key/billing problem - don't bother with a second call
+        ts = httpx.get("https://maps.googleapis.com/maps/api/place/textsearch/json",
+                       params={"query": query, "key": key}, timeout=15, headers=UA).json()
+        res = ts.get("results") or []
+        return (res[0].get("place_id"), ts.get("status", st)) if res else (None, ts.get("status", st))
+    except Exception as e:
+        return None, "error:" + type(e).__name__
 
 
 def places_details(key, name, address, ftid=None):
-    """Find the place by name+address, then fetch the full detail record."""
-    try:
-        fp = httpx.get("https://maps.googleapis.com/maps/api/place/findplacefromtext/json",
-                       params={"input": f"{name} {address}".strip(), "inputtype": "textquery",
-                               "fields": "place_id", "key": key}, timeout=15, headers=UA).json()
-        cands = fp.get("candidates") or []
-        return _details_by_id(key, cands[0]["place_id"]) if cands else {}
-    except Exception:
-        return {}
+    """Find the place by name+address, then fetch the full detail record. Returns (result, status)."""
+    pid, st = _find_place_id(key, f"{name} {address}".strip())
+    if not pid:
+        return {}, st
+    return _details_by_id(key, pid)
 
 
 def _area_from(address, fallback=""):
@@ -145,6 +162,7 @@ def _info_from_details(det, key, link=""):
         "rating": det.get("rating"),
         "reviews": [r.get("text") for r in (det.get("reviews") or [])[:3] if r.get("text")],
         "hours": _hours(det.get("opening_hours")),
+        "about": (det.get("editorial_summary") or {}).get("overview") or "",
         "photos": _photo_urls(key, det.get("photos")),
         "has_website": bool(det.get("website")),
         "website": det.get("website") or "",
@@ -174,7 +192,7 @@ def search(user, query, limit=20, only_no_website=True):
         pid = c.get("place_id")
         if not pid:
             continue
-        det = _details_by_id(key, pid)
+        det, _ = _details_by_id(key, pid)
         if not det:
             continue
         scanned += 1
@@ -193,8 +211,10 @@ def extract(user, link):
     info = {"business": base["name"], "category": "", "location": base["area"] or base["address"],
             "address": base["address"], "phone": "", "source_link": link, "has_website": None}
     key = key_for(user)
+    info["_api"] = "no_key" if not key else ("" if base["name"] else "no_name_in_link")
     if key and base["name"]:
-        res = places_details(key, base["name"], base["address"], base.get("ftid"))
+        res, status = places_details(key, base["name"], base["address"], base.get("ftid"))
+        info["_api"] = status or ("OK" if res else "ZERO_RESULTS")
         if res:
             got = _info_from_details(res, key, link)
             got["location"] = base["area"] or got.get("location") or base["address"]

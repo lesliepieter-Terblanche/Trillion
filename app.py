@@ -2007,9 +2007,10 @@ def gensites_from_link(p: dict = Body(...), user=Depends(auth)):
     info = maps.extract(user, link)
     return {"business": info.get("business") or "", "category": info.get("category") or "",
             "location": info.get("location") or "", "address": info.get("address") or "",
-            "phone": info.get("phone") or "", "hours": info.get("hours") or "",
+            "phone": info.get("phone") or "", "hours": info.get("hours") or "", "about": info.get("about") or "",
             "rating": info.get("rating"), "has_website": info.get("has_website"),
-            "photos": len(info.get("photos") or []), "have_key": bool(info.get("_have_key"))}
+            "photos": len(info.get("photos") or []), "have_key": bool(info.get("_have_key")),
+            "api": info.get("_api") or "", "resolved": info.get("_resolved") or ""}
 
 
 @app.post("/api/gensites")
