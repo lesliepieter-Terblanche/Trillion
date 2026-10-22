@@ -877,6 +877,26 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
   <div class="grid2" id="vlist"></div>
 </div>
 
+<div class="view" id="v-web">
+  <h2 style="margin-bottom:4px">Web Studio</h2>
+  <div class="muted" style="font-size:13px;margin-bottom:14px">Enter a business (the kind of thing a Google Maps search gives you) and press Generate. Trillion writes the copy, picks a style to suit the trade, drops in the photos, and builds an ultra-premium one-page website — hosted here with a shareable link and downloadable.</div>
+  <div class="panel" style="gap:10px">
+    <div class="two"><label class="field"><span>Business name *</span><input id="wb-name" placeholder="West Rand Plumbing"></label>
+      <label class="field"><span>Category / type</span><input id="wb-cat" placeholder="plumber, restaurant, dentist…"></label></div>
+    <div class="two"><label class="field"><span>Area / town</span><input id="wb-loc" placeholder="Roodepoort"></label>
+      <label class="field"><span>Phone</span><input id="wb-phone" placeholder="011 555 1212"></label></div>
+    <label class="field"><span>Services / notes</span><textarea id="wb-svc" rows="2" placeholder="leaks, geysers, blocked drains — 15 years local, same-day callouts"></textarea></label>
+    <label class="field"><span>Photo links (one per line, optional — e.g. their Google Maps photos)</span><textarea id="wb-photos" rows="2" placeholder="https://…/photo1.jpg"></textarea></label>
+    <div class="two"><label class="field"><span>Hours</span><input id="wb-hours" placeholder="Mon–Sat, 7am–6pm"></label>
+      <label class="field"><span>Style</span><select id="wb-style">
+        <option value="">Auto (match the trade)</option><option value="violet">Dark · Violet</option><option value="ember">Dark · Ember</option><option value="teal">Dark · Teal</option>
+        <option value="azure">Light · Azure</option><option value="emerald">Light · Emerald</option><option value="slate">Light · Slate</option></select></label></div>
+    <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="wb-go">GENERATE WEBSITE</button></div>
+    <div class="msg" id="wb-msg"></div>
+  </div>
+  <div class="grid2" id="weblist"></div>
+</div>
+
 <div class="view" id="v-skills">
   <h2>Skills</h2>
   <div class="muted">A skill is a written playbook for doing one kind of job well. Every skill starts switched on for every login. Switch off any you do not want her to use for yours.</div>
@@ -1027,7 +1047,7 @@ const api=async(u,o={})=>{if(o.json!==undefined){o.method=o.method||'POST';o.hea
 const hm=t=>new Date(t*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false});
 let hold=0,S=null,sending=false,speakNext=false,settingsLoaded=false,cwd='';
 
-const LOADERS={apps:()=>loadApps(),sites:()=>{loadSites();loadClones();},bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),workflow:()=>wfLoad(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);loadStorage();},memory:()=>loadNotes(''),videos:()=>loadVideos(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();loadBackup();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
+const LOADERS={apps:()=>loadApps(),sites:()=>{loadSites();loadClones();},bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),workflow:()=>wfLoad(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);loadStorage();},memory:()=>loadNotes(''),videos:()=>loadVideos(),web:()=>loadWeb(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();loadBackup();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
 let VIEW='control';
 function go(v){
   VIEW=v;try{if(v!=='settings'&&mtTimer)micTestStop();}catch(e){}
@@ -1548,6 +1568,38 @@ $('vgo').onclick=async()=>{const about=$('vprompt').value.trim();if(!about){$('v
   if($('vkind').value==='ai')await send(`Generate an AI clip, ${Math.min(15,+$('vsec').value)} seconds, ${$('vfmt').value}: ${about}`,false);
   else await send(`Create a ${$('vsec').value} second ${$('vfmt').value} video${$('vvo').checked?'':' with no voice-over'}: ${about}`,false);
   $('vmsg').textContent='';$('vprompt').value='';loadVideos();};
+// ---------- Web Studio ----------
+let webPoll=null;
+async function loadWeb(){
+  try{const d=await (await api('/api/gensites')).json();drawWeb(d.sites||[]);}catch(e){}
+}
+function drawWeb(sites){
+  const host=location.host;
+  $('weblist').innerHTML=sites.map(s=>{
+    const link=`${location.protocol}//${host}/site/${s.token}/`;
+    return `<div class="panel" style="gap:10px">
+      ${s.has_thumb?`<a href="${link}" target="_blank" rel="noopener"><img src="/api/gensites/${s.id}/thumb" style="width:100%;border-radius:10px;border:1px solid var(--edge2)"></a>`:`<div class="muted" style="font-size:13px">${s.exists?'Preview ready':'Could not build'}</div>`}
+      <b style="font-size:17px">${esc(s.title)}</b>
+      <div class="muted" style="font-size:13px">${esc(s.category||'business')} · ${esc(s.mode||'')} · ${esc(s.style||'')}${s.photos?` · ${s.photos} photo${s.photos!=1?'s':''}`:''} · ${new Date(s.created*1000).toLocaleString()}</div>
+      <div class="btns" style="justify-content:flex-start">
+        <a class="btn pri" href="${link}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;text-decoration:none;min-height:40px;font-size:12px">OPEN / PREVIEW</a>
+        <a class="btn" href="/api/gensites/${s.id}/file" download style="display:inline-flex;align-items:center;text-decoration:none;min-height:40px;font-size:12px">DOWNLOAD HTML</a>
+        <button class="btn" data-wbd="${s.id}" style="min-height:40px;font-size:12px">DELETE</button></div>
+    </div>`;}).join('')||'<div class="muted">No sites yet. Fill in a business above and press Generate.</div>';
+  document.querySelectorAll('[data-wbd]').forEach(b=>b.onclick=async()=>{await api('/api/gensites/'+b.dataset.wbd,{method:'DELETE'});loadWeb();});
+}
+$('wb-go')&&($('wb-go').onclick=async()=>{
+  const name=$('wb-name').value.trim();if(!name){$('wb-msg').className='msg bad';$('wb-msg').textContent='Enter a business name first.';return;}
+  const photos=$('wb-photos').value.split('\n').map(x=>x.trim()).filter(x=>x);
+  const body={business:name,category:$('wb-cat').value.trim(),location:$('wb-loc').value.trim(),phone:$('wb-phone').value.trim(),
+    services:$('wb-svc').value.trim(),hours:$('wb-hours').value.trim(),style:$('wb-style').value,photos};
+  $('wb-msg').className='msg muted';$('wb-msg').textContent='Building the website — a minute or two. You can watch the steps in the Control Room.';
+  try{await api('/api/gensites',{json:body});}catch(e){$('wb-msg').className='msg bad';$('wb-msg').textContent=e.message;return;}
+  clearInterval(webPoll);let n=0;
+  webPoll=setInterval(async()=>{n++;try{const d=await (await api('/api/gensites')).json();drawWeb(d.sites||[]);
+    if((d.sites||[]).length&&(d.sites[0].exists||n>40)){clearInterval(webPoll);$('wb-msg').className='msg ok';$('wb-msg').textContent='Done — open the preview or download the HTML below.';}
+  }catch(e){}},4000);
+  loadWeb();});
 // skills and connectors
 $('dupcheck').onclick=async()=>{const m=$('dupmsg');m.className='msg muted';m.textContent='Checking...';
   try{const d=await (await api('/api/duplicates')).json();
@@ -2142,7 +2194,7 @@ function drawCommands(){
   document.querySelectorAll('[data-use]').forEach(b=>b.onclick=()=>{go('control');$('say').value=b.dataset.use;$('say').focus();});
 }
 function drawMore(){
-  const items=[['workflow','Workflow',"What's running now, live"],...(S&&S.bible_on?[['bible','Bible study','Daily verse, reader, notes, helper']]:[]),...(S&&S.store_on?[['store','Store','Gumroad sales, products, codes']]:[]),['videos','Videos','Make and watch videos'],['files','Files','Browse your folders'],['sites','Websites','Read a site, make a deck or report'],['apps','Apps','Search rankings and automations'],['memory','Memory','What she remembers'],['routines','Routines','Morning briefing, news, weather'],['skills','Skills','Extra abilities and connectors'],['commands','Commands','Everything you can say'],['settings','Settings','Look, brain, voice, keys']];
+  const items=[['workflow','Workflow',"What's running now, live"],...(S&&S.bible_on?[['bible','Bible study','Daily verse, reader, notes, helper']]:[]),...(S&&S.store_on?[['store','Store','Gumroad sales, products, codes']]:[]),['videos','Videos','Make and watch videos'],['web','Web Studio','Build a premium site for a business'],['files','Files','Browse your folders'],['sites','Websites','Read a site, make a deck or report'],['apps','Apps','Search rankings and automations'],['memory','Memory','What she remembers'],['routines','Routines','Morning briefing, news, weather'],['skills','Skills','Extra abilities and connectors'],['commands','Commands','Everything you can say'],['settings','Settings','Look, brain, voice, keys']];
   if(S&&S.user.is_admin)items.push(['family','Family','Logins, update, backup']);
   $('moregrid').innerHTML=items.map(i=>`<button class="mbtn" data-go="${i[0]}"><b>${i[1]}</b><span>${i[2]}</span></button>`).join('')+`<button class="mbtn" id="out2"><b>Sign out</b><span>${S?esc(S.user.name):''}</span></button>`;
   $('out2').onclick=()=>$('out').click();

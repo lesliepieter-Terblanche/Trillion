@@ -1,0 +1,135 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__BRAND__ — __TAGLINE__</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<style>
+:root{--bg:__C_BG__;--accent:__C_ACCENT__;--accent2:__C_ACCENT2__;--glow:__C_GLOW__;
+ --surface:__C_SURFACE__;--card:__C_CARD__;--border:__C_BORDER__;--text:__C_TEXT__;--muted:__C_MUTED__;
+ --heroText:__C_HEROTEXT__;--heroMuted:__C_HEROMUTED__;--maxw:1180px}
+*{margin:0;padding:0;box-sizing:border-box}html{scroll-behavior:smooth}
+body{background:var(--surface);color:var(--text);font-family:__FONT__,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+a{color:inherit}.wrap{max-width:var(--maxw);margin:0 auto;padding:0 clamp(20px,5vw,40px)}
+.btn{padding:14px 28px;border-radius:44px;font-size:15px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:9px;transition:.25s;cursor:pointer;border:0}
+.btn.primary{background:var(--accent);color:#fff;box-shadow:0 10px 30px -8px var(--accent)}
+.btn.primary:hover{transform:translateY(-2px);filter:brightness(1.07)}
+.btn.ghost{color:var(--heroText);border:1px solid rgba(128,128,128,.3);background:rgba(128,128,128,.06);backdrop-filter:blur(8px)}
+.btn.dark{background:var(--text);color:var(--surface)}
+.eyebrow{display:inline-flex;align-items:center;gap:9px;font-size:12.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--heroMuted);border:1px solid rgba(128,128,128,.28);padding:7px 15px;border-radius:40px;backdrop-filter:blur(8px)}
+.eyebrow .pulse{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 12px var(--accent);animation:p 2s infinite}
+@keyframes p{0%,100%{opacity:1}50%{opacity:.35}}
+.sectlabel{font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-bottom:14px}
+h2{font-size:clamp(30px,4.5vw,50px);line-height:1.04;letter-spacing:-.03em;font-weight:760;max-width:20ch}
+.lead{color:var(--muted);font-size:clamp(16px,1.7vw,18.5px);line-height:1.6;max-width:56ch}
+/* hero */
+.hero{position:relative;min-height:100vh;display:flex;flex-direction:column;isolation:isolate;color:var(--heroText)}
+#gl{position:absolute;inset:0;width:100%;height:100%;z-index:-2}
+.grain{position:absolute;inset:0;z-index:-1;opacity:.05;pointer-events:none;mix-blend-mode:overlay;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>")}
+.vign{position:absolute;inset:0;z-index:-1;pointer-events:none;background:radial-gradient(130% 95% at 50% 15%,transparent 42%,__C_VIGN__ 100%)}
+nav{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:24px clamp(20px,5vw,40px);position:relative;z-index:3;max-width:var(--maxw);margin:0 auto;width:100%}
+.brand{font-weight:800;letter-spacing:-.02em;font-size:21px;display:flex;align-items:center;gap:10px}
+.brand .dot{width:11px;height:11px;border-radius:50%;background:var(--accent);box-shadow:0 0 16px var(--accent)}
+.navlinks{display:flex;gap:28px;font-size:14.5px;color:var(--heroMuted)}.navlinks a{text-decoration:none;transition:.2s}.navlinks a:hover{color:var(--heroText)}
+.navcta{border:1px solid rgba(128,128,128,.3);padding:9px 18px;border-radius:40px;font-size:14px;text-decoration:none;backdrop-filter:blur(8px);background:rgba(128,128,128,.06)}
+.herobody{flex:1;display:flex;flex-direction:column;justify-content:center;text-align:center;align-items:center;padding:0 clamp(20px,5vw,40px) 10vh;position:relative;z-index:2}
+h1{font-size:clamp(42px,8vw,96px);line-height:.98;font-weight:800;letter-spacing:-.035em;max-width:17ch;margin:26px 0}
+h1 .grad{background:linear-gradient(100deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.word{display:inline-block;will-change:transform}
+.herosub{color:var(--heroMuted);font-size:clamp(16px,2vw,20px);max-width:52ch;line-height:1.55;margin-bottom:38px}
+.cta{display:flex;gap:14px;flex-wrap:wrap;justify-content:center}
+/* strip */
+.strip{border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--bg)}
+.strip .wrap{display:flex;flex-wrap:wrap;gap:12px 40px;justify-content:center;align-items:center;padding-top:22px;padding-bottom:22px;color:var(--muted);font-size:14px}
+.strip b{color:var(--text)}
+/* sections */
+section.pad{padding:clamp(70px,11vw,130px) 0}
+.reveal{opacity:0;transform:translateY(30px);transition:opacity .8s cubic-bezier(.2,.7,.2,1),transform .8s cubic-bezier(.2,.7,.2,1)}
+.reveal.in{opacity:1;transform:none}
+.grid{display:grid;gap:22px}.g3{grid-template-columns:repeat(3,1fr)}.g2{grid-template-columns:1.1fr .9fr}
+.card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:30px}
+.card .ic{width:46px;height:46px;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:18px}
+.card h3{font-size:20px;letter-spacing:-.01em;margin-bottom:9px}.card p{color:var(--muted);font-size:15px;line-height:1.6}
+.gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.gallery .tile{aspect-ratio:4/5;border-radius:16px;overflow:hidden;position:relative;border:1px solid var(--border)}
+.gallery .tile img{width:100%;height:100%;object-fit:cover;transition:transform .7s}
+.gallery .tile:hover img{transform:scale(1.06)}
+.reviews{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+.rev{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:28px}
+.rev .stars{color:var(--accent);margin-bottom:12px;letter-spacing:3px}.rev p{font-size:15.5px;line-height:1.6;margin-bottom:16px}
+.rev .who{font-weight:600;font-size:14.5px}.rev .who span{color:var(--muted);font-weight:400}
+.cta-final{background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:28px;padding:clamp(40px,7vw,72px);text-align:center;color:#fff;position:relative;overflow:hidden}
+.cta-final h2{color:#fff;margin:0 auto 14px;max-width:18ch}.cta-final p{color:rgba(255,255,255,.85);max-width:46ch;margin:0 auto 30px}
+footer{border-top:1px solid var(--border);background:var(--bg);color:var(--muted);font-size:14px}
+footer .wrap{display:flex;flex-wrap:wrap;gap:16px;justify-content:space-between;align-items:center;padding-top:30px;padding-bottom:30px}
+.contact{display:flex;flex-wrap:wrap;gap:30px}.contact b{color:var(--text);display:block;font-size:13px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px}
+@media(max-width:820px){.g3,.gallery,.reviews{grid-template-columns:1fr}.g2{grid-template-columns:1fr}.navlinks{display:none}}
+</style></head><body>
+<section class="hero"><canvas id="gl"></canvas><div class="grain"></div><div class="vign"></div>
+ <nav><div class="brand"><span class="dot"></span>__BRAND__</div><div class="navlinks">__NAV__</div><a class="navcta" href="#contact">__NAVCTA__</a></nav>
+ <div class="herobody">
+  <div class="eyebrow"><span class="pulse"></span>__EYEBROW__</div>
+  <h1>__HEADLINE_HTML__</h1>
+  <p class="herosub">__SUB__</p>
+  <div class="cta"><a class="btn primary" href="#contact">__CTA1__</a><a class="btn ghost" href="#services">__CTA2__</a></div>
+ </div></section>
+<div class="strip"><div class="wrap">__STRIP__</div></div>
+<section class="pad" id="services"><div class="wrap">
+ <div class="sectlabel reveal">__SERVICES_LABEL__</div><h2 class="reveal">__SERVICES_HEAD__</h2>
+ <p class="lead reveal" style="margin:16px 0 44px">__SERVICES_SUB__</p>
+ <div class="grid g3">__SERVICES__</div></div></section>
+__GALLERY_SECTION__
+<section class="pad" style="background:var(--bg)"><div class="wrap">
+ <div class="sectlabel reveal">Reviews</div><h2 class="reveal">__REVIEWS_HEAD__</h2>
+ <div class="reviews" style="margin-top:44px">__REVIEWS__</div></div></section>
+<section class="pad" id="contact"><div class="wrap"><div class="cta-final reveal">
+ <h2>__CTA_HEAD__</h2><p>__CTA_SUB__</p>
+ <a class="btn dark" href="tel:__PHONE__" style="background:#fff;color:#111">Call __PHONE__</a></div></div></section>
+<footer><div class="wrap">
+ <div class="brand" style="font-size:18px"><span class="dot"></span>__BRAND__</div>
+ <div class="contact"><div><b>Call</b>__PHONE__</div><div><b>Visit</b>__ADDR__</div><div><b>Hours</b>__HOURS__</div></div>
+ <div>© __BRAND__</div></div></footer>
+<script>
+const cv=document.getElementById('gl');const gl=cv.getContext('webgl');
+function hx(h){h=h.replace('#','');if(h.length===3)h=h.split('').map(c=>c+c).join('');return[parseInt(h.slice(0,2),16)/255,parseInt(h.slice(2,4),16)/255,parseInt(h.slice(4,6),16)/255];}
+const COLS=[hx('__C_BG__'),hx('__C_ACCENT__'),hx('__C_ACCENT2__'),hx('__C_GLOW__')];
+const vs=`attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}`;
+const fs=`precision highp float;uniform vec2 r;uniform float t;uniform vec3 c0,c1,c2,c3;
+vec3 md(vec3 x){return x-floor(x*(1./289.))*289.;}vec2 md(vec2 x){return x-floor(x*(1./289.))*289.;}
+vec3 pm(vec3 x){return md(((x*34.)+1.)*x);}
+float sn(vec2 v){const vec4 C=vec4(.211324865,.366025403,-.577350269,.024390243);
+vec2 i=floor(v+dot(v,C.yy));vec2 x0=v-i+dot(i,C.xx);vec2 i1=(x0.x>x0.y)?vec2(1.,0.):vec2(0.,1.);
+vec4 x12=x0.xyxy+C.xxzz;x12.xy-=i1;i=md(i);
+vec3 p=pm(pm(i.y+vec3(0.,i1.y,1.))+i.x+vec3(0.,i1.x,1.));
+vec3 m=max(.5-vec3(dot(x0,x0),dot(x12.xy,x12.xy),dot(x12.zw,x12.zw)),0.);m=m*m;m=m*m;
+vec3 x=2.*fract(p*C.www)-1.;vec3 h=abs(x)-.5;vec3 ox=floor(x+.5);vec3 a0=x-ox;
+m*=1.79284291-.85373472*(a0*a0+h*h);vec3 g;g.x=a0.x*x0.x+h.x*x0.y;g.yz=a0.yz*x12.xz+h.yz*x12.yw;return 130.*dot(m,g);}
+float fb(vec2 p){float s=0.,a=.5;for(int i=0;i<5;i++){s+=a*sn(p);p*=2.02;a*=.5;}return s;}
+void main(){vec2 uv=gl_FragCoord.xy/r;vec2 p=uv;p.x*=r.x/r.y;float tt=t*.04;
+float n1=fb(p*1.6+vec2(tt,tt*.6));float n2=fb(p*2.3-vec2(tt*.8,tt)+n1*.7);float n3=fb(p*1.1+vec2(-tt*.5,tt*.9)+n2*.5);
+vec3 col=c0;col=mix(col,c1,smoothstep(-.2,.9,n1));col=mix(col,c2,smoothstep(.0,1.,n2)*.85);col=mix(col,c3,smoothstep(.3,1.1,n3)*.6);
+float grd=smoothstep(1.15,-.15,uv.y);col*=(.78+.42*grd);
+gl_FragColor=vec4(col,1.);}`;
+function sh(t,s){const o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);return o;}
+const pr=gl.createProgram();gl.attachShader(pr,sh(gl.VERTEX_SHADER,vs));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,fs));gl.linkProgram(pr);gl.useProgram(pr);
+const bf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,bf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+const lp=gl.getAttribLocation(pr,'p');gl.enableVertexAttribArray(lp);gl.vertexAttribPointer(lp,2,gl.FLOAT,false,0,0);
+const uR=gl.getUniformLocation(pr,'r'),uT=gl.getUniformLocation(pr,'t');
+gl.uniform3fv(gl.getUniformLocation(pr,'c0'),COLS[0]);gl.uniform3fv(gl.getUniformLocation(pr,'c1'),COLS[1]);gl.uniform3fv(gl.getUniformLocation(pr,'c2'),COLS[2]);gl.uniform3fv(gl.getUniformLocation(pr,'c3'),COLS[3]);
+function sz(){const d=Math.min(devicePixelRatio||1,2);cv.width=innerWidth*d;cv.height=Math.max(innerHeight,1)*d;gl.viewport(0,0,cv.width,cv.height);gl.uniform2f(uR,cv.width,cv.height);}
+addEventListener('resize',sz);sz();const st=performance.now();
+(function lp2(n){gl.uniform1f(uT,(n-st)/1000);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);requestAnimationFrame(lp2);})(st);
+// scroll reveals: robust (IntersectionObserver), content never stays hidden even if anything fails
+(function(){
+ var els=[].slice.call(document.querySelectorAll('.reveal'));
+ function showAll(){els.forEach(function(el){el.classList.add('in');});}
+ if('IntersectionObserver' in window){
+   var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});},{threshold:.12,rootMargin:'0px 0px -8% 0px'});
+   els.forEach(function(el){io.observe(el);});
+   setTimeout(showAll,2600);           // safety net: nothing is ever left invisible
+ } else {showAll();}
+})();
+window.addEventListener('load',function(){if(!window.gsap)return;
+ gsap.set('.word',{yPercent:120,opacity:0});
+ gsap.timeline({defaults:{ease:'power4.out'}}).to('.word',{yPercent:0,opacity:1,duration:1.05,stagger:.08},.1)
+  .from('.herosub',{opacity:0,y:20,duration:.9},'-=.6').from('.cta .btn',{opacity:0,y:18,duration:.7,stagger:.12},'-=.5')
+  .from('nav',{opacity:0,y:-16,duration:.7},0).from('.eyebrow',{opacity:0,y:14,duration:.7},.1);});
+</script></body></html>

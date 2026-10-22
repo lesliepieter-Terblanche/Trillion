@@ -66,8 +66,10 @@ import morning
 import scrape
 import evolve
 import voicecall
+import web
 gumroad.init()
 routines.init()
+web.init()
 # 0.7.28: Bible study belongs to Lewellyn's login. His morning and evening routines read the day's verse aloud, a different
 # one each. The owner can switch Bible study on for another login on the Family page.
 for _u in core.q("SELECT * FROM users"):
@@ -1986,6 +1988,50 @@ def clones_stop(jid: int, user=Depends(auth)):
 def clones_forget(jid: int, user=Depends(auth)):
     siteclone.forget(user, jid)
     return {"ok": True}
+
+
+@app.get("/api/gensites")
+def gensites_list(user=Depends(auth)):
+    return {"sites": web.listing(user)}
+
+
+@app.post("/api/gensites")
+def gensites_start(p: dict = Body(...), user=Depends(auth)):
+    if not (p.get("business") or p.get("name")):
+        raise HTTPException(400, "A business name is needed.")
+    return web.start(user, p)
+
+
+@app.delete("/api/gensites/{sid}")
+def gensites_forget(sid: int, user=Depends(auth)):
+    return web.forget(user, sid)
+
+
+@app.get("/api/gensites/{sid}/file")
+def gensites_file(sid: int, user=Depends(auth)):
+    f = web.html_file(user, sid)
+    if not f:
+        raise HTTPException(404, "Not found")
+    name = Path(f).parent.name + ".html"
+    return FileResponse(f, media_type="text/html", filename=name)
+
+
+@app.get("/api/gensites/{sid}/thumb")
+def gensites_thumb(sid: int, user=Depends(auth)):
+    row = web._row(user, sid)
+    if not row or not row["thumb"] or not os.path.exists(row["thumb"]):
+        raise HTTPException(404, "No preview")
+    return FileResponse(row["thumb"], media_type="image/jpeg")
+
+
+@app.get("/site/{token}/{path:path}")
+def gensite_preview(token: str, path: str = ""):
+    """Public preview link for a generated site: served sandboxed, same as clone previews."""
+    p = web.preview_file(token, path)
+    if not p:
+        raise HTTPException(404, "Not found")
+    return FileResponse(p, headers={"Content-Security-Policy": "sandbox allow-scripts allow-forms allow-popups allow-same-origin",
+                                    "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store"})
 
 
 @app.get("/clone/{token}/{path:path}")

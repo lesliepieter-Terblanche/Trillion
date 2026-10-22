@@ -9,6 +9,7 @@ Trillion, and so it never fights the web server's event loop. Nothing paid, noth
 the page you asked for.
 """
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -128,6 +129,20 @@ def grab(url, w, h, uid, limit=8, progress=None):
     if paths:
         say(f"Pulled {len(paths)} real photo{'s' if len(paths) != 1 else ''} off the site")
     return paths
+
+
+def screenshot(url, out, full=False):
+    """Save a screenshot of a page (for site preview thumbnails). Returns True on success."""
+    if not ready():
+        return False
+    try:
+        cmd = [sys.executable, str(RUNNER), "--shot", str(url), "--out", str(out)]
+        if full:
+            cmd.append("--full")
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+        return ('"ok": true' in (r.stdout or "").replace(" ", "").replace('"ok":true', '"ok": true')) or os.path.exists(out)
+    except Exception:
+        return os.path.exists(out)
 
 
 def state():

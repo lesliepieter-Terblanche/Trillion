@@ -158,15 +158,42 @@ def grab(url, out_dir, limit, w, h):
     return saved
 
 
+def shot(url, out, full=False):
+    """Save a screenshot of a page (used for site preview thumbnails)."""
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as pw:
+        b = _launch(pw)
+        p = b.new_context(viewport={"width": 1440, "height": 900}, device_scale_factor=1).new_page()
+        try:
+            p.goto(url, wait_until="load", timeout=30000)
+        except Exception:
+            b.close()
+            return False
+        p.wait_for_timeout(2200)
+        p.screenshot(path=out, full_page=bool(full))
+        b.close()
+    return True
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--selfcheck", action="store_true")
+    ap.add_argument("--shot")
+    ap.add_argument("--full", action="store_true")
     ap.add_argument("--url")
     ap.add_argument("--out")
     ap.add_argument("--limit", type=int, default=8)
     ap.add_argument("--w", type=int, default=1080)
     ap.add_argument("--h", type=int, default=1920)
     a = ap.parse_args()
+    if a.shot and a.out:
+        ok = False
+        try:
+            ok = shot(a.shot, a.out, a.full)
+        except Exception as e:
+            print("SHOT_FAIL", type(e).__name__, str(e)[:160], file=sys.stderr)
+        print("RESULT " + json.dumps({"ok": bool(ok)}))
+        return 0
     if a.selfcheck:
         try:
             from playwright.sync_api import sync_playwright
