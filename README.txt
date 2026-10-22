@@ -50,6 +50,10 @@ Pixabay, records an ElevenLabs voice-over, adds music, titles and captions, and 
 your "Trillion Videos" folder. Keys go under Settings: Pixabay (free, pixabay.com/api/docs) for footage,
 ElevenLabs for the voice. Without them the video still renders, with light backdrops and no voice.
 Your own music: drop mp3 files into data\music and she uses those instead of the built-in track.
+On-brand footage from a website: name a site in the request ("make a video for vapeessence.co.za")
+and Trillion pulls the real product photos straight off that site and uses them as the footage - so
+the video shows the actual products, not stock clips. It grounds the script in what the site sells too.
+Attaching your own photos/clips still works and takes priority; stock footage is only the last resort.
 Cinematic engine (MoneyPrinterTurbo): on the Videos page, press "Set up the cinematic engine" for a
 stronger option - the local brain writes the script, real stock footage becomes the moving background
 (using your Pixabay key), with a free voice, subtitles and music. Big one-time install in its own space

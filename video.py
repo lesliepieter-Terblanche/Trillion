@@ -200,6 +200,89 @@ def site_subject(llm, user, prompt):
             "Keep the whole video specifically about this real business and what it sells - do not invent an unrelated theme or mood.")
 
 
+_SKIP_IMG = ("logo", "icon", "sprite", "favicon", "placeholder", "loader", "spinner",
+             "avatar", "badge", "payment", "visa", "mastercard", "paypal", "flag", "pixel", "tracking")
+
+
+def site_media(url, w, h, uid, limit=8, progress=None):
+    """Pull the real product photos straight off the given website, so the footage IS the brand -
+    no stock library, no uploads. Returns local JPEG paths (biggest/best first); [] if nothing usable."""
+    from urllib.parse import urljoin
+    say = progress or (lambda t: None)
+    if not url:
+        return []
+    if not url.lower().startswith("http"):
+        url = "https://" + url
+    hdr = {"User-Agent": "Mozilla/5.0 (compatible; Trillion)"}
+    try:
+        r = httpx.get(url, timeout=12, follow_redirects=True, headers=hdr)
+        html, base = r.text, str(r.url)
+    except Exception:
+        return []
+    cands = []
+    for m in re.finditer(r'<meta[^>]+(?:property|name)=["\'](?:og:image|twitter:image)[^"\']*["\'][^>]*>', html, re.I):
+        mm = re.search(r'content=["\']([^"\']+)', m.group(0))
+        if mm:
+            cands.append(mm.group(1))
+    for m in re.finditer(r'<img[^>]+>', html, re.I):
+        tag = m.group(0)
+        mm = re.search(r'\bsrcset=["\']([^"\']+)', tag, re.I)          # srcset: last entry is the largest
+        if mm:
+            parts = [p.strip().split(" ")[0] for p in mm.group(1).split(",") if p.strip()]
+            if parts:
+                cands.append(parts[-1])
+        for attr in ("data-src", "data-original", "data-lazy-src", "data-image", "src"):
+            mm = re.search(rf'\b{attr}=["\']([^"\']+)', tag, re.I)
+            if mm:
+                cands.append(mm.group(1))
+                break
+    for m in re.finditer(r'<source[^>]+srcset=["\']([^"\']+)', html, re.I):
+        parts = [p.strip().split(" ")[0] for p in m.group(1).split(",") if p.strip()]
+        if parts:
+            cands.append(parts[-1])
+    for m in re.finditer(r'"image"\s*:\s*"([^"]+)"', html):            # JSON-LD / product data
+        cands.append(m.group(1).replace("\\/", "/"))
+    seen, urls = set(), []
+    for u in cands:
+        u = (u or "").strip()
+        if u.startswith("//"):
+            u = "https:" + u
+        u = urljoin(base, u)
+        lu = u.lower().split("?")[0]
+        if not lu.startswith("http") or lu.endswith(".svg") or u.startswith("data:"):
+            continue
+        if lu in seen or any(b in lu for b in _SKIP_IMG):
+            continue
+        seen.add(lu)
+        urls.append(u)
+        if len(urls) >= 40:
+            break
+    CACHE.mkdir(parents=True, exist_ok=True)
+    scored = []
+    for i, u in enumerate(urls):
+        if len(scored) >= limit * 2:
+            break
+        try:
+            rr = httpx.get(u, timeout=12, follow_redirects=True, headers=hdr)
+            if rr.status_code != 200 or not rr.content:
+                continue
+            raw = CACHE / f"site-{uid}-{i}.bin"
+            raw.write_bytes(rr.content)
+            with Image.open(raw) as im:
+                iw, ih = im.size
+                ar = iw / max(1, ih)
+                if iw < 500 or ih < 500 or ar > 4 or ar < 0.25:       # skip thumbnails, icons, banners
+                    continue
+                fixed = CACHE / f"site-{uid}-{i}.jpg"
+                ImageOps.exif_transpose(im).convert("RGB").save(fixed, "JPEG", quality=92)
+            scored.append((iw * ih, str(fixed)))
+            say(f"Pulled {len(scored)} photo{'s' if len(scored) != 1 else ''} from the site")
+        except Exception:
+            continue
+    scored.sort(reverse=True)                                          # biggest images are usually the real product shots
+    return [p for _, p in scored[:limit]]
+
+
 def plan(llm, user, prompt, seconds, n_scenes, with_voice):
     s = core.settings(user)
     words = int((seconds - END_LEN) * 2.3)
@@ -643,7 +726,15 @@ def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progre
     n_scenes = max(2, min(8, round((seconds - END_LEN) / 4.2)))
     # the person's own photos and clips, handed over in the conversation: one scene each, in the order given
     own = [m for m in (media or []) if os.path.exists(m) and m.lower().endswith(IMAGE_EXT + (".gif", ".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi", ".3gp"))][:8]
-    n_scenes = max(n_scenes, len(own))
+    # no photos attached, but the request names a website -> use the site's OWN product photos as the footage
+    from_site = False
+    if not own and _URL_IN.search(prompt or "") and s.get("video_site_media", True):
+        say("Pulling photos from the site")
+        got = site_media(_URL_IN.search(prompt).group(0).rstrip(".,)"), w, h, uid, progress=say)
+        if got:
+            own, from_site = got, True
+            notes.append(f"Footage is {len(got)} real photo{'s' if len(got) != 1 else ''} pulled straight from the site.")
+    n_scenes = max(2, min(8, len(own))) if from_site else max(n_scenes, len(own))
     el_key = core.get_secret(uid, "elevenlabs") if voiceover else None
     pb_key = core.get_secret(uid, "pixabay")
     find_clip, stock_key, stock_name = pixabay_clip, pb_key, "Pixabay"

@@ -1019,7 +1019,8 @@ def t_create_video(user, prompt, seconds=20, format="vertical", voiceover=True, 
     # fall back to the classic engine on any problem so a video always comes out while the new one is unproven.
     try:
         import mpt
-        if mpt.ready() and not media:
+        # the classic engine can place real photos pulled from a named website; MPT can't, so a URL request goes classic
+        if mpt.ready() and not media and not video._URL_IN.search(prompt or ""):
             return mpt.create(user, prompt, seconds, fmt, bool(voiceover), progress=say)
     except Exception as e:
         if say:
