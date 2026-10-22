@@ -1694,7 +1694,7 @@ async function wbLoadLink(){const link=$('wb-link').value.trim();if(!link)return
     const apiSt=(d.api||'');let note,cls='ok';
     if(!d.business){cls='bad';note='Could not read that link — make sure it opens a business on Google Maps.';}
     else if(apiSt==='no_key'){cls='bad';note='Loaded name + area only. Save your Google Places key above (then press Save key) to pull the phone, hours, category, reviews and photos.';}
-    else if(apiSt.indexOf('REQUEST_DENIED')===0){cls='bad';note='Your Places key was refused by Google. In Google Cloud: enable the "Places API" and set up Billing for that project, then try again. '+d.business+' loaded by name only.';}
+    else if(apiSt.indexOf('REQUEST_DENIED')===0){cls='bad';note='Google refused the key. Check in Google Cloud: (1) Billing is enabled on the project, (2) the key’s Application restrictions are set to None (not HTTP referrers/IP), (3) "Places API (New)" is enabled. '+d.business+' loaded by name only.';}
     else if(apiSt==='OVER_QUERY_LIMIT'){cls='bad';note='Google Places quota/billing issue — check billing is enabled. '+d.business+' loaded by name only.';}
     else if(apiSt.indexOf('error')===0){cls='bad';note='Could not reach Google Places just now. '+d.business+' loaded by name only.';}
     else if(apiSt==='ZERO_RESULTS'){cls='bad';note='Loaded '+d.business+' (name/area), but Places could not match this exact business for the extra detail.';}

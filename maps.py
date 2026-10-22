@@ -84,66 +84,20 @@ def _category(types):
     return ""
 
 
-def _hours(oh):
-    if not oh:
-        return ""
-    wk = oh.get("weekday_text") or []
+def _hours(weekday):
+    wk = weekday or []
     if not wk:
         return ""
-    # compact: "Mon-Fri 8:30am-6pm, Sat 8am-4pm" is nice but fragile; keep it readable
     return "; ".join(s.split(": ", 1)[-1] if ": " in s else s for s in wk[:7])[:120]
 
 
-def _photo_urls(key, photos, n=6):
+def _photos_new(key, photos, n=6):
     out = []
     for p in (photos or [])[:n]:
-        ref = p.get("photo_reference")
-        if ref:
-            out.append(f"https://maps.googleapis.com/maps/api/place/photo?maxwidth=1600&photo_reference={quote(ref)}&key={quote(key)}")
+        nm = p.get("name")                       # e.g. "places/XXX/photos/YYY"
+        if nm:
+            out.append(f"https://places.googleapis.com/v1/{nm}/media?maxWidthPx=1600&key={quote(key)}")
     return out
-
-
-_DETAIL_FIELDS = ("name,types,formatted_address,formatted_phone_number,international_phone_number,"
-                  "rating,user_ratings_total,opening_hours,reviews,photos,website,editorial_summary")
-
-
-def _details_by_id(key, place_id):
-    """Returns (result, status). status is the Google status ('OK','REQUEST_DENIED',…) or an error tag."""
-    try:
-        j = httpx.get("https://maps.googleapis.com/maps/api/place/details/json",
-                      params={"place_id": place_id, "key": key, "fields": _DETAIL_FIELDS},
-                      timeout=15, headers=UA).json()
-        return j.get("result") or {}, j.get("status", "")
-    except Exception as e:
-        return {}, "error:" + type(e).__name__
-
-
-def _find_place_id(key, query):
-    """Find a place_id for a free-text query. Tries Find Place, then Text Search. Returns (place_id, status)."""
-    try:
-        fp = httpx.get("https://maps.googleapis.com/maps/api/place/findplacefromtext/json",
-                       params={"input": query, "inputtype": "textquery", "fields": "place_id", "key": key},
-                       timeout=15, headers=UA).json()
-        st = fp.get("status", "")
-        cands = fp.get("candidates") or []
-        if cands:
-            return cands[0].get("place_id"), st
-        if st in ("REQUEST_DENIED", "OVER_QUERY_LIMIT", "INVALID_REQUEST"):
-            return None, st                      # a key/billing problem - don't bother with a second call
-        ts = httpx.get("https://maps.googleapis.com/maps/api/place/textsearch/json",
-                       params={"query": query, "key": key}, timeout=15, headers=UA).json()
-        res = ts.get("results") or []
-        return (res[0].get("place_id"), ts.get("status", st)) if res else (None, ts.get("status", st))
-    except Exception as e:
-        return None, "error:" + type(e).__name__
-
-
-def places_details(key, name, address, ftid=None):
-    """Find the place by name+address, then fetch the full detail record. Returns (result, status)."""
-    pid, st = _find_place_id(key, f"{name} {address}".strip())
-    if not pid:
-        return {}, st
-    return _details_by_id(key, pid)
 
 
 def _area_from(address, fallback=""):
@@ -152,56 +106,76 @@ def _area_from(address, fallback=""):
     return towns[0] if towns else fallback
 
 
-def _info_from_details(det, key, link=""):
+# Places API (New) - the current API (the classic one is retired for new projects)
+NEW_FIELDS = ("places.id,places.displayName,places.types,places.formattedAddress,places.nationalPhoneNumber,"
+              "places.internationalPhoneNumber,places.rating,places.userRatingCount,places.regularOpeningHours,"
+              "places.reviews,places.photos,places.websiteUri,places.editorialSummary")
+
+
+def _search_new(key, query, limit=20):
+    """Text search on Places API (New). Returns (places, status)."""
+    try:
+        r = httpx.post("https://places.googleapis.com/v1/places:searchText", timeout=25,
+                       headers={"X-Goog-Api-Key": key, "X-Goog-FieldMask": NEW_FIELDS,
+                                "Content-Type": "application/json"},
+                       json={"textQuery": query, "maxResultCount": min(max(int(limit), 1), 20)})
+        if r.status_code == 200:
+            return (r.json().get("places") or []), "OK"
+        emsg = ""
+        try:
+            e = r.json().get("error", {})
+            emsg = e.get("status") or e.get("message") or ""
+        except Exception:
+            pass
+        if r.status_code in (401, 403):
+            return [], "REQUEST_DENIED"
+        if r.status_code == 429:
+            return [], "OVER_QUERY_LIMIT"
+        return [], f"HTTP{r.status_code}" + ((":" + emsg) if emsg else "")
+    except Exception as e:
+        return [], "error:" + type(e).__name__
+
+
+def _info_from_new(p, key, link=""):
+    dn = (p.get("displayName") or {}).get("text") or "Business"
+    addr = p.get("formattedAddress") or ""
+    reviews = [(rv.get("text") or {}).get("text") for rv in (p.get("reviews") or [])[:3]
+               if (rv.get("text") or {}).get("text")]
     return {
-        "business": det.get("name") or "Business",
-        "category": _category(det.get("types")),
-        "address": det.get("formatted_address") or "",
-        "location": _area_from(det.get("formatted_address")),
-        "phone": det.get("formatted_phone_number") or det.get("international_phone_number") or "",
-        "rating": det.get("rating"),
-        "reviews": [r.get("text") for r in (det.get("reviews") or [])[:3] if r.get("text")],
-        "hours": _hours(det.get("opening_hours")),
-        "about": (det.get("editorial_summary") or {}).get("overview") or "",
-        "photos": _photo_urls(key, det.get("photos")),
-        "has_website": bool(det.get("website")),
-        "website": det.get("website") or "",
+        "business": dn,
+        "category": _category(p.get("types")),
+        "address": addr,
+        "location": _area_from(addr),
+        "phone": p.get("nationalPhoneNumber") or p.get("internationalPhoneNumber") or "",
+        "rating": p.get("rating"),
+        "reviews": reviews,
+        "hours": _hours((p.get("regularOpeningHours") or {}).get("weekdayDescriptions")),
+        "about": (p.get("editorialSummary") or {}).get("text") or "",
+        "photos": _photos_new(key, p.get("photos")),
+        "has_website": bool(p.get("websiteUri")),
+        "website": p.get("websiteUri") or "",
         "source_link": link,
     }
 
 
 def search(user, query, limit=20, only_no_website=True):
-    """Find businesses for a 'type in area' query via Google Places, pull each one's details, and keep the
-    ones with no website (your leads). Returns {ok, leads:[info...], scanned, with_website}."""
+    """Find businesses for a 'type in area' query, keep the ones with no website (your leads)."""
     key = key_for(user)
     if not key:
         return {"error": "Add a free Google Places key first (on the Web Studio page)."}
-    try:
-        r = httpx.get("https://maps.googleapis.com/maps/api/place/textsearch/json",
-                      params={"query": query, "key": key}, timeout=20, headers=UA).json()
-    except Exception as e:
-        return {"error": f"Could not reach Google Places ({type(e).__name__})."}
-    st = r.get("status")
-    if st not in ("OK", "ZERO_RESULTS"):
-        return {"error": f"Google Places error: {st}. {r.get('error_message', '')}".strip()}
-    cands = r.get("results") or []
-    leads, scanned, with_site = [], 0, 0
-    for c in cands:
+    places, st = _search_new(key, query, min(limit * 2, 20))
+    if st != "OK" and not places:
+        return {"error": f"Google Places error: {st}."}
+    leads, with_site = [], 0
+    for p in places:
         if len(leads) >= limit:
             break
-        pid = c.get("place_id")
-        if not pid:
-            continue
-        det, _ = _details_by_id(key, pid)
-        if not det:
-            continue
-        scanned += 1
-        if det.get("website"):
+        if p.get("websiteUri"):
             with_site += 1
             if only_no_website:
                 continue
-        leads.append(_info_from_details(det, key))
-    return {"ok": True, "leads": leads, "scanned": scanned, "with_website": with_site}
+        leads.append(_info_from_new(p, key))
+    return {"ok": True, "leads": leads, "scanned": len(places), "with_website": with_site}
 
 
 def extract(user, link):
@@ -213,10 +187,10 @@ def extract(user, link):
     key = key_for(user)
     info["_api"] = "no_key" if not key else ("" if base["name"] else "no_name_in_link")
     if key and base["name"]:
-        res, status = places_details(key, base["name"], base["address"], base.get("ftid"))
-        info["_api"] = status or ("OK" if res else "ZERO_RESULTS")
-        if res:
-            got = _info_from_details(res, key, link)
+        places, st = _search_new(key, f'{base["name"]} {base["address"]}'.strip(), 1)
+        info["_api"] = st if st != "OK" else ("OK" if places else "ZERO_RESULTS")
+        if places:
+            got = _info_from_new(places[0], key, link)
             got["location"] = base["area"] or got.get("location") or base["address"]
             info.update(got)
     info["_resolved"] = final
