@@ -53,19 +53,25 @@ def install():
             if r.returncode != 0:
                 log.append((r.stderr or "")[-1200:])
                 raise RuntimeError("Could not install Playwright. " + (r.stderr or "")[-200:])
+        # Try to download Playwright's own Chromium, but don't fail the whole setup if that times out or is
+        # blocked - the grabber can use the PC's existing Edge/Chrome instead (selfcheck proves what works).
         log.append("$ playwright install chromium")
-        r = subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"],
-                           capture_output=True, text=True, timeout=2400)
-        log.append((r.stdout or "")[-1200:])
-        if r.returncode != 0:
-            log.append((r.stderr or "")[-1200:])
-            raise RuntimeError("Could not download the browser. " + (r.stderr or "")[-200:])
-        # prove it actually launches before calling it ready
+        try:
+            r = subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"],
+                               capture_output=True, text=True, timeout=2400)
+            log.append((r.stdout or "")[-800:])
+            if r.returncode != 0:
+                log.append("(bundled Chromium download failed; will use the PC's Edge/Chrome instead)")
+                log.append((r.stderr or "")[-600:])
+        except Exception as e:
+            log.append(f"(bundled Chromium download skipped: {type(e).__name__}; will use the PC's Edge/Chrome)")
+        # prove a browser actually launches (bundled Chromium, or the PC's Edge/Chrome) before calling it ready
         chk = subprocess.run([sys.executable, str(RUNNER), "--selfcheck"],
                              capture_output=True, text=True, timeout=120)
         if chk.returncode != 0 or "SELFCHECK_OK" not in (chk.stdout or ""):
             log.append((chk.stdout or "")[-800:] + (chk.stderr or "")[-800:])
-            raise RuntimeError("The browser installed but would not start. " + (chk.stderr or chk.stdout or "")[-200:])
+            raise RuntimeError("No usable browser found. Make sure Microsoft Edge or Google Chrome is "
+                               "installed on this PC, then run Setup again. " + (chk.stderr or chk.stdout or "")[-160:])
         SENTINEL.write_text("ok", encoding="utf-8")
         return {"ok": True, "log": "\n".join(log)}
     except Exception as e:

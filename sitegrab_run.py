@@ -62,6 +62,22 @@ def _settle(page):
         pass
 
 
+def _launch(pw):
+    """Use a browser that's already on the PC (Edge ships with Windows; Chrome if present) so no big
+    Chromium download is needed; fall back to Playwright's bundled Chromium only if those aren't there."""
+    args = ["--no-sandbox", "--disable-dev-shm-usage"]
+    last = None
+    for ch in ("msedge", "chrome"):
+        try:
+            return pw.chromium.launch(headless=True, channel=ch, args=args)
+        except Exception as e:
+            last = e
+    try:
+        return pw.chromium.launch(headless=True, args=args)
+    except Exception as e:
+        raise last or e
+
+
 def _clean(url, cands):
     from urllib.parse import urljoin
     seen, out = set(), []
@@ -87,7 +103,7 @@ def grab(url, out_dir, limit, w, h):
     from PIL import Image, ImageOps
     saved = []
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
+        browser = _launch(pw)
         ctx = browser.new_context(viewport={"width": 1366, "height": 900}, device_scale_factor=1,
                                   user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                                              "(KHTML, like Gecko) Chrome/122 Safari/537.36")
@@ -155,7 +171,7 @@ def main():
         try:
             from playwright.sync_api import sync_playwright
             with sync_playwright() as pw:
-                b = pw.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
+                b = _launch(pw)
                 b.close()
             print("SELFCHECK_OK")
             return 0
