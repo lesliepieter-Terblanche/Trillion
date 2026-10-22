@@ -936,6 +936,14 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="fn-on">TURN ON PUBLIC LINKS</button><button class="btn" id="fn-off" hidden>TURN OFF</button></div>
     <div class="msg" id="fn-msg"></div>
   </div>
+  <div class="panel" id="find-panel" style="gap:10px;border-color:var(--a)">
+    <b>Find leads &amp; auto-build</b>
+    <div class="muted" style="font-size:12px">Search a type of business in an area. Trillion finds the ones with <b>no website</b>, and builds a premium site for each — they appear below as leads ready to pitch. Needs your Google Places key (saved on the Web Studio page).</div>
+    <div class="two"><label class="field" style="flex:2"><span>Search</span><input id="find-q" placeholder="barbers in Roodepoort"></label>
+      <label class="field" style="max-width:120px"><span>Max</span><select id="find-n"><option>5</option><option selected>10</option><option>15</option><option>20</option></select></label></div>
+    <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="find-go">FIND &amp; BUILD</button></div>
+    <div class="msg" id="find-msg"></div>
+  </div>
   <div id="dash-stats" style="display:flex;gap:12px;flex-wrap:wrap;margin:16px 0"></div>
   <div class="panel" style="overflow:auto;padding:4px"><table id="dash-table" style="width:100%;border-collapse:collapse;font-size:13.5px"></table></div>
   <div class="msg" id="dash-msg"></div>
@@ -1643,6 +1651,10 @@ function drawDash(d){
 }
 $('gm-save')&&($('gm-save').onclick=async()=>{const m=$('gm-msg');m.className='msg muted';m.textContent='Checking…';try{const r=await (await api('/api/gmail/connect',{json:{address:$('gm-addr').value.trim(),app_password:$('gm-pw').value}})).json();if(r.ok){m.className='msg ok';m.textContent='Connected as '+r.address;$('gm-pw').value='';loadDash();}else{m.className='msg bad';m.textContent=r.error||'Could not connect.';}}catch(e){m.className='msg bad';m.textContent=e.message;}});
 $('gm-off')&&($('gm-off').onclick=async()=>{await api('/api/gmail/disconnect',{json:{}});loadDash();});
+$('find-go')&&($('find-go').onclick=async()=>{const q=$('find-q').value.trim();const m=$('find-msg');if(!q){m.className='msg bad';m.textContent='Type what to search for first.';return;}
+  m.className='msg muted';m.textContent='Searching and building — this takes a few minutes. Watch the Control Room; leads appear below as they are made.';
+  try{await api('/api/leads/find',{json:{query:q,limit:+$('find-n').value}});}catch(e){m.className='msg bad';m.textContent=e.message;return;}
+  let n=0;const t=setInterval(async()=>{n++;await loadDash();if(n>30){clearInterval(t);m.className='msg ok';m.textContent='Done — see the new leads below.';}},5000);});
 $('fn-on')&&($('fn-on').onclick=async()=>{const m=$('fn-msg');m.className='msg muted';m.textContent='Turning on public preview links…';try{const r=await (await api('/api/funnel',{json:{on:true}})).json();if(r.ok){m.className='msg ok';m.textContent='On — emailed links now open for anyone.';}else{m.className='msg bad';m.textContent=(r.error||'Could not turn on.')+' If it mentions enabling Funnel, open that link in the Tailscale admin, allow it, then try again.';}loadDash();}catch(e){m.className='msg bad';m.textContent=e.message;}});
 $('fn-off')&&($('fn-off').onclick=async()=>{const m=$('fn-msg');m.className='msg muted';m.textContent='Turning off…';try{await api('/api/funnel',{json:{on:false}});m.className='msg';m.textContent='';loadDash();}catch(e){m.className='msg bad';m.textContent=e.message;}});
 // ---------- Web Studio ----------

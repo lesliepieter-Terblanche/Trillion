@@ -4,6 +4,7 @@ dashboard and the 3-email outreach sequence (pitch now, follow-ups on day 1 and 
 detected from Gmail so hot leads surface for you to close.
 """
 import json
+import threading
 import time
 
 import core
@@ -45,6 +46,48 @@ def on_site_created(user, site_id, token, info):
                      VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
                   (uid, biz, fields["category"], fields["area"], fields["phone"], fields["email"],
                    site_id, token, fields["link"], "site_created", _now(), _now()))
+
+
+def find_and_build(user, query, limit=10, progress=None):
+    """Search Google Maps for a type + area, keep the businesses with no website, and auto-generate a site
+    for each (which opens a lead on the dashboard)."""
+    import maps
+    import web
+    say = progress or (lambda t: None)
+    say(f"Searching Google Maps for: {query}")
+    res = maps.search(user, query, limit=limit, only_no_website=True)
+    if res.get("error"):
+        return res
+    found = res.get("leads") or []
+    say(f"Found {len(found)} business{'es' if len(found) != 1 else ''} with no website (scanned {res.get('scanned', 0)}). Building sites…")
+    built = 0
+    for info in found:
+        try:
+            info["addons"] = ["whatsapp", "form"]      # sensible defaults for a cold lead
+            r = web.build(user, dict(info), progress=None)
+            built += 1
+            say(f"Built {built} of {len(found)}: {r.get('title')}")
+        except Exception:
+            continue
+    return {"ok": True, "found": len(found), "built": built, "scanned": res.get("scanned", 0),
+            "with_website": res.get("with_website", 0)}
+
+
+def start_find(user, query, limit=10):
+    init()
+    tid = core.add_task(user["id"], f"Find & build: {query}", domain="work") if hasattr(core, "add_task") else None
+
+    def go():
+        try:
+            res = find_and_build(user, query, limit, progress=(lambda t: core.set_task(tid, detail=t)) if tid else None)
+            msg = res.get("error") or f"Built {res.get('built', 0)} site(s) from {res.get('found', 0)} leads"
+            if tid:
+                core.set_task(tid, status="failed" if res.get("error") else "completed", detail=msg[:200])
+        except Exception as e:
+            if tid:
+                core.set_task(tid, status="failed", detail=f"Find failed: {type(e).__name__}")
+    threading.Thread(target=go, daemon=True).start()
+    return {"task_id": tid, "started": True}
 
 
 def _row(user, lid):

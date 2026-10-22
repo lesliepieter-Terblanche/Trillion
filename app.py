@@ -2044,6 +2044,14 @@ def funnel_set(p: dict = Body(...), user=Depends(admin)):
     return {**res, **_funnel_state()}
 
 
+@app.post("/api/leads/find")
+def leads_find(p: dict = Body(...), user=Depends(auth)):
+    q = (p.get("query") or "").strip()
+    if not q:
+        raise HTTPException(400, "Say what to search for, e.g. 'barbers in Roodepoort'.")
+    return leads.start_find(user, q, min(int(p.get("limit") or 10), 20))
+
+
 @app.patch("/api/leads/{lid}")
 def leads_update(lid: int, p: dict = Body(...), user=Depends(auth)):
     if p.get("status"):

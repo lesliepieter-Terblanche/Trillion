@@ -103,26 +103,87 @@ def _photo_urls(key, photos, n=6):
     return out
 
 
-def places_details(key, name, address, ftid=None):
-    """Find the place by name+address, then fetch the full detail record."""
+_DETAIL_FIELDS = ("name,types,formatted_address,formatted_phone_number,international_phone_number,"
+                  "rating,user_ratings_total,opening_hours,reviews,photos,website")
+
+
+def _details_by_id(key, place_id):
     try:
-        q = f"{name} {address}".strip()
-        fp = httpx.get("https://maps.googleapis.com/maps/api/place/findplacefromtext/json",
-                       params={"input": q, "inputtype": "textquery", "fields": "place_id", "key": key},
-                       timeout=15, headers=UA).json()
-        cands = fp.get("candidates") or []
-        if not cands:
-            return {}
-        pid = cands[0].get("place_id")
         det = httpx.get("https://maps.googleapis.com/maps/api/place/details/json",
-                        params={"place_id": pid, "key": key,
-                                "fields": ("name,types,formatted_address,formatted_phone_number,"
-                                           "international_phone_number,rating,user_ratings_total,"
-                                           "opening_hours,reviews,photos,website")},
+                        params={"place_id": place_id, "key": key, "fields": _DETAIL_FIELDS},
                         timeout=15, headers=UA).json()
         return det.get("result") or {}
     except Exception:
         return {}
+
+
+def places_details(key, name, address, ftid=None):
+    """Find the place by name+address, then fetch the full detail record."""
+    try:
+        fp = httpx.get("https://maps.googleapis.com/maps/api/place/findplacefromtext/json",
+                       params={"input": f"{name} {address}".strip(), "inputtype": "textquery",
+                               "fields": "place_id", "key": key}, timeout=15, headers=UA).json()
+        cands = fp.get("candidates") or []
+        return _details_by_id(key, cands[0]["place_id"]) if cands else {}
+    except Exception:
+        return {}
+
+
+def _area_from(address, fallback=""):
+    parts = [p.strip() for p in str(address or "").split(",")]
+    towns = [p for p in parts[1:] if p and not re.fullmatch(r"\d{3,5}", p) and p.lower() != "south africa"]
+    return towns[0] if towns else fallback
+
+
+def _info_from_details(det, key, link=""):
+    return {
+        "business": det.get("name") or "Business",
+        "category": _category(det.get("types")),
+        "address": det.get("formatted_address") or "",
+        "location": _area_from(det.get("formatted_address")),
+        "phone": det.get("formatted_phone_number") or det.get("international_phone_number") or "",
+        "rating": det.get("rating"),
+        "reviews": [r.get("text") for r in (det.get("reviews") or [])[:3] if r.get("text")],
+        "hours": _hours(det.get("opening_hours")),
+        "photos": _photo_urls(key, det.get("photos")),
+        "has_website": bool(det.get("website")),
+        "website": det.get("website") or "",
+        "source_link": link,
+    }
+
+
+def search(user, query, limit=20, only_no_website=True):
+    """Find businesses for a 'type in area' query via Google Places, pull each one's details, and keep the
+    ones with no website (your leads). Returns {ok, leads:[info...], scanned, with_website}."""
+    key = key_for(user)
+    if not key:
+        return {"error": "Add a free Google Places key first (on the Web Studio page)."}
+    try:
+        r = httpx.get("https://maps.googleapis.com/maps/api/place/textsearch/json",
+                      params={"query": query, "key": key}, timeout=20, headers=UA).json()
+    except Exception as e:
+        return {"error": f"Could not reach Google Places ({type(e).__name__})."}
+    st = r.get("status")
+    if st not in ("OK", "ZERO_RESULTS"):
+        return {"error": f"Google Places error: {st}. {r.get('error_message', '')}".strip()}
+    cands = r.get("results") or []
+    leads, scanned, with_site = [], 0, 0
+    for c in cands:
+        if len(leads) >= limit:
+            break
+        pid = c.get("place_id")
+        if not pid:
+            continue
+        det = _details_by_id(key, pid)
+        if not det:
+            continue
+        scanned += 1
+        if det.get("website"):
+            with_site += 1
+            if only_no_website:
+                continue
+        leads.append(_info_from_details(det, key))
+    return {"ok": True, "leads": leads, "scanned": scanned, "with_website": with_site}
 
 
 def extract(user, link):
@@ -135,19 +196,9 @@ def extract(user, link):
     if key and base["name"]:
         res = places_details(key, base["name"], base["address"], base.get("ftid"))
         if res:
-            info.update(
-                business=res.get("name") or info["business"],
-                category=_category(res.get("types")),
-                address=res.get("formatted_address") or info["address"],
-                location=base["area"] or (res.get("formatted_address") or "").split(",")[1:2] and
-                         (res.get("formatted_address") or "").split(",")[1].strip() or base["area"],
-                phone=res.get("formatted_phone_number") or res.get("international_phone_number") or "",
-                rating=res.get("rating"),
-                reviews=[r.get("text") for r in (res.get("reviews") or [])[:3] if r.get("text")],
-                hours=_hours(res.get("opening_hours")),
-                photos=_photo_urls(key, res.get("photos")),
-                has_website=bool(res.get("website")),
-            )
+            got = _info_from_details(res, key, link)
+            got["location"] = base["area"] or got.get("location") or base["address"]
+            info.update(got)
     info["_resolved"] = final
     info["_have_key"] = bool(key)
     return info
