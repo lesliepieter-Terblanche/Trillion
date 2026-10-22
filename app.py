@@ -1997,9 +1997,16 @@ def gensites_list(user=Depends(auth)):
 
 @app.post("/api/gensites")
 def gensites_start(p: dict = Body(...), user=Depends(auth)):
-    if not (p.get("business") or p.get("name")):
-        raise HTTPException(400, "A business name is needed.")
+    if not (p.get("business") or p.get("name") or p.get("link")):
+        raise HTTPException(400, "Give a business name or paste a Google Maps link.")
     return web.start(user, p)
+
+
+@app.post("/api/gensites/{sid}/revise")
+def gensites_revise(sid: int, p: dict = Body(...), user=Depends(auth)):
+    if not (p.get("change") or "").strip():
+        raise HTTPException(400, "Say what to change.")
+    return web.start_revise(user, sid, p.get("change").strip())
 
 
 @app.delete("/api/gensites/{sid}")

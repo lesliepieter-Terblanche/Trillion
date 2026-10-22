@@ -880,8 +880,15 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
 <div class="view" id="v-web">
   <h2 style="margin-bottom:4px">Web Studio</h2>
   <div class="muted" style="font-size:13px;margin-bottom:14px">Enter a business (the kind of thing a Google Maps search gives you) and press Generate. Trillion writes the copy, picks a style to suit the trade, drops in the photos, and builds an ultra-premium one-page website — hosted here with a shareable link and downloadable.</div>
+  <div class="panel" style="gap:10px;border-color:var(--a)">
+    <label class="field"><span>Paste a Google Maps link — Trillion fills in the rest</span><input id="wb-link" placeholder="https://maps.app.goo.gl/…"></label>
+    <div class="muted" style="font-size:12px">Add a free Google Places key below to also pull the category, phone, rating, reviews and photos. Without it, the link still gives the name and address.</div>
+    <div class="two"><label class="field"><span>Google Places key (optional)</span><input id="wb-gkey" type="password" placeholder="saved securely, used only for Maps lookups"></label>
+      <div style="display:flex;align-items:flex-end"><button class="btn" id="wb-gkey-save" style="min-height:40px;font-size:12px">SAVE KEY</button></div></div>
+    <div class="msg" id="wb-gkey-msg"></div>
+  </div>
   <div class="panel" style="gap:10px">
-    <div class="two"><label class="field"><span>Business name *</span><input id="wb-name" placeholder="West Rand Plumbing"></label>
+    <div class="two"><label class="field"><span>Business name (or just use the link above)</span><input id="wb-name" placeholder="West Rand Plumbing"></label>
       <label class="field"><span>Category / type</span><input id="wb-cat" placeholder="plumber, restaurant, dentist…"></label></div>
     <div class="two"><label class="field"><span>Area / town</span><input id="wb-loc" placeholder="Roodepoort"></label>
       <label class="field"><span>Phone</span><input id="wb-phone" placeholder="011 555 1212"></label></div>
@@ -1586,14 +1593,22 @@ function drawWeb(sites){
       <div class="btns" style="justify-content:flex-start">
         <a class="btn pri" href="${link}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;text-decoration:none;min-height:40px;font-size:12px">OPEN / PREVIEW</a>
         <a class="btn" href="/api/gensites/${s.id}/file" download style="display:inline-flex;align-items:center;text-decoration:none;min-height:40px;font-size:12px">DOWNLOAD HTML</a>
+        <button class="btn" data-wbc="${s.id}" style="min-height:40px;font-size:12px">CHANGE…</button>
         <button class="btn" data-wbd="${s.id}" style="min-height:40px;font-size:12px">DELETE</button></div>
     </div>`;}).join('')||'<div class="muted">No sites yet. Fill in a business above and press Generate.</div>';
   document.querySelectorAll('[data-wbd]').forEach(b=>b.onclick=async()=>{await api('/api/gensites/'+b.dataset.wbd,{method:'DELETE'});loadWeb();});
+  document.querySelectorAll('[data-wbc]').forEach(b=>b.onclick=async()=>{const what=prompt('What should change? e.g. "make it light", "use the 3D look", "change colours to blue", "warmer", "reword the headline"');if(!what||!what.trim())return;
+    $('wb-msg').className='msg muted';$('wb-msg').textContent='Updating the site — the preview link stays the same. Watch the Control Room.';
+    try{await api('/api/gensites/'+b.dataset.wbc+'/revise',{json:{change:what.trim()}});}catch(e){$('wb-msg').className='msg bad';$('wb-msg').textContent=e.message;return;}
+    clearInterval(webPoll);let n=0;webPoll=setInterval(async()=>{n++;try{const d=await (await api('/api/gensites')).json();drawWeb(d.sites||[]);if(n>18){clearInterval(webPoll);$('wb-msg').className='msg ok';$('wb-msg').textContent='Updated — refresh the preview to see the change.';}}catch(e){}},4000);});
 }
+$('wb-gkey-save')&&($('wb-gkey-save').onclick=async()=>{const v=$('wb-gkey').value.trim();const m=$('wb-gkey-msg');if(!v){m.className='msg bad';m.textContent='Paste the key first.';return;}
+  try{await api('/api/secrets/google_places',{method:'PUT',json:{value:v,enabled:true}});m.className='msg ok';m.textContent='Saved. Links will now pull full business details.';$('wb-gkey').value='';}catch(e){m.className='msg bad';m.textContent=e.message;}});
 $('wb-go')&&($('wb-go').onclick=async()=>{
-  const name=$('wb-name').value.trim();if(!name){$('wb-msg').className='msg bad';$('wb-msg').textContent='Enter a business name first.';return;}
+  const name=$('wb-name').value.trim();const link=$('wb-link').value.trim();
+  if(!name&&!link){$('wb-msg').className='msg bad';$('wb-msg').textContent='Enter a business name or paste a Google Maps link.';return;}
   const photos=$('wb-photos').value.split('\n').map(x=>x.trim()).filter(x=>x);
-  const body={business:name,category:$('wb-cat').value.trim(),location:$('wb-loc').value.trim(),phone:$('wb-phone').value.trim(),
+  const body={business:name,link,category:$('wb-cat').value.trim(),location:$('wb-loc').value.trim(),phone:$('wb-phone').value.trim(),
     services:$('wb-svc').value.trim(),hours:$('wb-hours').value.trim(),style:$('wb-style').value,look:$('wb-look').value,photos};
   $('wb-msg').className='msg muted';$('wb-msg').textContent='Building the website — a minute or two. You can watch the steps in the Control Room.';
   try{await api('/api/gensites',{json:body});}catch(e){$('wb-msg').className='msg bad';$('wb-msg').textContent=e.message;return;}

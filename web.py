@@ -27,9 +27,9 @@ TEMPLATES = {
     "object3d":  {"file": "object3d.html", "photo": False, "dark": True},   # Three.js 3D crystal hero, lit + parallax
 }
 # categories that suit a 3D-object hero (products on show, modern/tech feel)
-OBJECT_WORDS = ("shop", "store", "retail", "boutique", "product", "auto", "car", "motor", "tyre", "parts",
-                "tech", "software", "app", "it ", "electronic", "jewel", "watch", "furniture", "decor",
-                "design", "agency", "detailing", "solar", "security", "print", "signage", "fabricat")
+OBJECT_WORDS = ("retail", "product", "auto part", "car part", "motor", "tyre", "spares", "tech",
+                "software", "electronic", "jewel", "watch", "furniture", "agency", "solar",
+                "security", "print", "signage", "fabricat", "hardware", "supplier", "wholesale")
 # categories that look best as a cinematic photo hero (when the business has usable photos)
 CINEMATIC_WORDS = ("restaurant", "cafe", "coffee", "bar", "bistro", "grill", "diner", "eatery", "bakery",
                    "deli", "salon", "beauty", "spa", "hair", "barber", "nail", "hotel", "guest", "lodge",
@@ -221,6 +221,8 @@ Shape exactly:
 "services":[{{"t":"service name","d":"one sentence benefit"}} x3],
 "reviews_head":"short heading","cta_head":"short closing headline","cta_sub":"one sentence"}}
 Keep it specific to this business and category. English, confident, no hashtags, no emojis in text."""
+    if info.get("change_note"):
+        ask += f"\nAlso apply this change the owner asked for: {info['change_note']}"
     data = {}
     try:
         text = (llm(user, [{"role": "system", "content": "You are a senior web copywriter. Reply with JSON only."},
@@ -296,6 +298,19 @@ def build(user, info, progress=None):
     init()
     say = progress or (lambda t: None)
     uid = user["id"]
+    link = str(info.get("link") or "").strip()
+    if link:                                    # a Google Maps link -> pull the business details from it
+        say("Reading the business from the link")
+        try:
+            import maps
+            ex = maps.extract(user, link)
+            merged = {k: v for k, v in ex.items() if not str(k).startswith("_")}
+            for k, v in info.items():           # anything typed in by hand wins over the link
+                if v not in (None, "", []):
+                    merged[k] = v
+            info = merged
+        except Exception:
+            pass
     name = str(info.get("business") or info.get("name") or "Business").strip()
     cat = str(info.get("category") or "").strip()
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:40] or "site"
@@ -327,8 +342,10 @@ def build(user, info, progress=None):
     except Exception:
         pass
     detail = {"style": style, "mode": palette["mode"], "template": template, "business": name, "category": cat,
-              "photos": len(photos_rel), "info": {k: info.get(k) for k in
-              ("business", "category", "location", "phone", "hours", "services", "about", "rating")}}
+              "photos": len(photos_rel), "photos_rel": photos_rel,
+              "info": {k: info.get(k) for k in
+                       ("business", "category", "location", "address", "phone", "hours", "services",
+                        "about", "rating", "reviews", "link")}}
     sid = core.x("""INSERT INTO gensites(user_id,title,business,category,style,token,folder,thumb,detail,status,created)
                     VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
                  (uid, name, name, cat, style, token, str(folder), thumb, json.dumps(detail), "done", time.time()))
@@ -340,8 +357,8 @@ def build(user, info, progress=None):
 # ---------- background job + serving ----------
 def start(user, info):
     init()
-    tid = core.add_task(user["id"], f"Website for {info.get('business') or 'a business'}", domain="work") \
-        if hasattr(core, "add_task") else None
+    label = info.get("business") or ("the linked business" if info.get("link") else "a business")
+    tid = core.add_task(user["id"], f"Website for {label}", domain="work") if hasattr(core, "add_task") else None
 
     def go():
         try:
@@ -353,6 +370,25 @@ def start(user, info):
             if tid:
                 core.set_task(tid, status="failed", detail=f"Could not build the site: {type(e).__name__}")
             core.log(user["id"], f"Website build failed: {type(e).__name__}: {e}"[:200], "error")
+    threading.Thread(target=go, daemon=True).start()
+    return {"task_id": tid, "started": True}
+
+
+def start_revise(user, sid, change):
+    init()
+    row = core.q("SELECT title FROM gensites WHERE id=? AND user_id=?", (sid, user["id"]), one=True)
+    tid = core.add_task(user["id"], f"Change website: {(row['title'] if row else 'site')}", domain="work") \
+        if hasattr(core, "add_task") else None
+
+    def go():
+        try:
+            res = revise(user, sid, change, progress=(lambda t: core.set_task(tid, detail=t)) if tid else None)
+            if tid:
+                core.set_task(tid, status="failed" if res.get("error") else "completed",
+                              detail=res.get("error") or "Website updated")
+        except Exception as e:
+            if tid:
+                core.set_task(tid, status="failed", detail=f"Could not change the site: {type(e).__name__}")
     threading.Thread(target=go, daemon=True).start()
     return {"task_id": tid, "started": True}
 
@@ -396,6 +432,78 @@ def listing(user):
                     "has_thumb": bool(r["thumb"] and os.path.exists(r["thumb"])), "created": r["created"],
                     "exists": os.path.exists(os.path.join(r["folder"], "index.html"))})
     return out
+
+
+_COLOUR = {"violet": "violet", "purple": "violet", "blue": "azure", "azure": "azure", "teal": "teal",
+           "cyan": "teal", "green": "emerald", "emerald": "emerald", "warm": "ember", "orange": "ember",
+           "red": "ember", "amber": "ember", "ember": "ember", "slate": "slate", "indigo": "slate",
+           "grey": "slate", "gray": "slate"}
+_TO_LIGHT = {"violet": "slate", "ember": "azure", "teal": "emerald"}
+_TO_DARK = {"azure": "violet", "emerald": "teal", "slate": "violet"}
+
+
+def revise(user, sid, change, progress=None):
+    """Regenerate a site with a plain-language change (dark/light, a different look or colours, reworded copy),
+    keeping the same folder and preview link so anything already shared stays valid."""
+    import re as _re
+    say = progress or (lambda t: None)
+    row = _row(user, sid)
+    if not row:
+        return {"error": f"I couldn't find that website (#{sid}) to change."}
+    d = json.loads(row["detail"] or "{}")
+    info = dict(d.get("info") or {})
+    style = d.get("style") or "violet"
+    template = d.get("template") or "premium"
+    photos_rel = d.get("photos_rel") or []
+    low = (change or "").lower()
+    # look
+    if _re.search(r"\b(3d|object|crystal)\b", low):
+        template = "object3d"
+    elif _re.search(r"cinematic|photo hero|photo", low):
+        template = "cinematic" if photos_rel else "premium"
+    elif _re.search(r"gradient|shader|animated", low):
+        template = "premium"
+    # colour
+    for w, s in _COLOUR.items():
+        if _re.search(r"\b" + w + r"\b", low):
+            style = s
+            break
+    # light / dark
+    want = "light" if _re.search(r"\blight\b|brighter|bright", low) else ("dark" if _re.search(r"\bdark\b|moody|black", low) else None)
+    if want and PALETTES[style]["mode"] != want:
+        style = (_TO_LIGHT if want == "light" else _TO_DARK).get(style, "azure" if want == "light" else "violet")
+    if want == "light" and TEMPLATES[template].get("dark"):
+        template = "premium"                      # the photo/3D looks are dark-only
+    palette = PALETTES.get(style, PALETTES["violet"])
+    if TEMPLATES[template].get("dark") and palette["mode"] != "dark":
+        style = _dark_style(info.get("category", ""))
+        palette = PALETTES[style]
+    # is there a wording change beyond the design words?
+    leftover = _re.sub(r"\b(light|dark|bright|brighter|moody|black|3d|object|crystal|cinematic|photo|hero|gradient|"
+                       r"shader|animated|colour|color|make|it|the|to|change|look|style|" + "|".join(_COLOUR) + r")\b",
+                       " ", low)
+    note = change if len(_re.sub(r"[^a-z0-9]+", "", leftover)) >= 4 else ""
+    say("Rewriting the site")
+    content = plan(core.LLM if hasattr(core, "LLM") else (lambda u, m: {"content": ""}),
+                   user, dict(info, change_note=note))
+    html = render(content, palette, photos_rel, template)
+    folder = Path(row["folder"])
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "index.html").write_text(html, encoding="utf-8")
+    thumb = row["thumb"]
+    try:
+        say("Taking a preview shot")
+        import sitegrab
+        if sitegrab.ready():
+            tp = folder / "thumb.jpg"
+            if sitegrab.screenshot("file://" + str(folder / "index.html"), str(tp)):
+                thumb = str(tp)
+    except Exception:
+        pass
+    d.update(style=style, mode=palette["mode"], template=template)
+    core.x("UPDATE gensites SET style=?, detail=?, thumb=? WHERE id=?", (style, json.dumps(d), thumb, sid))
+    return {"site_id": sid, "title": row["title"], "token": row["token"], "style": style,
+            "mode": palette["mode"], "template": template, "notes": [f"Updated: now the {palette['mode']} {template} look."]}
 
 
 def forget(user, sid):

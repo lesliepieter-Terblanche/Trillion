@@ -50,6 +50,13 @@ Pixabay, records an ElevenLabs voice-over, adds music, titles and captions, and 
 your "Trillion Videos" folder. Keys go under Settings: Pixabay (free, pixabay.com/api/docs) for footage,
 ElevenLabs for the voice. Without them the video still renders, with light backdrops and no voice.
 Your own music: drop mp3 files into data\music and she uses those instead of the built-in track.
+Web Studio (More -> Web Studio): build an ultra-premium one-page website for any business. Type the
+details, or just paste a Google Maps link and Trillion fills in the rest - name, area, and (with a free
+Google Places key saved on that page) the category, phone, rating, reviews and photos. Press Generate and
+it writes the copy, picks a look to suit the trade (animated gradient / cinematic photo / 3D object) and a
+palette, and builds a self-contained site - hosted here with a shareable /site/ link and downloadable as
+one HTML file. Great for showing a website-less business what you could build them.
+
 Changing a video: on the Videos page press "Change..." on any video and say what to change in plain
 words - "make it 15 seconds", "landscape", "no voice-over", "new footage", "make it shorter", or
 "focus on the disposables". Trillion remakes it applying just that change and keeps the rest. (You can
