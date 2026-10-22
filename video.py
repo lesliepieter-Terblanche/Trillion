@@ -171,6 +171,111 @@ def media_seconds(path):
 _URL_IN = re.compile(r"https?://[^\s]+|\bwww\.[^\s]+|\b[a-z0-9][a-z0-9-]*\.(?:co\.za|com|net|org|io|shop|store|app|co)\b[^\s]*", re.I)
 
 
+# ---------- whose video is this? ----------
+def _domain(url):
+    return re.sub(r"^(https?://)?(www\.)?", "", str(url or "").strip().lower()).split("/")[0].rstrip(".,)")
+
+
+def _family():
+    try:
+        return json.loads((core.BASE / "family.json").read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def _too_dark(accent):
+    r, g, b = _hex(accent or "", default=(0, 0, 0))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b < 70
+
+
+def brand_for(user, prompt):
+    """The brand, website and colour a video belongs to. The website NAMED IN THE REQUEST wins over whatever
+    the login's settings say - so a video 'for truehome.co.za' is titled TrueHome with TrueHome's colour even
+    if the settings were blank or set for another site. A brand mentioned by name (no URL) also counts."""
+    s = core.settings(user)
+    brand, site, accent = s.get("brand") or "", s.get("site") or "", s.get("accent") or ""
+    fam = [f for f in _family() if isinstance(f, dict) and f.get("site")]
+    m = _URL_IN.search(prompt or "")
+    hit = None
+    if m:
+        dom = _domain(m.group(0))
+        hit = next((f for f in fam if _domain(f["site"]) == dom), None)
+        if not hit and dom and dom != _domain(site):          # a site nobody in the family owns: name it after its domain
+            brand, site = dom.split(".")[0].replace("-", " ").title(), "https://www." + dom
+    else:
+        low = re.sub(r"\s+", "", (prompt or "").lower())
+        hit = next((f for f in fam if f.get("brand") and re.sub(r"\s+", "", f["brand"].lower()) in low), None)
+    if hit:
+        brand, site, accent = hit.get("brand") or brand, hit["site"], hit.get("accent") or accent
+    if _too_dark(accent):                                     # a black/blank accent made the titles' bar invisible
+        accent = "#ffb454"
+    return {"brand": brand, "site": site, "accent": accent}
+
+
+def with_brand_site(prompt):
+    """A request that names a family brand but no address ('a video for TrueHome') gets that brand's website
+    added, so it is read and kept on-brand exactly like a request that gave the URL."""
+    if _URL_IN.search(prompt or ""):
+        return prompt
+    low = re.sub(r"\s+", "", (prompt or "").lower())
+    for f in _family():
+        if isinstance(f, dict) and f.get("brand") and f.get("site") and re.sub(r"\s+", "", f["brand"].lower()) in low:
+            return f"{prompt} ({f['site']})"
+    return prompt
+
+
+# ---------- keeping stock footage on the subject ----------
+# Stock libraries answer place names with safari and scenery: "South African homes" on Pixabay returns
+# elephants. So place names never go into a footage search, and every clip's own tags are checked.
+_PLACES = re.compile(r"\b(south(ern)?[\s-]*africa[n]?s?|africa[n]?s?|mzansi|cape[\s-]*town|johannesburg|joburg|jozi|durban|pretoria|"
+                     r"tshwane|sandton|soweto|centurion|midrand|roodepoort|gauteng|western[\s-]*cape|eastern[\s-]*cape|"
+                     r"kwazulu[\s-]*natal|kzn|gqeberha|port[\s-]*elizabeth|bloemfontein|stellenbosch|sadc|namibia[n]?|"
+                     r"botswana|zimbabwe(an)?|zambia[n]?|mozambique|lesotho|eswatini|sa|rsa|local|nationwide)\b", re.I)
+_ANIMALS = {"animal", "wildlife", "elephant", "bird", "safari", "chicken", "hen", "rooster", "poultry", "chick", "lion", "lioness",
+            "giraffe", "zebra", "rhino", "rhinoceros", "buffalo", "hippo", "hippopotamus", "monkey", "baboon", "antelope", "impala",
+            "deer", "cattle", "cow", "bull", "goat", "sheep", "horse", "dog", "puppy", "cat", "kitten", "insect", "butterfly",
+            "bee", "fish", "fishing", "turtle", "duck", "goose", "parrot", "eagle", "owl", "leopard", "cheetah", "wolf", "bear",
+            "fox", "squirrel", "rabbit", "pig", "turaco", "ostrich", "flamingo", "crocodile", "snake", "lizard", "frog"}
+_STOP = {"the", "and", "for", "with", "your", "you", "our", "its", "from", "into", "that", "this", "their", "real", "new",
+         "best", "smart", "services", "service", "people", "person", "video", "shot", "scene", "footage", "stock", "cinematic"}
+_PROPERTY = re.compile(r"\b(propert(y|ies)|real[\s-]*estate|estate[\s-]*agent|realtor|home[s]?|house[s]?|housing|rental[s]?|rent(ing)?|"
+                       r"landlord|tenant|apartment|flat[s]?|bond|mortgage|listing[s]?|buyer[s]?|seller[s]?|suburb|townhouse)\b", re.I)
+PROPERTY_SHOTS = ["modern house exterior", "luxury home interior", "living room interior", "modern kitchen interior",
+                  "house keys", "real estate agent", "family new home", "apartment building", "villa swimming pool",
+                  "bedroom interior", "aerial suburb houses", "couple house viewing"]
+
+
+def _norm(word):
+    word = re.sub(r"[^a-z]", "", word.lower())
+    return word[:-1] if len(word) > 3 and word.endswith("s") and not word.endswith("ss") else word
+
+
+def clean_search(q):
+    """Footage search words with place names and filler taken out ('South African family home' -> 'family home')."""
+    q = _PLACES.sub(" ", str(q or ""))
+    q = re.sub(r"[^\w\s-]", " ", q)
+    return re.sub(r"\s+", " ", q).strip()[:60]
+
+
+def topic_shots(text):
+    """A safe list of on-subject searches to fall back on, for subjects stock libraries are known to get wrong."""
+    hits = {m.group(0).lower() for m in _PROPERTY.finditer(text or "")}
+    return PROPERTY_SHOTS if len(hits) >= 2 else []          # two different property words, so 'home of anglers' isn't property
+
+
+def clip_matches(tags, query):
+    """True only when a stock clip's own tags show it is about what was searched: it must share a real word with
+    the search, and it must not be an animal clip unless animals were asked for."""
+    tag_words = {_norm(w) for w in re.split(r"[\s,]+", str(tags or "")) if w}
+    tag_words.discard("")
+    want = {_norm(w) for w in str(query or "").split() if len(w) >= 3} - {_norm(w) for w in _STOP}
+    want.discard("")
+    animals = {_norm(a) for a in _ANIMALS}
+    if (tag_words & animals) and not (want & animals):
+        return False
+    return bool(tag_words & want)
+
+
 def site_subject(llm, user, prompt):
     """If the request points at a website, read it and ground the script in what the site actually offers -
     so a video 'for vapeessence.co.za' is about vapes, not an invented theme. No URL -> prompt unchanged."""
@@ -299,17 +404,20 @@ def _site_media_static(url, w, h, uid, limit=8, progress=None):
     return [p for _, p in scored[:limit]]
 
 
-def plan(llm, user, prompt, seconds, n_scenes, with_voice):
+def plan(llm, user, prompt, seconds, n_scenes, with_voice, brand=None, site=None):
     s = core.settings(user)
+    brand = s.get("brand") if brand is None else brand
+    site = s.get("site") if site is None else site
     words = int((seconds - END_LEN) * 2.3)
     ask = f"""Write a {seconds}-second cinematic social media video for this request: "{prompt}"
-Brand: {s.get('brand') or 'none'}. Website: {s.get('site') or 'none'}.
+Brand: {brand or 'none'}. Website: {site or 'none'}.
 Reply with JSON only, in exactly this shape:
 {{"title": "short title", "scenes": [{{"search": "2 to 4 plain CONCRETE words for stock footage that literally shows the real product, someone using it, or its true setting - e.g. the actual item, a person using it, the place it belongs. Use the real subject/product, NEVER abstract moods, paint, ink, liquid swirls, bokeh, or unrelated scenery. No brand names",
 "headline": "at most 5 punchy words", "caption": "one short supporting sentence",
 "visual": "one vivid sentence describing a cinematic photograph for this moment: the subject, the setting, the light and the mood. No words, signs or logos in the picture"}}],
 "narration": "a voice-over of about {words} words for the whole video, warm and confident, no hashtags"}}
-Every scene's "search" must clearly relate to the real subject/product above - a viewer should recognise what it is selling. Give exactly {n_scenes} scenes. English only."""
+Every scene's "search" must clearly relate to the real subject/product above - a viewer should recognise what it is selling.
+NEVER put a country, city or region in "search" (stock libraries answer "South Africa" with elephants and safari). For a property / real-estate business search for homes, interiors, keys, agents and buildings - never animals, wildlife or wild landscapes. Give exactly {n_scenes} scenes. English only."""
     data = {}
     try:
         text = (llm(user, [{"role": "system", "content": "You are a film director who writes tight social video scripts. Reply with JSON only."},
@@ -325,7 +433,7 @@ Every scene's "search" must clearly relate to the real subject/product above - a
         scenes = [{"search": topic, "headline": topic[:40], "caption": ""}] * n_scenes
         data = {"title": topic[:50], "narration": ""}
     for sc in scenes:
-        sc["search"] = re.sub(r"[^\w\s-]", "", str(sc.get("search") or sc["headline"]))[:60]
+        sc["search"] = clean_search(sc.get("search") or sc["headline"]) or clean_search(sc["headline"])
         sc["headline"], sc["caption"] = str(sc["headline"])[:60], str(sc.get("caption") or "")[:140]
         sc["visual"] = re.sub(r"\s+", " ", str(sc.get("visual") or sc["search"] or sc["headline"]))[:300]
     narration = re.sub(r"\s+", " ", str(data.get("narration") or "")).strip() if with_voice else ""
@@ -335,13 +443,17 @@ Every scene's "search" must clearly relate to the real subject/product above - a
 # ---------- 2. footage ----------
 def pixabay_clip(key, query, w, h, need_seconds, used):
     """Find and download one stock clip from Pixabay (free key, no orientation filter: clips are cropped to fit)."""
+    query = clean_search(query)
+    if not query:
+        return None, None
     try:
         r = httpx.get("https://pixabay.com/api/videos/", timeout=25,
-                      params={"key": key, "q": query[:100], "per_page": 10, "video_type": "film", "safesearch": "true"})
+                      params={"key": key, "q": query[:100], "per_page": 20, "video_type": "film", "safesearch": "true"})
         r.raise_for_status()
         hits = r.json().get("hits", [])
     except Exception:
         return None, None
+    hits = [v for v in hits if clip_matches(v.get("tags"), query)]     # off-subject clips (elephants for 'home') never get in
     hits = [v for v in hits if v.get("id") not in used and v.get("duration", 0) >= need_seconds] or \
            [v for v in hits if v.get("id") not in used]
     for v in hits:
@@ -757,11 +869,13 @@ def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progre
     pb_key = core.get_secret(uid, "pixabay")
     find_clip, stock_key, stock_name = pixabay_clip, pb_key, "Pixabay"
 
+    who = brand_for(user, orig_request)        # the site named in the request decides the brand, site and colour
     if _URL_IN.search(prompt or ""):
         say("Reading the website")
         prompt = site_subject(llm, user, prompt)
     say("Writing the script")
-    p = plan(llm, user, prompt, seconds, n_scenes, bool(el_key))
+    p = plan(llm, user, prompt, seconds, n_scenes, bool(el_key), brand=who["brand"], site=who["site"])
+    fallback_shots = [q for q in topic_shots(prompt)]
     stamp = time.strftime("%Y%m%d-%H%M%S")
     slug = re.sub(r"[^a-z0-9]+", "-", p["title"].lower()).strip("-")[:40] or "video"
     folder = core.out_dir(user, "Trillion Videos")
@@ -811,15 +925,21 @@ def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progre
             if sc.get("clip") or sc.get("image"):
                 continue
             say(f"Finding footage {i + 1} of {len(p['scenes'])}")
-            clip, who = find_clip(stock_key, sc["search"], w, h, per, used)
+            clip, by = find_clip(stock_key, sc["search"], w, h, per, used)
+            # nothing on-subject for this scene's words: try the safe searches for this kind of business
+            while not clip and fallback_shots:
+                q = fallback_shots.pop(i % len(fallback_shots))
+                clip, by = find_clip(stock_key, q, w, h, per, used)
+                if clip:
+                    sc["search"] = q
             if clip:
                 sc["clip"] = clip
-                credits.append(who)
+                credits.append(by)
                 if per >= 3.6:                       # long enough for two shots: quicker cuts feel more like a film
-                    clip2, who2 = find_clip(stock_key, sc["search"], w, h, per / 2, used)
+                    clip2, by2 = find_clip(stock_key, sc["search"], w, h, per / 2, used)
                     if clip2:
                         sc["clip2"] = clip2
-                        credits.append(who2)
+                        credits.append(by2)
     bare = [sc for sc in p["scenes"] if not sc.get("clip") and not sc.get("image")]
     made = 0
     if bare and s.get("video_ai_images", True):
@@ -846,7 +966,7 @@ def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progre
 
     music, music_name = pick_music()
     say("Rendering")
-    seconds = render(out, s.get("brand") or "", p["scenes"], website=s.get("site") or "", accent=s.get("accent") or "#ffb454",
+    seconds = render(out, who["brand"], p["scenes"], website=who["site"], accent=who["accent"],
                      fmt=fmt, seconds=seconds, vo_path=vo_path, captions=caps, music=music,
                      progress=lambda pct: say(f"Rendering {pct}%"))
     thumb = str(out)[:-4] + ".jpg"
