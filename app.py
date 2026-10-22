@@ -67,9 +67,12 @@ import scrape
 import evolve
 import voicecall
 import web
+import mail
+import leads
 gumroad.init()
 routines.init()
 web.init()
+leads.init()
 # 0.7.28: Bible study belongs to Lewellyn's login. His morning and evening routines read the day's verse aloud, a different
 # one each. The owner can switch Bible study on for another login on the Family page.
 for _u in core.q("SELECT * FROM users"):
@@ -2000,6 +2003,38 @@ def gensites_start(p: dict = Body(...), user=Depends(auth)):
     if not (p.get("business") or p.get("name") or p.get("link")):
         raise HTTPException(400, "Give a business name or paste a Google Maps link.")
     return web.start(user, p)
+
+
+@app.get("/api/gmail")
+def gmail_get(user=Depends(auth)):
+    return mail.status(user)
+
+
+@app.post("/api/gmail/connect")
+def gmail_connect(p: dict = Body(...), user=Depends(auth)):
+    return mail.connect(user, p.get("address"), p.get("app_password"))
+
+
+@app.post("/api/gmail/disconnect")
+def gmail_disconnect(user=Depends(auth)):
+    return mail.disconnect(user)
+
+
+@app.get("/api/leads")
+def leads_list(user=Depends(auth)):
+    return {"leads": leads.listing(user), "stats": leads.stats(user), "gmail": mail.status(user)}
+
+
+@app.patch("/api/leads/{lid}")
+def leads_update(lid: int, p: dict = Body(...), user=Depends(auth)):
+    if p.get("status"):
+        leads.set_status(user, lid, p["status"])
+    return leads.update(user, lid, **{k: v for k, v in p.items() if k != "status"})
+
+
+@app.post("/api/leads/{lid}/send")
+def leads_send(lid: int, request: Request, user=Depends(auth)):
+    return leads.send_pitch(user, lid, app_host(request), request.url.scheme if request.url.scheme == "https" else "https")
 
 
 @app.post("/api/gensites/{sid}/revise")
@@ -4106,6 +4141,14 @@ def background():
                     pass
                 try:
                     morning.check(u, SITES, now)
+                except Exception:
+                    pass
+                try:                              # website campaign: due follow-ups + reply detection, every 20 min
+                    if now.minute % 20 == 0:
+                        _ts = (TAILSCALE.get("v") or {})
+                        _host = _ts.get("dns") or _ts.get("ip")
+                        if _host:
+                            leads.tick(u, _host, "https")
                 except Exception:
                     pass
             try:

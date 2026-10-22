@@ -913,6 +913,25 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
   <div class="grid2" id="weblist"></div>
 </div>
 
+<div class="view" id="v-dashboard">
+  <h2 style="margin-bottom:4px">Campaign dashboard</h2>
+  <div class="muted" style="font-size:13px;margin-bottom:14px">Every business tracked from site made → emailed → replied → accepted, so you focus the hot leads. Pitches and follow-ups (day 1 and day 3) send from your Gmail; replies are detected automatically.</div>
+  <div class="panel" id="gm-panel" style="gap:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px"><b>Gmail</b><span class="pill" id="gm-pill"></span></div>
+    <div id="gm-connect">
+      <div class="muted" style="font-size:12px">Connect your Gmail to send pitches and track replies. Turn on 2-Step Verification, then make an App Password (<a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a>) and paste it below — not your normal password. Tip: use a dedicated outreach Gmail, not your personal one.</div>
+      <div class="two" style="margin-top:8px"><label class="field"><span>Gmail address</span><input id="gm-addr" placeholder="you@gmail.com"></label>
+        <label class="field"><span>App password (16 letters)</span><input id="gm-pw" type="password" placeholder="xxxx xxxx xxxx xxxx"></label></div>
+      <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="gm-save">CONNECT GMAIL</button></div>
+    </div>
+    <div class="btns" id="gm-disc" style="justify-content:flex-start" hidden><button class="btn" id="gm-off">DISCONNECT GMAIL</button></div>
+    <div class="msg" id="gm-msg"></div>
+  </div>
+  <div id="dash-stats" style="display:flex;gap:12px;flex-wrap:wrap;margin:16px 0"></div>
+  <div class="panel" style="overflow:auto;padding:4px"><table id="dash-table" style="width:100%;border-collapse:collapse;font-size:13.5px"></table></div>
+  <div class="msg" id="dash-msg"></div>
+</div>
+
 <div class="view" id="v-skills">
   <h2>Skills</h2>
   <div class="muted">A skill is a written playbook for doing one kind of job well. Every skill starts switched on for every login. Switch off any you do not want her to use for yours.</div>
@@ -1063,7 +1082,7 @@ const api=async(u,o={})=>{if(o.json!==undefined){o.method=o.method||'POST';o.hea
 const hm=t=>new Date(t*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false});
 let hold=0,S=null,sending=false,speakNext=false,settingsLoaded=false,cwd='';
 
-const LOADERS={apps:()=>loadApps(),sites:()=>{loadSites();loadClones();},bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),workflow:()=>wfLoad(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);loadStorage();},memory:()=>loadNotes(''),videos:()=>loadVideos(),web:()=>loadWeb(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();loadBackup();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
+const LOADERS={apps:()=>loadApps(),sites:()=>{loadSites();loadClones();},bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),workflow:()=>wfLoad(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);loadStorage();},memory:()=>loadNotes(''),videos:()=>loadVideos(),web:()=>loadWeb(),dashboard:()=>loadDash(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();loadBackup();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
 let VIEW='control';
 function go(v){
   VIEW=v;try{if(v!=='settings'&&mtTimer)micTestStop();}catch(e){}
@@ -1584,6 +1603,34 @@ $('vgo').onclick=async()=>{const about=$('vprompt').value.trim();if(!about){$('v
   if($('vkind').value==='ai')await send(`Generate an AI clip, ${Math.min(15,+$('vsec').value)} seconds, ${$('vfmt').value}: ${about}`,false);
   else await send(`Create a ${$('vsec').value} second ${$('vfmt').value} video${$('vvo').checked?'':' with no voice-over'}: ${about}`,false);
   $('vmsg').textContent='';$('vprompt').value='';loadVideos();};
+// ---------- Campaign dashboard ----------
+const LEAD_BADGE={site_created:['Site made','#8a8a9a'],emailed:['Emailed','#3b82f6'],followed_up:['Followed up','#6366f1'],replied:['Replied','#22c55e'],accepted:['Accepted','#16a34a'],declined:['Declined','#ef4444']};
+async function loadDash(){try{drawDash(await (await api('/api/leads')).json());}catch(e){}}
+function drawDash(d){
+  const g=d.gmail||{};$('gm-pill').textContent=g.connected?('connected · '+g.address):'not connected';$('gm-pill').className='pill'+(g.connected?' on':'');
+  $('gm-connect').hidden=!!g.connected;$('gm-disc').hidden=!g.connected;
+  const c=(d.stats&&d.stats.counts)||{},st=d.stats||{};
+  const tiles=[['Sites made',st.total||0,'var(--text)'],['Emailed',(c.emailed||0)+(c.followed_up||0)+(c.replied||0)+(c.accepted||0)+(c.declined||0),'#3b82f6'],['Replied',c.replied||0,'#22c55e'],['Accepted',c.accepted||0,'#16a34a'],['Declined',c.declined||0,'#ef4444']];
+  $('dash-stats').innerHTML=tiles.map(t=>`<div class="panel" style="flex:1;min-width:110px;text-align:center;padding:16px 10px"><div style="font-size:30px;font-weight:800;color:${t[2]}">${t[1]}</div><div class="muted" style="font-size:12px">${t[0]}</div></div>`).join('');
+  const rows=(d.leads||[]).map(l=>{const b=LEAD_BADGE[l.status]||['?','#888'];const canSend=g.connected&&l.token;
+    const sendLabel=l.status==='site_created'?'Send pitch':(l.status==='emailed'||l.status==='followed_up'?'Follow up':'Resend');
+    return `<tr style="border-top:1px solid var(--edge2)">
+      <td style="padding:10px 8px"><b>${esc(l.business)}</b><div class="muted" style="font-size:12px">${esc(l.area||l.category||'')}</div></td>
+      <td style="padding:10px 8px"><span style="background:${b[1]}22;color:${b[1]};padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600;white-space:nowrap">${b[0]}</span></td>
+      <td style="padding:10px 8px"><input data-le="${l.id}" value="${esc(l.email||'')}" placeholder="owner@email" style="width:160px;padding:7px 10px;border:1px solid var(--edge2);border-radius:8px;background:var(--panel2,transparent);color:var(--text);font-size:13px"></td>
+      <td style="padding:10px 8px;white-space:nowrap">
+        ${l.token?`<a class="btn" href="/site/${l.token}/" target="_blank" rel="noopener" style="min-height:30px;font-size:11px;text-decoration:none;display:inline-flex;align-items:center">Site</a>`:''}
+        <button class="btn" data-lsend="${l.id}" style="min-height:30px;font-size:11px" ${canSend?'':'disabled'}>${sendLabel}</button>
+        <button class="btn" data-lst="${l.id}" data-v="accepted" style="min-height:30px;font-size:11px">Won</button>
+        <button class="btn" data-lst="${l.id}" data-v="declined" style="min-height:30px;font-size:11px;opacity:.7">Lost</button>
+      </td></tr>`;}).join('');
+  $('dash-table').innerHTML=rows?`<thead><tr style="text-align:left;color:var(--dim);font-size:12px"><th style="padding:8px">Business</th><th style="padding:8px">Status</th><th style="padding:8px">Owner email</th><th style="padding:8px">Actions</th></tr></thead><tbody>${rows}</tbody>`:'<tbody><tr><td style="padding:16px" class="muted">No leads yet. Generate a site in Web Studio and it appears here.</td></tr></tbody>';
+  $('dash-table').querySelectorAll('[data-le]').forEach(i=>i.onchange=async()=>{try{await api('/api/leads/'+i.dataset.le,{method:'PATCH',json:{email:i.value.trim()}});loadDash();}catch(e){}});
+  $('dash-table').querySelectorAll('[data-lsend]').forEach(b=>b.onclick=async()=>{b.disabled=true;$('dash-msg').className='msg muted';$('dash-msg').textContent='Sending…';try{const r=await (await api('/api/leads/'+b.dataset.lsend+'/send',{json:{}})).json();$('dash-msg').className='msg '+(r.error?'bad':'ok');$('dash-msg').textContent=r.error||('Emailed '+r.emailed);}catch(e){$('dash-msg').className='msg bad';$('dash-msg').textContent=e.message;}loadDash();});
+  $('dash-table').querySelectorAll('[data-lst]').forEach(b=>b.onclick=async()=>{try{await api('/api/leads/'+b.dataset.lst,{method:'PATCH',json:{status:b.dataset.v}});loadDash();}catch(e){}});
+}
+$('gm-save')&&($('gm-save').onclick=async()=>{const m=$('gm-msg');m.className='msg muted';m.textContent='Checking…';try{const r=await (await api('/api/gmail/connect',{json:{address:$('gm-addr').value.trim(),app_password:$('gm-pw').value}})).json();if(r.ok){m.className='msg ok';m.textContent='Connected as '+r.address;$('gm-pw').value='';loadDash();}else{m.className='msg bad';m.textContent=r.error||'Could not connect.';}}catch(e){m.className='msg bad';m.textContent=e.message;}});
+$('gm-off')&&($('gm-off').onclick=async()=>{await api('/api/gmail/disconnect',{json:{}});loadDash();});
 // ---------- Web Studio ----------
 let webPoll=null;
 async function loadWeb(){
@@ -2219,7 +2266,7 @@ function drawCommands(){
   document.querySelectorAll('[data-use]').forEach(b=>b.onclick=()=>{go('control');$('say').value=b.dataset.use;$('say').focus();});
 }
 function drawMore(){
-  const items=[['workflow','Workflow',"What's running now, live"],...(S&&S.bible_on?[['bible','Bible study','Daily verse, reader, notes, helper']]:[]),...(S&&S.store_on?[['store','Store','Gumroad sales, products, codes']]:[]),['videos','Videos','Make and watch videos'],['web','Web Studio','Build a premium site for a business'],['files','Files','Browse your folders'],['sites','Websites','Read a site, make a deck or report'],['apps','Apps','Search rankings and automations'],['memory','Memory','What she remembers'],['routines','Routines','Morning briefing, news, weather'],['skills','Skills','Extra abilities and connectors'],['commands','Commands','Everything you can say'],['settings','Settings','Look, brain, voice, keys']];
+  const items=[['workflow','Workflow',"What's running now, live"],...(S&&S.bible_on?[['bible','Bible study','Daily verse, reader, notes, helper']]:[]),...(S&&S.store_on?[['store','Store','Gumroad sales, products, codes']]:[]),['videos','Videos','Make and watch videos'],['web','Web Studio','Build a premium site for a business'],['dashboard','Campaign','Lead tracking + email outreach'],['files','Files','Browse your folders'],['sites','Websites','Read a site, make a deck or report'],['apps','Apps','Search rankings and automations'],['memory','Memory','What she remembers'],['routines','Routines','Morning briefing, news, weather'],['skills','Skills','Extra abilities and connectors'],['commands','Commands','Everything you can say'],['settings','Settings','Look, brain, voice, keys']];
   if(S&&S.user.is_admin)items.push(['family','Family','Logins, update, backup']);
   $('moregrid').innerHTML=items.map(i=>`<button class="mbtn" data-go="${i[0]}"><b>${i[1]}</b><span>${i[2]}</span></button>`).join('')+`<button class="mbtn" id="out2"><b>Sign out</b><span>${S?esc(S.user.name):''}</span></button>`;
   $('out2').onclick=()=>$('out').click();

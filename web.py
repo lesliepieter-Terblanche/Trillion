@@ -428,6 +428,11 @@ def build(user, info, progress=None):
     sid = core.x("""INSERT INTO gensites(user_id,title,business,category,style,token,folder,thumb,detail,status,created)
                     VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
                  (uid, name, name, cat, style, token, str(folder), thumb, json.dumps(detail), "done", time.time()))
+    try:                                        # open a CRM lead for this business so it shows on the dashboard
+        import leads
+        leads.on_site_created(user, sid, token, info)
+    except Exception:
+        pass
     return {"site_id": sid, "title": name, "token": token, "folder": str(folder), "style": style,
             "mode": palette["mode"], "photos": len(photos_rel),
             "notes": [f"Premium {palette['mode']} site for {name}" + (f" ({photos_rel and str(len(photos_rel)) + ' real photos' or 'no photos yet'})")]}
