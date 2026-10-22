@@ -45,7 +45,7 @@ DEFAULT_SETTINGS = {
     "call_done_announce": True,    # when a "call me when done" job finishes, also announce it on a Google Home
     "call_done_device": "",        # which cast speaker to announce on (empty = the only/first one)
 }
-SECRET_NAMES = ["gemini", "anthropic", "elevenlabs", "pixabay"]
+SECRET_NAMES = ["gemini", "anthropic", "elevenlabs", "pixabay", "google_places"]
 LLM = None  # set by app.py: the brain, for jobs that need it outside the chat loop
 
 

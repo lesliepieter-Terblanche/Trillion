@@ -3216,6 +3216,14 @@ def secret_test(name: str, user=Depends(auth)):
                           headers={"x-api-key": key, "anthropic-version": "2023-06-01"})
         elif name == "pixabay":
             r = httpx.get("https://pixabay.com/api/videos/", params={"key": key, "q": "city", "per_page": 3}, timeout=15)
+        elif name == "google_places":
+            r = httpx.get("https://maps.googleapis.com/maps/api/place/findplacefromtext/json",
+                          params={"input": "coffee", "inputtype": "textquery", "fields": "place_id", "key": key}, timeout=15)
+            try:
+                st = r.json().get("status", "")
+            except Exception:
+                st = ""
+            return {"ok": r.status_code == 200 and st in ("OK", "ZERO_RESULTS"), "status": r.status_code, "note": st}
         else:
             r = httpx.get("https://api.elevenlabs.io/v1/user", headers={"xi-api-key": key}, timeout=15)
         return {"ok": r.status_code == 200, "status": r.status_code}
