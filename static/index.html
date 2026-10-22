@@ -1688,8 +1688,11 @@ function drawWeb(sites){
 $('wb-gkey-save')&&($('wb-gkey-save').onclick=async()=>{const v=$('wb-gkey').value.trim();const m=$('wb-gkey-msg');if(!v){m.className='msg bad';m.textContent='Paste the key first.';return;}
   try{await api('/api/secrets/google_places',{method:'PUT',json:{value:v,enabled:true}});m.className='msg ok';m.textContent='Saved. Links will now pull full business details.';$('wb-gkey').value='';}catch(e){m.className='msg bad';m.textContent=e.message;}});
 $('wb-pl-chk')&&($('wb-pl-chk').onchange=()=>{$('wb-pl-wrap').hidden=!$('wb-pl-chk').checked;});
-async function wbLoadLink(){const link=$('wb-link').value.trim();if(!link)return;const m=$('wb-msg');m.className='msg muted';m.textContent='Reading the business from the link…';
+let wbLinkSeq=0;
+async function wbLoadLink(){const link=$('wb-link').value.trim();if(!link)return;const m=$('wb-msg');const seq=++wbLinkSeq;m.className='msg muted';m.textContent='Reading the business from the link…';
+  ['wb-name','wb-cat','wb-loc','wb-phone','wb-hours'].forEach(id=>{if($(id))$(id).value='';});  // clear stale values from the previous link first
   try{const d=await (await api('/api/gensites/from-link',{json:{link}})).json();
+    if(seq!==wbLinkSeq)return;  // a newer link load started; ignore this stale response
     if(d.business)$('wb-name').value=d.business;if(d.category)$('wb-cat').value=d.category;if(d.location)$('wb-loc').value=d.location;if(d.phone)$('wb-phone').value=d.phone;if(d.hours)$('wb-hours').value=d.hours;if(d.about&&!$('wb-svc').value)$('wb-svc').value=d.about;
     const apiSt=(d.api||'');let note,cls='ok';
     if(!d.business){cls='bad';note='Could not read that link — make sure it opens a business on Google Maps.';}
