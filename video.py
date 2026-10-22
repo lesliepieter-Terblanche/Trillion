@@ -168,6 +168,38 @@ def media_seconds(path):
 
 
 # ---------- 1. the script ----------
+_URL_IN = re.compile(r"https?://[^\s]+|\bwww\.[^\s]+|\b[a-z0-9][a-z0-9-]*\.(?:co\.za|com|net|org|io|shop|store|app|co)\b[^\s]*", re.I)
+
+
+def site_subject(llm, user, prompt):
+    """If the request points at a website, read it and ground the script in what the site actually offers -
+    so a video 'for vapeessence.co.za' is about vapes, not an invented theme. No URL -> prompt unchanged."""
+    m = _URL_IN.search(prompt or "")
+    if not m:
+        return prompt
+    url = m.group(0).rstrip(".,)")
+    if not url.lower().startswith("http"):
+        url = "https://" + url
+    try:
+        r = httpx.get(url, timeout=10, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 (compatible; Trillion)"})
+        html = r.text[:150000]
+    except Exception:
+        return prompt
+    title = (re.search(r"<title[^>]*>(.*?)</title>", html, re.I | re.S) or [None, ""])[1].strip()
+    md = re.search(r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']+)', html, re.I)
+    desc = md.group(1).strip() if md else ""
+    text = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html, flags=re.I | re.S)
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", text)).strip()[:3000]
+    try:
+        summary = (llm(user, [{"role": "system", "content": "In one plain sentence say what this business/website offers and who it is for. No preamble, no markdown."},
+                              {"role": "user", "content": f"Title: {title}\nDescription: {desc}\nPage: {text}"}]).get("content") or "").strip()[:300]
+    except Exception:
+        summary = desc or title
+    brand = re.sub(r"^https?://(www\.)?", "", url).split("/")[0]
+    return (f'{prompt}\n\nThis video is for {brand}. What they actually offer: {summary} '
+            "Keep the whole video specifically about this real business and what it sells - do not invent an unrelated theme or mood.")
+
+
 def plan(llm, user, prompt, seconds, n_scenes, with_voice):
     s = core.settings(user)
     words = int((seconds - END_LEN) * 2.3)
@@ -604,6 +636,9 @@ def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progre
     find_clip, stock_key, stock_name = pixabay_clip, pb_key, "Pixabay"
     notes = []
 
+    if _URL_IN.search(prompt or ""):
+        say("Reading the website")
+        prompt = site_subject(llm, user, prompt)
     say("Writing the script")
     p = plan(llm, user, prompt, seconds, n_scenes, bool(el_key))
     stamp = time.strftime("%Y%m%d-%H%M%S")

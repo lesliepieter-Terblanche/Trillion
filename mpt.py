@@ -192,9 +192,17 @@ def create(user, prompt, seconds=20, fmt="vertical", voiceover=True, progress=No
     uv = _uv()
     if not uv:
         raise RuntimeError("uv is needed to run the video engine. Run Setup again.")
+    subject = str(prompt)
+    try:
+        import video as _v
+        if _v._URL_IN.search(subject):                 # ground the subject in the real site so it stays on-brand
+            say("Reading the website")
+            subject = _v.site_subject(core.LLM, user, subject)
+    except Exception:
+        pass
     say("Writing the script and finding footage (this takes a few minutes)")
     started = time.time()
-    cmd = uv + ["run", "python", "cli.py", "--video-subject", str(prompt)[:500], "--video-aspect", aspect]
+    cmd = uv + ["run", "python", "cli.py", "--video-subject", subject[:800], "--video-aspect", aspect]
     try:
         r = subprocess.run(cmd, cwd=str(REPO), capture_output=True, text=True, timeout=1800)
     except subprocess.TimeoutExpired:
