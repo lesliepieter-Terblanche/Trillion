@@ -19,7 +19,17 @@ from pathlib import Path
 import core
 
 ROOT = core.DATA / "gensites"
-TEMPLATE = Path(__file__).resolve().parent / "webtemplates" / "premium.html"
+TPL_DIR = Path(__file__).resolve().parent / "webtemplates"
+# the look library: each entry is a self-contained, hand-built, verified template
+TEMPLATES = {
+    "premium":   {"file": "premium.html", "photo": False},   # animated WebGL shader-gradient hero
+    "cinematic": {"file": "cinematic.html", "photo": True},   # full-bleed real photo, Ken-Burns + scrim
+}
+# categories that look best as a cinematic photo hero (when the business has usable photos)
+CINEMATIC_WORDS = ("restaurant", "cafe", "coffee", "bar", "bistro", "grill", "diner", "eatery", "bakery",
+                   "deli", "salon", "beauty", "spa", "hair", "barber", "nail", "hotel", "guest", "lodge",
+                   "venue", "event", "wedding", "photo", "florist", "boutique", "interior", "decor",
+                   "gym", "fitness", "yoga", "pilates", "tattoo", "lounge", "club")
 IMG_EXT = (".jpg", ".jpeg", ".png", ".webp")
 
 
@@ -71,6 +81,26 @@ def pick_style(category, hint=""):
         if word in c:
             return pal
     return "violet" if any(w in c for w in DARK_WORDS) else "azure"
+
+
+def _dark_style(category):
+    """A dark palette suited to the trade — cinematic photo heroes need one for legible text over the scrim."""
+    c = str(category).lower()
+    if any(w in c for w in ("restaurant", "cafe", "coffee", "grill", "bistro", "bakery", "deli", "diner")):
+        return "ember"
+    if any(w in c for w in ("gym", "fitness", "spa", "yoga", "auto", "detailing")):
+        return "teal"
+    return "violet"
+
+
+def pick_template(category, photos, look=""):
+    """Choose the look. Explicit look wins; otherwise a cinematic photo hero for the right trades with photos,
+    else the animated shader hero. Cinematic needs at least one photo, so fall back if there are none."""
+    chosen = look if look in TEMPLATES else (
+        "cinematic" if (photos and any(w in str(category).lower() for w in CINEMATIC_WORDS)) else "premium")
+    if chosen == "cinematic" and not photos:
+        chosen = "premium"
+    return chosen
 
 
 # ---------- template filling ----------
@@ -233,10 +263,13 @@ Keep it specific to this business and category. English, confident, no hashtags,
     }
 
 
-def render(content, palette, photos_rel):
-    html = TEMPLATE.read_text(encoding="utf-8")
+def render(content, palette, photos_rel, template="premium"):
+    tpl = TEMPLATES.get(template, TEMPLATES["premium"])
+    html = (TPL_DIR / tpl["file"]).read_text(encoding="utf-8")
     content = dict(content)
-    content["GALLERY_SECTION"] = _gallery_section(photos_rel)
+    content["GALLERY_SECTION"] = _gallery_section(photos_rel[1:] if tpl.get("photo") else photos_rel)
+    if tpl.get("photo"):
+        content["HERO_PHOTO"] = photos_rel[0] if photos_rel else ""
     for k, v in palette.items():
         if k != "mode":
             html = html.replace("__" + k + "__", v)
@@ -252,18 +285,23 @@ def build(user, info, progress=None):
     uid = user["id"]
     name = str(info.get("business") or info.get("name") or "Business").strip()
     cat = str(info.get("category") or "").strip()
-    style = info.get("style") or pick_style(cat, name)
-    palette = PALETTES.get(style, PALETTES["violet"])
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:40] or "site"
     token = secrets.token_urlsafe(9)
     folder = ROOT / f"{slug}-{int(time.time())}"
     folder.mkdir(parents=True, exist_ok=True)
     say("Pulling in the photos")
     photos_rel = _photos_into(folder, info.get("photos") or [])
+    # choose the look (template), then a palette that suits it
+    template = pick_template(cat, photos_rel, info.get("look") or "")
+    style = info.get("style") or pick_style(cat, name)
+    palette = PALETTES.get(style, PALETTES["violet"])
+    if template == "cinematic" and palette.get("mode") != "dark":
+        style = _dark_style(cat)
+        palette = PALETTES[style]
     say("Writing the copy")
     content = plan(core.LLM if hasattr(core, "LLM") else (lambda u, m: {"content": ""}), user, info)
     say("Building the website")
-    html = render(content, palette, photos_rel)
+    html = render(content, palette, photos_rel, template)
     (folder / "index.html").write_text(html, encoding="utf-8")
     thumb = ""
     try:
@@ -275,7 +313,7 @@ def build(user, info, progress=None):
                 thumb = str(tp)
     except Exception:
         pass
-    detail = {"style": style, "mode": palette["mode"], "business": name, "category": cat,
+    detail = {"style": style, "mode": palette["mode"], "template": template, "business": name, "category": cat,
               "photos": len(photos_rel), "info": {k: info.get(k) for k in
               ("business", "category", "location", "phone", "hours", "services", "about", "rating")}}
     sid = core.x("""INSERT INTO gensites(user_id,title,business,category,style,token,folder,thumb,detail,status,created)

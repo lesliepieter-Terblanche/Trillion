@@ -887,8 +887,10 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
       <label class="field"><span>Phone</span><input id="wb-phone" placeholder="011 555 1212"></label></div>
     <label class="field"><span>Services / notes</span><textarea id="wb-svc" rows="2" placeholder="leaks, geysers, blocked drains — 15 years local, same-day callouts"></textarea></label>
     <label class="field"><span>Photo links (one per line, optional — e.g. their Google Maps photos)</span><textarea id="wb-photos" rows="2" placeholder="https://…/photo1.jpg"></textarea></label>
-    <div class="two"><label class="field"><span>Hours</span><input id="wb-hours" placeholder="Mon–Sat, 7am–6pm"></label>
-      <label class="field"><span>Style</span><select id="wb-style">
+    <div class="two"><label class="field"><span>Look</span><select id="wb-look">
+        <option value="">Auto (match the business)</option><option value="premium">Animated gradient hero</option><option value="cinematic">Cinematic photo hero (needs photos)</option></select></label>
+      <label class="field"><span>Hours</span><input id="wb-hours" placeholder="Mon–Sat, 7am–6pm"></label></div>
+    <div class="two"><label class="field" style="max-width:50%"><span>Colour style</span><select id="wb-style">
         <option value="">Auto (match the trade)</option><option value="violet">Dark · Violet</option><option value="ember">Dark · Ember</option><option value="teal">Dark · Teal</option>
         <option value="azure">Light · Azure</option><option value="emerald">Light · Emerald</option><option value="slate">Light · Slate</option></select></label></div>
     <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="wb-go">GENERATE WEBSITE</button></div>
@@ -1592,7 +1594,7 @@ $('wb-go')&&($('wb-go').onclick=async()=>{
   const name=$('wb-name').value.trim();if(!name){$('wb-msg').className='msg bad';$('wb-msg').textContent='Enter a business name first.';return;}
   const photos=$('wb-photos').value.split('\n').map(x=>x.trim()).filter(x=>x);
   const body={business:name,category:$('wb-cat').value.trim(),location:$('wb-loc').value.trim(),phone:$('wb-phone').value.trim(),
-    services:$('wb-svc').value.trim(),hours:$('wb-hours').value.trim(),style:$('wb-style').value,photos};
+    services:$('wb-svc').value.trim(),hours:$('wb-hours').value.trim(),style:$('wb-style').value,look:$('wb-look').value,photos};
   $('wb-msg').className='msg muted';$('wb-msg').textContent='Building the website — a minute or two. You can watch the steps in the Control Room.';
   try{await api('/api/gensites',{json:body});}catch(e){$('wb-msg').className='msg bad';$('wb-msg').textContent=e.message;return;}
   clearInterval(webPoll);let n=0;
