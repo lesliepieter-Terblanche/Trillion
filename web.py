@@ -197,6 +197,50 @@ def _photos_into(folder, photos):
 
 
 # ---------- the brain writes the copy ----------
+_CAT_SERVICES = {
+    "barber": [("Cuts & fades", "Clean, modern cuts and fades done exactly how you like them."),
+               ("Beard trims", "Sharp lines and a tidy finish, every visit."),
+               ("Kids' cuts", "Patient, friendly cuts the little ones actually enjoy.")],
+    "hair": [("Cuts & styling", "Expert cuts and blow-outs tailored to you."),
+             ("Colour", "Balayage, highlights and full colour by a careful hand."),
+             ("Treatments", "Keratin, gloss and care treatments for healthy hair.")],
+    "beauty": [("Facials & skin", "Relaxing, results-driven skincare treatments."),
+               ("Nails", "Manicures, gels and pedicures, beautifully finished."),
+               ("Waxing & brows", "Clean, precise waxing and brow shaping.")],
+    "auto": [("Servicing", "Full and minor services to keep your car running right."),
+             ("Repairs", "Honest diagnostics and repairs, done properly first time."),
+             ("Tyres & brakes", "Fitting, balancing and brake work you can trust.")],
+    "restaurant": [("Our kitchen", "Fresh, seasonal plates cooked simply and well."),
+                   ("Drinks & wine", "A tight list chosen to match the menu."),
+                   ("Bookings & events", "From a quiet dinner to a private celebration.")],
+    "plumb": [("Leaks & repairs", "Found fast and fixed properly, no mess left behind."),
+              ("Geysers", "Supply, install and repair of every make."),
+              ("Blocked drains", "Cleared quickly with the right tools, not guesswork.")],
+    "electric": [("Installations", "Safe, neat wiring and new installations."),
+                 ("Repairs & faults", "Fault-finding and repairs, done to standard."),
+                 ("Compliance", "Certificates of compliance, sorted properly.")],
+    "dent": [("Check-ups & cleaning", "Gentle, thorough care with no guesswork."),
+             ("Cosmetic", "Whitening, veneers and alignment for a smile you love."),
+             ("Family care", "Calm, patient care for the whole family.")],
+    "clean": [("Regular cleaning", "Reliable, thorough cleans on your schedule."),
+              ("Deep cleans", "Top-to-bottom cleans that actually show."),
+              ("Move in/out", "Spotless hand-overs for landlords and tenants.")],
+    "gym": [("Memberships", "Flexible plans with everything you need to train."),
+            ("Classes", "Energising group classes for every level."),
+            ("Personal training", "One-on-one coaching to reach your goals.")],
+}
+
+
+def _fallback_services(category):
+    c = str(category).lower()
+    for key, items in _CAT_SERVICES.items():
+        if key in c:
+            return [{"t": t, "d": d} for t, d in items]
+    return [{"t": "What we do", "d": "Reliable, professional work tailored to what you need."},
+            {"t": "Trusted locally", "d": "A team your neighbours already recommend."},
+            {"t": "Fair pricing", "d": "Clear, honest quotes with no surprises."}]
+
+
 def plan(llm, user, info):
     """Ask the local brain for the site's words as JSON, grounded in the business details. Falls back to a
     clean structure built straight from the details if the model doesn't return usable JSON."""
@@ -206,12 +250,14 @@ def plan(llm, user, info):
     svc = str(info.get("services") or "").strip()
     about = str(info.get("about") or "").strip()
     reviews = info.get("reviews") or []
+    rev_text = " / ".join(str(r)[:180] for r in reviews[:3] if r) or "none"
     ask = f"""Write the words for a premium one-page website for this real business. Reply with JSON only.
-Business: {name}
+Business name: {name}
 Category: {cat or 'unknown'}
 Area: {loc or 'unknown'}
 Services/notes: {svc or 'none given'}
 About: {about or 'none given'}
+What customers say in reviews: {rev_text}
 Shape exactly:
 {{"tagline":"4-6 word tagline","eyebrow":"tiny label e.g. 'Est. 2012 · {loc or 'local'}'",
 "headline":"5-8 word headline with ONE standout word in [square brackets] for a colour accent",
@@ -219,9 +265,9 @@ Shape exactly:
 "nav":["3 short nav words"],"navcta":"2-3 word button",
 "strip":["4 tiny trust badges e.g. '12 years local','Open 7 days'"],
 "services_label":"1-2 words","services_head":"short section heading","services_sub":"one sentence",
-"services":[{{"t":"service name","d":"one sentence benefit"}} x3],
+"services":[{{"t":"a REAL, specific service this {cat or 'business'} offers","d":"one sentence benefit"}} x3],
 "reviews_head":"short heading","cta_head":"short closing headline","cta_sub":"one sentence"}}
-Keep it specific to this business and category. English, confident, no hashtags, no emojis in text."""
+For "services", name the 3 actual services a {cat or 'business like this'} provides — infer them from the category and the reviews (e.g. a barber: cuts, fades, beard trims; an auto shop: servicing, repairs, diagnostics). Never use vague filler like "quality service". Mention {name} by name in the headline or sub. English, confident, no hashtags, no emojis in text."""
     if info.get("change_note"):
         ask += f"\nAlso apply this change the owner asked for: {info['change_note']}"
     data = {}
@@ -238,10 +284,13 @@ Keep it specific to this business and category. English, confident, no hashtags,
     svc_list = data.get("services") if isinstance(data.get("services"), list) else []
     svc_list = [s for s in svc_list if isinstance(s, dict) and s.get("t")][:3]
     if len(svc_list) < 3:
-        base = [x.strip() for x in re.split(r"[,/;\n]", svc) if x.strip()][:3]
-        while len(base) < 3:
-            base.append(["Quality service", "Trusted local team", "Fair, honest pricing"][len(base)])
-        svc_list = [{"t": b[:40], "d": f"{b.capitalize()} you can count on, done properly."} for b in base]
+        typed = [x.strip() for x in re.split(r"[,/;\n]", svc) if x.strip()][:3]
+        if typed:
+            while len(typed) < 3:
+                typed.append(["Quality work", "Trusted local team", "Fair pricing"][len(typed)])
+            svc_list = [{"t": b[:40], "d": f"{b.capitalize()} you can count on, done properly."} for b in typed]
+        else:
+            svc_list = _fallback_services(cat)
     rev_list = []
     for r in (reviews or [])[:3]:
         if isinstance(r, dict) and r.get("t"):
