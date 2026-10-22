@@ -1642,6 +1642,7 @@ function drawDash(d){
       <td style="padding:10px 8px;white-space:nowrap">
         ${l.token?`<a class="btn" href="/site/${l.token}/" target="_blank" rel="noopener" style="min-height:30px;font-size:11px;text-decoration:none;display:inline-flex;align-items:center">Site</a>`:''}
         <button class="btn" data-lsend="${l.id}" style="min-height:30px;font-size:11px" ${canSend?'':'disabled'}>${sendLabel}</button>
+        <button class="btn" data-lwa="${l.id}" style="min-height:30px;font-size:11px;${l.phone&&l.token?'background:#25d36622;color:#128c3f;border-color:#25d36655':''}" ${l.phone&&l.token?'':'disabled'} title="${l.phone?('WhatsApp '+esc(l.phone)):'No phone number'}">WhatsApp</button>
         <button class="btn" data-lst="${l.id}" data-v="accepted" style="min-height:30px;font-size:11px">Won</button>
         <button class="btn" data-lst="${l.id}" data-v="declined" style="min-height:30px;font-size:11px;opacity:.7">Lost</button>
         <button class="btn" data-ldel="${l.id}" style="min-height:30px;font-size:11px;opacity:.6">✕</button>
@@ -1649,6 +1650,7 @@ function drawDash(d){
   $('dash-table').innerHTML=rows?`<thead><tr style="text-align:left;color:var(--dim);font-size:12px"><th style="padding:8px">Business</th><th style="padding:8px">Status</th><th style="padding:8px">Owner email</th><th style="padding:8px">Actions</th></tr></thead><tbody>${rows}</tbody>`:'<tbody><tr><td style="padding:16px" class="muted">No leads yet. Generate a site in Web Studio and it appears here.</td></tr></tbody>';
   $('dash-table').querySelectorAll('[data-le]').forEach(i=>i.onchange=async()=>{try{await api('/api/leads/'+i.dataset.le,{method:'PATCH',json:{email:i.value.trim()}});loadDash();}catch(e){}});
   $('dash-table').querySelectorAll('[data-lsend]').forEach(b=>b.onclick=async()=>{b.disabled=true;$('dash-msg').className='msg muted';$('dash-msg').textContent='Sending…';try{const r=await (await api('/api/leads/'+b.dataset.lsend+'/send',{json:{}})).json();$('dash-msg').className='msg '+(r.error?'bad':'ok');$('dash-msg').textContent=r.error||('Emailed '+r.emailed);}catch(e){$('dash-msg').className='msg bad';$('dash-msg').textContent=e.message;}loadDash();});
+  $('dash-table').querySelectorAll('[data-lwa]').forEach(b=>b.onclick=async()=>{b.disabled=true;$('dash-msg').className='msg muted';$('dash-msg').textContent='Sending WhatsApp via your phone…';try{const r=await (await api('/api/leads/'+b.dataset.lwa+'/whatsapp',{json:{}})).json();$('dash-msg').className='msg '+(r.error?'bad':'ok');$('dash-msg').textContent=r.error||('WhatsApp sent to '+r.to);}catch(e){$('dash-msg').className='msg bad';$('dash-msg').textContent=e.message;}loadDash();});
   $('dash-table').querySelectorAll('[data-lst]').forEach(b=>b.onclick=async()=>{try{await api('/api/leads/'+b.dataset.lst,{method:'PATCH',json:{status:b.dataset.v}});loadDash();}catch(e){}});
   $('dash-table').querySelectorAll('[data-ldel]').forEach(b=>b.onclick=async()=>{try{await api('/api/leads/'+b.dataset.ldel,{method:'DELETE'});loadDash();}catch(e){}});
 }

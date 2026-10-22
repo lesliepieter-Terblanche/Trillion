@@ -2086,6 +2086,13 @@ def leads_send(lid: int, request: Request, user=Depends(auth)):
     return leads.send_pitch(user, lid, dns, "https")
 
 
+@app.post("/api/leads/{lid}/whatsapp")
+def leads_whatsapp(lid: int, request: Request, user=Depends(auth)):
+    # WhatsApp the sample link to the lead's phone (best for no-website leads, who have a mobile but no email)
+    dns = (TAILSCALE.get("v") or {}).get("dns") or app_host(request)
+    return leads.send_whatsapp(user, lid, dns, "https")
+
+
 @app.post("/api/gensites/{sid}/revise")
 def gensites_revise(sid: int, p: dict = Body(...), user=Depends(auth)):
     if not (p.get("change") or "").strip():

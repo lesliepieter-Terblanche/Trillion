@@ -206,6 +206,33 @@ def send_pitch(user, lid, host, scheme="https"):
     return {"ok": True, "emailed": lead["email"]}
 
 
+def send_whatsapp(user, lid, host, scheme="https"):
+    """Send the pitch + live preview link to a lead over WhatsApp (their phone), using Trillion's phone link.
+    Best for no-website leads, who have a mobile but rarely an email."""
+    import phone
+    lead = _row(user, lid)
+    if not lead:
+        return {"error": "Lead not found."}
+    if not (lead["phone"] or "").strip():
+        return {"error": "This lead has no phone number."}
+    if not lead["token"]:
+        return {"error": "This lead has no generated site yet."}
+    link = preview_url(host, lead["token"], scheme)
+    biz = lead["business"]
+    me = core.q("SELECT name FROM users WHERE id=?", (user["id"],), one=True)
+    who = (me["name"] if me and me["name"] else "").split(" ")[0] or ""
+    msg = (f"Hi, I came across {biz} on Google and noticed you don't have a website yet, so I built a free "
+           f"sample of what one could look like for you:\n{link}\n\nHave a look - no obligation at all. If you "
+           f"like it, just reply and we can make it yours." + (f"\n\n{who}" if who else ""))
+    try:
+        phone.send_whatsapp(user, lead["phone"], msg)
+    except Exception as e:
+        return {"error": f"Could not send WhatsApp: {str(e)[:160]}"}
+    core.x("UPDATE leads SET status=CASE WHEN status='site_created' THEN 'emailed' ELSE status END, "
+           "emailed_at=COALESCE(emailed_at,?), note='WhatsApp sent', updated=? WHERE id=?", (_now(), _now(), lid))
+    return {"ok": True, "to": lead["phone"], "via": "whatsapp"}
+
+
 def tick(user, host, scheme="https"):
     """Run from the background loop: send any due follow-ups, and mark leads that have replied."""
     import mail
