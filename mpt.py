@@ -16,6 +16,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -37,7 +38,24 @@ def _git():
 
 
 def _uv():
-    return shutil.which("uv")
+    """uv as a command list. It ships inside Trillion's venv, so it's usually not on PATH - find its binary
+    via the uv package, or next to the running Python, before giving up."""
+    p = shutil.which("uv")
+    if p:
+        return [p]
+    try:
+        import uv as _uvpkg
+        b = _uvpkg.find_uv_bin()
+        if b and os.path.exists(b):
+            return [b]
+    except Exception:
+        pass
+    base = Path(sys.executable).parent
+    for name in ("uv.exe", "uv", "Scripts/uv.exe", "bin/uv"):
+        cand = base / name
+        if cand.exists():
+            return [str(cand)]
+    return None
 
 
 def ready():
@@ -117,7 +135,7 @@ def install():
         uv = _uv()
         if not uv:
             raise RuntimeError("uv is needed to set up the video engine. Run Setup again.")
-        if _run([uv, "sync"], 3600, log, cwd=str(REPO)) != 0:        # creates .venv and installs MoneyPrinterTurbo's deps
+        if _run(uv + ["sync"], 3600, log, cwd=str(REPO)) != 0:        # creates .venv and installs MoneyPrinterTurbo's deps
             raise RuntimeError("Could not install the video engine's parts. " + (log[-1] if log else ""))
         write_config()
         return {"ok": True, "log": "\n".join(log)}
@@ -172,9 +190,11 @@ def create(user, prompt, seconds=20, fmt="vertical", voiceover=True, progress=No
     write_config()                                     # refresh in case the model or key changed
     aspect = ASPECT.get(str(fmt or "vertical").lower(), "9:16")
     uv = _uv()
+    if not uv:
+        raise RuntimeError("uv is needed to run the video engine. Run Setup again.")
     say("Writing the script and finding footage (this takes a few minutes)")
     started = time.time()
-    cmd = [uv, "run", "python", "cli.py", "--video-subject", str(prompt)[:500], "--video-aspect", aspect]
+    cmd = uv + ["run", "python", "cli.py", "--video-subject", str(prompt)[:500], "--video-aspect", aspect]
     try:
         r = subprocess.run(cmd, cwd=str(REPO), capture_output=True, text=True, timeout=1800)
     except subprocess.TimeoutExpired:
