@@ -32,19 +32,23 @@ def on_site_created(user, site_id, token, info):
     init()
     uid = user["id"]
     biz = str(info.get("business") or "Business")
-    row = core.q("SELECT id FROM leads WHERE user_id=? AND site_id=?", (uid, site_id), one=True) or \
-        core.q("SELECT id FROM leads WHERE user_id=? AND lower(business)=? AND site_id IS NULL",
-               (uid, biz.lower()), one=True)
-    fields = dict(business=biz, category=info.get("category") or "", area=info.get("location") or "",
-                  phone=info.get("phone") or "", email=info.get("email") or "", site_id=site_id, token=token,
+    area = (info.get("location") or "").strip()
+    # one lead per business+area: a rebuild updates it rather than piling up duplicates
+    row = core.q("SELECT id, email FROM leads WHERE user_id=? AND site_id=?", (uid, site_id), one=True) or \
+        core.q("SELECT id, email FROM leads WHERE user_id=? AND lower(business)=? AND lower(COALESCE(area,''))=?",
+               (uid, biz.lower(), area.lower()), one=True)
+    fields = dict(business=biz, category=info.get("category") or "", area=area,
+                  phone=info.get("phone") or "", site_id=site_id, token=token,
                   link=info.get("source_link") or "", updated=_now())
     if row:
+        if not (row["email"] or "") and info.get("email"):   # don't wipe an email already captured
+            fields["email"] = info["email"]
         sets = ", ".join(f"{k}=?" for k in fields)
         core.x(f"UPDATE leads SET {sets} WHERE id=?", (*fields.values(), row["id"]))
         return row["id"]
     return core.x("""INSERT INTO leads(user_id,business,category,area,phone,email,site_id,token,link,status,created,updated)
                      VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-                  (uid, biz, fields["category"], fields["area"], fields["phone"], fields["email"],
+                  (uid, biz, fields["category"], area, fields["phone"], info.get("email") or "",
                    site_id, token, fields["link"], "site_created", _now(), _now()))
 
 
@@ -59,18 +63,27 @@ def find_and_build(user, query, limit=10, progress=None):
     if res.get("error"):
         return res
     found = res.get("leads") or []
-    say(f"Found {len(found)} business{'es' if len(found) != 1 else ''} with no website (scanned {res.get('scanned', 0)}). Building sites…")
+    have = {(r["business"].lower(), (r["area"] or "").lower())
+            for r in core.q("SELECT business, area FROM leads WHERE user_id=?", (user["id"],))}
+    new = [i for i in found if (str(i.get("business", "")).lower(), str(i.get("location", "")).lower()) not in have]
+    skipped = len(found) - len(new)
+    say(f"Found {len(found)} with no website (scanned {res.get('scanned', 0)}); {len(new)} new. Building…")
     built = 0
-    for info in found:
+    for info in new:
         try:
             info["addons"] = ["whatsapp", "form"]      # sensible defaults for a cold lead
             r = web.build(user, dict(info), progress=None)
             built += 1
-            say(f"Built {built} of {len(found)}: {r.get('title')}")
+            say(f"Built {built} of {len(new)}: {r.get('title')}")
         except Exception:
             continue
-    return {"ok": True, "found": len(found), "built": built, "scanned": res.get("scanned", 0),
-            "with_website": res.get("with_website", 0)}
+    return {"ok": True, "found": len(found), "built": built, "skipped": skipped,
+            "scanned": res.get("scanned", 0), "with_website": res.get("with_website", 0)}
+
+
+def delete(user, lid):
+    core.x("DELETE FROM leads WHERE id=? AND user_id=?", (lid, user["id"]))
+    return {"ok": True}
 
 
 def start_find(user, query, limit=10):

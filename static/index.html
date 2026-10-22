@@ -881,7 +881,8 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
   <h2 style="margin-bottom:4px">Web Studio</h2>
   <div class="muted" style="font-size:13px;margin-bottom:14px">Enter a business (the kind of thing a Google Maps search gives you) and press Generate. Trillion writes the copy, picks a style to suit the trade, drops in the photos, and builds an ultra-premium one-page website — hosted here with a shareable link and downloadable.</div>
   <div class="panel" style="gap:10px;border-color:var(--a)">
-    <label class="field"><span>Paste a Google Maps link — Trillion fills in the rest</span><input id="wb-link" placeholder="https://maps.app.goo.gl/…"></label>
+    <div class="two"><label class="field" style="flex:3"><span>Paste a Google Maps link — Trillion fills in the rest</span><input id="wb-link" placeholder="https://maps.app.goo.gl/…"></label>
+      <div style="display:flex;align-items:flex-end"><button class="btn" id="wb-link-load" style="min-height:40px;font-size:12px">LOAD DETAILS</button></div></div>
     <div class="muted" style="font-size:12px">Add a free Google Places key below to also pull the category, phone, rating, reviews and photos. Without it, the link still gives the name and address.</div>
     <div class="two"><label class="field"><span>Google Places key (optional)</span><input id="wb-gkey" type="password" placeholder="saved securely, used only for Maps lookups"></label>
       <div style="display:flex;align-items:flex-end"><button class="btn" id="wb-gkey-save" style="min-height:40px;font-size:12px">SAVE KEY</button></div></div>
@@ -1643,11 +1644,13 @@ function drawDash(d){
         <button class="btn" data-lsend="${l.id}" style="min-height:30px;font-size:11px" ${canSend?'':'disabled'}>${sendLabel}</button>
         <button class="btn" data-lst="${l.id}" data-v="accepted" style="min-height:30px;font-size:11px">Won</button>
         <button class="btn" data-lst="${l.id}" data-v="declined" style="min-height:30px;font-size:11px;opacity:.7">Lost</button>
+        <button class="btn" data-ldel="${l.id}" style="min-height:30px;font-size:11px;opacity:.6">✕</button>
       </td></tr>`;}).join('');
   $('dash-table').innerHTML=rows?`<thead><tr style="text-align:left;color:var(--dim);font-size:12px"><th style="padding:8px">Business</th><th style="padding:8px">Status</th><th style="padding:8px">Owner email</th><th style="padding:8px">Actions</th></tr></thead><tbody>${rows}</tbody>`:'<tbody><tr><td style="padding:16px" class="muted">No leads yet. Generate a site in Web Studio and it appears here.</td></tr></tbody>';
   $('dash-table').querySelectorAll('[data-le]').forEach(i=>i.onchange=async()=>{try{await api('/api/leads/'+i.dataset.le,{method:'PATCH',json:{email:i.value.trim()}});loadDash();}catch(e){}});
   $('dash-table').querySelectorAll('[data-lsend]').forEach(b=>b.onclick=async()=>{b.disabled=true;$('dash-msg').className='msg muted';$('dash-msg').textContent='Sending…';try{const r=await (await api('/api/leads/'+b.dataset.lsend+'/send',{json:{}})).json();$('dash-msg').className='msg '+(r.error?'bad':'ok');$('dash-msg').textContent=r.error||('Emailed '+r.emailed);}catch(e){$('dash-msg').className='msg bad';$('dash-msg').textContent=e.message;}loadDash();});
   $('dash-table').querySelectorAll('[data-lst]').forEach(b=>b.onclick=async()=>{try{await api('/api/leads/'+b.dataset.lst,{method:'PATCH',json:{status:b.dataset.v}});loadDash();}catch(e){}});
+  $('dash-table').querySelectorAll('[data-ldel]').forEach(b=>b.onclick=async()=>{try{await api('/api/leads/'+b.dataset.ldel,{method:'DELETE'});loadDash();}catch(e){}});
 }
 $('gm-save')&&($('gm-save').onclick=async()=>{const m=$('gm-msg');m.className='msg muted';m.textContent='Checking…';try{const r=await (await api('/api/gmail/connect',{json:{address:$('gm-addr').value.trim(),app_password:$('gm-pw').value}})).json();if(r.ok){m.className='msg ok';m.textContent='Connected as '+r.address;$('gm-pw').value='';loadDash();}else{m.className='msg bad';m.textContent=r.error||'Could not connect.';}}catch(e){m.className='msg bad';m.textContent=e.message;}});
 $('gm-off')&&($('gm-off').onclick=async()=>{await api('/api/gmail/disconnect',{json:{}});loadDash();});
@@ -1685,6 +1688,15 @@ function drawWeb(sites){
 $('wb-gkey-save')&&($('wb-gkey-save').onclick=async()=>{const v=$('wb-gkey').value.trim();const m=$('wb-gkey-msg');if(!v){m.className='msg bad';m.textContent='Paste the key first.';return;}
   try{await api('/api/secrets/google_places',{method:'PUT',json:{value:v,enabled:true}});m.className='msg ok';m.textContent='Saved. Links will now pull full business details.';$('wb-gkey').value='';}catch(e){m.className='msg bad';m.textContent=e.message;}});
 $('wb-pl-chk')&&($('wb-pl-chk').onchange=()=>{$('wb-pl-wrap').hidden=!$('wb-pl-chk').checked;});
+async function wbLoadLink(){const link=$('wb-link').value.trim();if(!link)return;const m=$('wb-msg');m.className='msg muted';m.textContent='Reading the business from the link…';
+  try{const d=await (await api('/api/gensites/from-link',{json:{link}})).json();
+    if(d.business)$('wb-name').value=d.business;if(d.category)$('wb-cat').value=d.category;if(d.location)$('wb-loc').value=d.location;if(d.phone)$('wb-phone').value=d.phone;if(d.hours)$('wb-hours').value=d.hours;
+    m.className='msg '+(d.business?'ok':'bad');
+    m.textContent=d.business?((d.have_key?'Loaded: ':'Loaded (name/area only — add a Places key for phone, reviews, photos): ')+d.business+(d.has_website?' — note: already has a website':(d.have_key?' · no website ✓':''))):'Could not read that link. Check it opens a business on Google Maps.';
+  }catch(e){m.className='msg bad';m.textContent=e.message;}}
+$('wb-link-load')&&($('wb-link-load').onclick=wbLoadLink);
+$('wb-link')&&($('wb-link').addEventListener('change',wbLoadLink));
+function wbClear(){['wb-link','wb-name','wb-cat','wb-loc','wb-phone','wb-svc','wb-hours','wb-photos','wb-pl'].forEach(id=>{if($(id))$(id).value='';});if($('wb-pl-chk')){$('wb-pl-chk').checked=false;$('wb-pl-wrap').hidden=true;}}
 $('wb-go')&&($('wb-go').onclick=async()=>{
   const name=$('wb-name').value.trim();const link=$('wb-link').value.trim();
   if(!name&&!link){$('wb-msg').className='msg bad';$('wb-msg').textContent='Enter a business name or paste a Google Maps link.';return;}
@@ -1693,7 +1705,7 @@ $('wb-go')&&($('wb-go').onclick=async()=>{
   const body={business:name,link,category:$('wb-cat').value.trim(),location:$('wb-loc').value.trim(),phone:$('wb-phone').value.trim(),
     services:$('wb-svc').value.trim(),hours:$('wb-hours').value.trim(),pricelist:$('wb-pl').value.trim(),style:$('wb-style').value,look:$('wb-look').value,addons,photos};
   $('wb-msg').className='msg muted';$('wb-msg').textContent='Building the website — a minute or two. You can watch the steps in the Control Room.';
-  try{await api('/api/gensites',{json:body});}catch(e){$('wb-msg').className='msg bad';$('wb-msg').textContent=e.message;return;}
+  try{await api('/api/gensites',{json:body});wbClear();}catch(e){$('wb-msg').className='msg bad';$('wb-msg').textContent=e.message;return;}
   clearInterval(webPoll);let n=0;
   webPoll=setInterval(async()=>{n++;try{const d=await (await api('/api/gensites')).json();drawWeb(d.sites||[]);
     if((d.sites||[]).length&&(d.sites[0].exists||n>40)){clearInterval(webPoll);$('wb-msg').className='msg ok';$('wb-msg').textContent='Done — open the preview or download the HTML below.';}

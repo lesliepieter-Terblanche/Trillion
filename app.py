@@ -69,6 +69,7 @@ import voicecall
 import web
 import mail
 import leads
+import maps
 gumroad.init()
 routines.init()
 web.init()
@@ -1998,6 +1999,19 @@ def gensites_list(user=Depends(auth)):
     return {"sites": web.listing(user)}
 
 
+@app.post("/api/gensites/from-link")
+def gensites_from_link(p: dict = Body(...), user=Depends(auth)):
+    link = (p.get("link") or "").strip()
+    if not link:
+        raise HTTPException(400, "Paste a Google Maps link first.")
+    info = maps.extract(user, link)
+    return {"business": info.get("business") or "", "category": info.get("category") or "",
+            "location": info.get("location") or "", "address": info.get("address") or "",
+            "phone": info.get("phone") or "", "hours": info.get("hours") or "",
+            "rating": info.get("rating"), "has_website": info.get("has_website"),
+            "photos": len(info.get("photos") or []), "have_key": bool(info.get("_have_key"))}
+
+
 @app.post("/api/gensites")
 def gensites_start(p: dict = Body(...), user=Depends(auth)):
     if not (p.get("business") or p.get("name") or p.get("link")):
@@ -2050,6 +2064,11 @@ def leads_find(p: dict = Body(...), user=Depends(auth)):
     if not q:
         raise HTTPException(400, "Say what to search for, e.g. 'barbers in Roodepoort'.")
     return leads.start_find(user, q, min(int(p.get("limit") or 10), 20))
+
+
+@app.delete("/api/leads/{lid}")
+def leads_delete(lid: int, user=Depends(auth)):
+    return leads.delete(user, lid)
 
 
 @app.patch("/api/leads/{lid}")
