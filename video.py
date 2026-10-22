@@ -206,11 +206,11 @@ def plan(llm, user, prompt, seconds, n_scenes, with_voice):
     ask = f"""Write a {seconds}-second cinematic social media video for this request: "{prompt}"
 Brand: {s.get('brand') or 'none'}. Website: {s.get('site') or 'none'}.
 Reply with JSON only, in exactly this shape:
-{{"title": "short title", "scenes": [{{"search": "2 to 4 plain words describing generic stock footage for this moment, no brand names",
+{{"title": "short title", "scenes": [{{"search": "2 to 4 plain CONCRETE words for stock footage that literally shows the real product, someone using it, or its true setting - e.g. the actual item, a person using it, the place it belongs. Use the real subject/product, NEVER abstract moods, paint, ink, liquid swirls, bokeh, or unrelated scenery. No brand names",
 "headline": "at most 5 punchy words", "caption": "one short supporting sentence",
 "visual": "one vivid sentence describing a cinematic photograph for this moment: the subject, the setting, the light and the mood. No words, signs or logos in the picture"}}],
 "narration": "a voice-over of about {words} words for the whole video, warm and confident, no hashtags"}}
-Give exactly {n_scenes} scenes. English only."""
+Every scene's "search" must clearly relate to the real subject/product above - a viewer should recognise what it is selling. Give exactly {n_scenes} scenes. English only."""
     data = {}
     try:
         text = (llm(user, [{"role": "system", "content": "You are a film director who writes tight social video scripts. Reply with JSON only."},
