@@ -136,6 +136,24 @@ def _search_new(key, query, limit=20):
         return [], "error:" + type(e).__name__
 
 
+_DETAILS_FIELDS = ("id,displayName,types,formattedAddress,nationalPhoneNumber,internationalPhoneNumber,"
+                   "rating,userRatingCount,regularOpeningHours,reviews,photos,websiteUri,editorialSummary")
+
+
+def _details_new(key, place_id):
+    """Full Place Details on Places API (New) - phone, hours, reviews, photos. Returns (place, status)."""
+    try:
+        r = httpx.get(f"https://places.googleapis.com/v1/places/{place_id}", timeout=20,
+                      headers={"X-Goog-Api-Key": key, "X-Goog-FieldMask": _DETAILS_FIELDS})
+        if r.status_code == 200:
+            return r.json() or {}, "OK"
+        if r.status_code in (401, 403):
+            return {}, "REQUEST_DENIED"
+        return {}, f"HTTP{r.status_code}"
+    except Exception as e:
+        return {}, "error:" + type(e).__name__
+
+
 def _info_from_new(p, key, link=""):
     dn = (p.get("displayName") or {}).get("text") or "Business"
     addr = p.get("formattedAddress") or ""
@@ -174,7 +192,9 @@ def search(user, query, limit=20, only_no_website=True):
             with_site += 1
             if only_no_website:
                 continue
-        leads.append(_info_from_new(p, key))
+        pid = p.get("id")
+        det, _ = _details_new(key, pid) if pid else ({}, "")
+        leads.append(_info_from_new(det or p, key))
     return {"ok": True, "leads": leads, "scanned": len(places), "with_website": with_site}
 
 
@@ -192,7 +212,9 @@ def extract(user, link):
             places, st = _search_new(key, f'{base["name"]} {base["area"]}'.strip(), 1)
         info["_api"] = st if st != "OK" else ("OK" if places else "ZERO_RESULTS")
         if places:
-            got = _info_from_new(places[0], key, link)
+            pid = places[0].get("id")
+            det, _ = _details_new(key, pid) if pid else ({}, "")
+            got = _info_from_new(det or places[0], key, link)
             got["location"] = base["area"] or got.get("location") or base["address"]
             info.update(got)
     info["_resolved"] = final
