@@ -2122,8 +2122,10 @@ def gensites_thumb(sid: int, user=Depends(auth)):
     return FileResponse(row["thumb"], media_type="image/jpeg")
 
 
-@app.get("/site/site/{token}/{path:path}")   # Tailscale Funnel --set-path doesn't strip /site, so it arrives doubled
 @app.get("/site/{token}/{path:path}")
+@app.get("/site/site/{token}/{path:path}")   # Tailscale Funnel --set-path doesn't strip /site, so it arrives doubled.
+# The doubled route is declared innermost so FastAPI registers it FIRST — otherwise /site/{token} greedily
+# captures /site/site/TOKEN/ as token="site" and the preview 404s ("Not found").
 def gensite_preview(token: str, path: str = ""):
     """Public preview link for a generated site: served sandboxed, same as clone previews."""
     p = web.preview_file(token, path)
