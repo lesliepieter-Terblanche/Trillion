@@ -741,6 +741,7 @@ def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progre
     say = progress or (lambda text: None)
     n_scenes = max(2, min(8, round((seconds - END_LEN) / 4.2)))
     # the person's own photos and clips, handed over in the conversation: one scene each, in the order given
+    notes = []
     own = [m for m in (media or []) if os.path.exists(m) and m.lower().endswith(IMAGE_EXT + (".gif", ".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi", ".3gp"))][:8]
     # no photos attached, but the request names a website -> use the site's OWN product photos as the footage
     from_site = False
@@ -754,7 +755,6 @@ def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progre
     el_key = core.get_secret(uid, "elevenlabs") if voiceover else None
     pb_key = core.get_secret(uid, "pixabay")
     find_clip, stock_key, stock_name = pixabay_clip, pb_key, "Pixabay"
-    notes = []
 
     if _URL_IN.search(prompt or ""):
         say("Reading the website")
