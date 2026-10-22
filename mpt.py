@@ -233,6 +233,7 @@ def create(user, prompt, seconds=20, fmt="vertical", voiceover=True, progress=No
     except Exception:
         secs = seconds
     detail = {"engine": "MoneyPrinterTurbo", "format": fmt, "aspect": aspect, "subject": str(prompt)[:200],
+              "request": str(prompt), "voiceover": bool(voiceover), "media": [],
               "notes": ["Made with the cinematic engine (MoneyPrinterTurbo): real stock footage, local brain, free voice."]}
     vid = core.x("INSERT INTO videos(user_id,title,path,thumb,seconds,detail,created) VALUES(?,?,?,?,?,?,?)",
                  (uid, str(prompt)[:80], str(dest), thumb if thumb and os.path.exists(thumb) else "",

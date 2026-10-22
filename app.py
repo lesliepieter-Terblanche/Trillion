@@ -992,6 +992,7 @@ def tools_for(user, text):
 
 
 VIDEO_RE = re.compile(r"\b(create|make|generate|produce|build|render)\b[^.?!]{0,80}\bvideo\b", re.I)
+REVISE_RE = re.compile(r"\b(change|fix|revise|redo|remake|update|edit)\b[^.?!]{0,30}\bvideo\b\s*#?\s*(\d+)\s*[:,\-]?\s*(.*)", re.I | re.S)
 
 
 SITE_RE = re.compile(r"\b(?:check|is|how is|how's)\b.{0,12}\b(?:my|the|our)\s+(?:web ?site|site)\b", re.I)
@@ -1489,6 +1490,17 @@ def run_agent(user, text, files=None):
         if "ebook_id" in res:
             out["ebook"] = {"id": res["ebook_id"], "title": res["title"], "pages": res["pages"], "epub": bool(res.get("epub"))}
         return out
+    _mrev = REVISE_RE.search(text)
+    if _mrev and not asking:                  # "change video #12: make it shorter" -> remake it with that change
+        try:
+            res = tools.execute(user, "revise_video",
+                                {"video_id": int(_mrev.group(2)), "change": _mrev.group(3).strip()}, task_id=tid)
+        finally:
+            BUSY[uid] = False
+        reply = video_reply(res)
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="failed" if "error" in res else "completed", detail=reply[:200])
+        return {"reply": reply, "task_id": tid, "provider": LAST_PROVIDER.get(uid, "local")}
     if VIDEO_RE.search(text) and not asking:  # a long job with fixed steps: run it directly
         try:
             media = [f["path"] for f in files if f["kind"] in ("image", "video")]

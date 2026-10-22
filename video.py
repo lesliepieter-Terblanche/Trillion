@@ -739,6 +739,7 @@ def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progre
     fmt = fmt if fmt in SIZES else "vertical"
     w, h = SIZES[fmt]
     say = progress or (lambda text: None)
+    orig_request = str(prompt)              # the user's own words, kept so the video can be revised later
     n_scenes = max(2, min(8, round((seconds - END_LEN) / 4.2)))
     # the person's own photos and clips, handed over in the conversation: one scene each, in the order given
     notes = []
@@ -859,7 +860,8 @@ def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progre
     for sc in p["scenes"]:
         sc.pop("base", None)
     detail = {"ai_pictures": made, "scenes": [sc["headline"] for sc in p["scenes"]], "narration": p["narration"] if vo_path else "",
-              "footage": sorted(set(credits)), "footage_source": stock_name if credits else "", "music": music_name, "format": fmt, "notes": notes}
+              "footage": sorted(set(credits)), "footage_source": stock_name if credits else "", "music": music_name, "format": fmt, "notes": notes,
+              "request": orig_request, "voiceover": bool(voiceover), "media": own}   # kept so the video can be changed and remade
     vid = core.x("INSERT INTO videos(user_id,title,path,thumb,seconds,detail,created) VALUES(?,?,?,?,?,?,?)",
                  (uid, p["title"], str(out), thumb if os.path.exists(thumb) else "", seconds, json.dumps(detail), time.time()))
     return {"video_id": vid, "title": p["title"], "saved": str(out), "seconds": round(seconds, 1),

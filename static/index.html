@@ -1524,8 +1524,12 @@ async function loadVideos(){
     <b style="font-size:17px">${esc(v.title)}</b><div class="muted" style="font-size:13px">${Math.round(v.seconds)} seconds · ${esc(v.detail.format||'')} · ${new Date(v.created*1000).toLocaleString()}</div>
     <div class="muted" style="font-size:13px">${v.detail.footage&&v.detail.footage.length?'Stock footage by '+esc(v.detail.footage.join(', ')):'No stock footage'} · Music: ${esc(v.detail.music||'none')}${v.detail.narration?' · Voice-over':''}</div>
     ${(v.detail.notes||[]).map(n=>`<div class="muted" style="font-size:13px;color:var(--a)">${esc(n)}</div>`).join('')}
-    <div class="btns" style="justify-content:flex-start">${v.exists?`<a class="btn pri" style="display:inline-flex;align-items:center;text-decoration:none;min-height:40px;font-size:12px" href="/api/videos/${v.id}/file" download>DOWNLOAD</a>`:''}<button class="btn" data-vd="${v.id}" style="min-height:40px;font-size:12px">DELETE</button></div></div>`).join('')||'<div class="muted">No videos yet.</div>';
+    <div class="btns" style="justify-content:flex-start">${v.exists?`<a class="btn pri" style="display:inline-flex;align-items:center;text-decoration:none;min-height:40px;font-size:12px" href="/api/videos/${v.id}/file" download>DOWNLOAD</a>`:''}<button class="btn" data-vch="${v.id}" style="min-height:40px;font-size:12px">CHANGE…</button><button class="btn" data-vd="${v.id}" style="min-height:40px;font-size:12px">DELETE</button></div></div>`).join('')||'<div class="muted">No videos yet.</div>';
   document.querySelectorAll('[data-vd]').forEach(b=>b.onclick=async()=>{await api('/api/videos/'+b.dataset.vd,{method:'DELETE'});loadVideos();});
+  document.querySelectorAll('[data-vch]').forEach(b=>b.onclick=async()=>{const what=prompt('What should change? e.g. "make it 15 seconds", "landscape", "no voice-over", "new footage", "focus on the disposables"');if(!what||!what.trim())return;
+    if(sending){$('vmsg').textContent='She is busy with another job.';return;}
+    $('vmsg').textContent='Changing the video. This takes a few minutes; watch progress in the Control Room.';
+    await send(`Change video #${b.dataset.vch}: ${what.trim()}`,false);$('vmsg').textContent='';loadVideos();});
 }
 async function fvCheck(){const ai=$('vkind').value==='ai';$('vfv').style.display=ai?'':'none';$('vvo').parentElement.style.display=ai?'none':'';$('vai').parentElement.style.display=ai?'none':'';
   $('vgo').textContent=ai?'GENERATE AI CLIP':'CREATE VIDEO';$('vtip').style.display=ai?'none':'';

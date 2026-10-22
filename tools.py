@@ -107,6 +107,10 @@ SPECS = [
        "needed: she writes the script, finds stock footage, adds voice-over, music, titles and captions. "
        "format is vertical, square or landscape. Takes a few minutes.",
        {"prompt": S, "seconds": {"type": "integer"}, "format": S, "voiceover": {"type": "boolean"}}, ["prompt"]),
+    fn("revise_video", "Change an existing video the user already made: remake it applying a requested change - a different "
+       "length, format (vertical/square/landscape), voice-over on or off, new footage, or new wording/subject. Needs the "
+       "video's id (the number shown in the Videos list) and a plain description of the change.",
+       {"video_id": {"type": "integer"}, "change": S}, ["video_id", "change"]),
     fn("create_ai_clip", "Generate a short AI-made video clip (2 to 15 seconds, with sound) on this PC's own graphics card with "
        "FreeVideo. Use only when the user asks for an AI video, AI clip or generated clip. Takes several minutes. "
        "format is vertical, square or landscape.",
@@ -216,6 +220,7 @@ def describe(name, a):
         "watch_alert": f"Alert on the watch: {g('text')[:80]}",
         "phone_screenshot": "Taking a phone screenshot",
         "create_video": "Creating a video",
+        "revise_video": "Changing the video",
         "create_ai_clip": "Generating an AI clip",
         "create_ebook": "Writing an ebook",
         "system_status": "Checking the PC", "update_self": "Updating myself from GitHub", "run_command": f"Run command: {g('command')}",
@@ -287,7 +292,7 @@ def execute(user, name, args, task_id=None, approved=False, direct=False):
             watch.alert(user, "approval", "Trillion needs your OK", summary)
             return {"status": "waiting_for_approval",
                     "note": "Not done yet. The user must approve this on the dashboard."}
-        if name in ("create_video", "create_ai_clip", "create_ebook"):
+        if name in ("create_video", "revise_video", "create_ai_clip", "create_ebook"):
             args = dict(args, _task=task_id)
         out = globals()["t_" + name](user, **args)
         core.log(uid, describe(name, args), "done")
@@ -1027,6 +1032,64 @@ def t_create_video(user, prompt, seconds=20, format="vertical", voiceover=True, 
             say(f"Cinematic engine hit a snag ({type(e).__name__}); using the classic engine")
         core.log(user["id"], f"MoneyPrinterTurbo failed, used classic engine: {type(e).__name__}: {e}"[:300], "waiting")
     return video.create(core.LLM, user, prompt, seconds, fmt, bool(voiceover), progress=say, media=media)
+
+
+def t_revise_video(user, video_id, change, _task=None):
+    """Remake a video the user already has, applying one plain-language change (length, format, voice,
+    footage, or wording). Reuses the original request and settings, then overrides only what changed."""
+    import json as _json, os, re as _re
+    row = core.q("SELECT * FROM videos WHERE id=? AND user_id=?", (int(video_id), user["id"]), one=True)
+    if not row:
+        return {"error": f"I couldn't find video #{video_id} to change. Check the number in the Videos list."}
+    try:
+        d = _json.loads(row["detail"] or "{}")
+    except Exception:
+        d = {}
+    base = (d.get("request") or row["title"] or "").strip()
+    seconds = int(row["seconds"] or 20)
+    fmt = d.get("format") or "vertical"
+    voiceover = bool(d.get("voiceover", True))
+    media = [m for m in (d.get("media") or []) if isinstance(m, str) and os.path.exists(m)] or None
+    c = (change or "").strip()
+    low = c.lower()
+    P_LEN = r"(\d{1,2})\s*(seconds?|secs?|s)\b"
+    P_FMT = r"landscape|horizontal|wide|youtube|square|vertical|portrait|reel|tiktok|story|shorts"
+    P_VOICE = (r"no voice|without (a )?voice|remove (the )?voice|mute|no narration|silent|no voice-?over|"
+               r"add (a )?voice|with (a )?voice|narrat|voice-?over")
+    P_FOOT = (r"new footage|different (footage|clips?|videos?|photos?|pictures?|background)|re-?roll|other footage|"
+              r"fresh (footage|clips?|photos?)|change the (footage|clips?|background|photos?|video)|re-?pick")
+    m = _re.search(P_LEN, low)
+    if m:
+        seconds = max(8, min(60, int(m.group(1))))
+    elif _re.search(r"\b(shorter|quicker|snappier|briefer)\b", low):
+        seconds = max(8, seconds - 5)
+    elif _re.search(r"\b(longer|more time)\b", low):
+        seconds = min(60, seconds + 5)
+    if _re.search(r"landscape|horizontal|wide|youtube", low):
+        fmt = "landscape"
+    elif _re.search(r"\bsquare\b", low):
+        fmt = "square"
+    elif _re.search(r"vertical|portrait|reel|tiktok|story|shorts", low):
+        fmt = "vertical"
+    if _re.search(r"no voice|without (a )?voice|remove (the )?voice|mute|no narration|silent|no voice-?over", low):
+        voiceover = False
+    elif _re.search(r"add (a )?voice|with (a )?voice|narrat|voice-?over", low):
+        voiceover = True
+    if _re.search(P_FOOT, low):
+        media = None                        # re-pick footage instead of reusing the stored photos
+    # does anything remain beyond the parameter words? if so it's a wording/subject change and should steer the script
+    stripped = low
+    for pat in (P_LEN, P_FMT, P_VOICE, P_FOOT, r"\b(shorter|quicker|snappier|briefer|longer|more time)\b"):
+        stripped = _re.sub(pat, " ", stripped)
+    STOP = {"make", "makeit", "it", "the", "a", "an", "to", "into", "and", "no", "of", "this", "that", "please",
+            "change", "changeit", "fix", "redo", "remake", "update", "edit", "video", "clip", "version", "now",
+            "over", "voice", "footage", "second", "seconds", "bit", "more", "less", "instead", "but", "for", "with",
+            "its", "be", "little", "much", "same", "keep", "use"}
+    words = [w for w in _re.sub(r"[^a-z0-9]+", " ", stripped).split() if len(w) >= 3 and w not in STOP]
+    prompt = base
+    if words:                               # a real wording/subject change -> steer the script for this new version
+        prompt = f"{base}\n\nChange for this new version: {c}"
+    return t_create_video(user, prompt, seconds, fmt, bool(voiceover), _task=_task, media=media)
 
 
 def t_create_ai_clip(user, prompt, seconds=5, format="vertical", _task=None):

@@ -50,6 +50,10 @@ Pixabay, records an ElevenLabs voice-over, adds music, titles and captions, and 
 your "Trillion Videos" folder. Keys go under Settings: Pixabay (free, pixabay.com/api/docs) for footage,
 ElevenLabs for the voice. Without them the video still renders, with light backdrops and no voice.
 Your own music: drop mp3 files into data\music and she uses those instead of the built-in track.
+Changing a video: on the Videos page press "Change..." on any video and say what to change in plain
+words - "make it 15 seconds", "landscape", "no voice-over", "new footage", "make it shorter", or
+"focus on the disposables". Trillion remakes it applying just that change and keeps the rest. (You can
+also just type: Change video #3: landscape.) Each remake re-picks footage, so it won't be identical.
 On-brand footage from a website: name a site in the request ("make a video for vapeessence.co.za")
 and Trillion pulls the real product photos straight off that site and uses them as the footage - so
 the video shows the actual products, not stock clips. It grounds the script in what the site sells too.
