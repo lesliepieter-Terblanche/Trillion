@@ -858,6 +858,12 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <div class="msg" id="vmsg"></div>
     <div class="muted" id="vtip" style="font-size:13px">Best results: a free Pixabay key for real moving footage and an ElevenLabs key for the voice-over, both under Settings, Keys. Long scenes cut between two shots. It takes a few minutes; progress shows on the home screen.</div>
   </div>
+  <div class="panel" id="mpt-panel"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><b>Cinematic engine (MoneyPrinterTurbo)</b><span class="pill" id="mpt-pill"></span></div>
+    <div class="muted" style="font-size:13px">A stronger video engine: your local brain writes the script, real stock footage (via your free Pixabay key) becomes the moving background, with a free voice, subtitles and music. Big one-time setup, installed in its own space so it can't affect Trillion. Once it's set up, "Create video" uses it automatically; your current engine stays as a backup until it's proven.</div>
+    <div id="mpt-nokey" class="bad" style="font-size:13px" hidden>Add a free Pixabay key under Settings → Keys first - it's what fetches the moving footage.</div>
+    <div id="mpt-setup" hidden><div class="btns" style="justify-content:flex-start"><button class="btn pri" id="mpt-install">SET UP THE CINEMATIC ENGINE</button></div></div>
+    <div class="msg" id="mpt-msg"></div>
+  </div>
   <div class="grid2" id="vlist"></div>
 </div>
 
@@ -1481,7 +1487,18 @@ $('nsearch').onsubmit=e=>{e.preventDefault();loadNotes($('nq').value.trim());};
 $('nadd').onclick=async()=>{try{await api('/api/notes',{json:{title:$('nt2').value,body:$('nb').value,domain:$('nd').value}});$('nt2').value=$('nb').value='';loadNotes('');}catch(e){$('nmsg').textContent=e.message;}};
 $('review').onclick=async()=>{$('nmsg').textContent='Reviewing today...';try{const r=await (await api('/api/review',{method:'POST'})).json();$('nmsg').textContent=r.learned+' new things learned.';loadNotes('');}catch(e){$('nmsg').textContent=e.message;}};
 // videos
+async function mptLoad(){try{mptDraw(await (await api('/api/mpt')).json());}catch(e){}}
+function mptDraw(d){const ready=d.ready,job=d.job||{};
+  $('mpt-pill').textContent=ready?'ready':(job.running?'setting up…':'not set up');$('mpt-pill').className='pill'+(ready?' on':'');
+  $('mpt-nokey').hidden=!!d.has_key;
+  $('mpt-setup').hidden=ready;$('mpt-install').disabled=!!job.running;
+  const m=$('mpt-msg');if(ready){m.className='msg ok';m.textContent='Ready. "Create video" now uses the cinematic engine.';}
+  else if(job.running){m.className='msg muted';m.textContent=job.status||'Setting up…';}
+  else if(job.error){m.className='msg bad';m.textContent='Setup failed: '+job.error;}else{m.className='msg';m.textContent='';}}
+$('mpt-install')&&($('mpt-install').onclick=async()=>{const m=$('mpt-msg');m.className='msg muted';m.textContent='Downloading and installing in the background - this is big and takes a while. You can carry on.';try{await api('/api/mpt/install',{json:{}});}catch(e){}
+  const t=setInterval(async()=>{try{const d=await (await api('/api/mpt')).json();mptDraw(d);if(d.ready){clearInterval(t);}else if(d.job&&!d.job.running&&d.job.error){clearInterval(t);}}catch(e){}},8000);});
 async function loadVideos(){
+  mptLoad();
   if(S){$('vai').checked=S.user.settings.video_ai_images!==false;$('vai').onchange=()=>api('/api/settings',{method:'PUT',json:{video_ai_images:$('vai').checked}}).then(tick);}
   const vs=await (await api('/api/videos')).json();
   $('vlist').innerHTML=vs.map(v=>`<div class="panel" style="gap:10px">${v.exists?`<video controls preload="none" ${v.thumb?`poster="/api/videos/${v.id}/thumb"`:''} src="/api/videos/${v.id}/file" style="width:100%;max-height:420px;background:#000"></video>`:'<div class="bad">The file was moved or deleted.</div>'}

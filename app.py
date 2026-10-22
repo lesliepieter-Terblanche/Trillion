@@ -2254,6 +2254,18 @@ def scrape_install(user=Depends(admin)):
     return scrape.start_install(user)
 
 
+@app.get("/api/mpt")
+def mpt_get(user=Depends(auth)):
+    import mpt
+    return mpt.state()
+
+
+@app.post("/api/mpt/install")
+def mpt_install(user=Depends(admin)):
+    import mpt
+    return mpt.start_install(user)
+
+
 @app.post("/api/scrape/run")
 def scrape_run(p: dict = Body(...), user=Depends(auth)):
     mode = (p.get("mode") or "page").strip()

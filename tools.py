@@ -1015,6 +1015,16 @@ def t_create_video(user, prompt, seconds=20, format="vertical", voiceover=True, 
     fmt = str(format or "vertical").lower()
     fmt = "landscape" if fmt in ("landscape", "horizontal", "wide", "youtube") else ("square" if fmt == "square" else "vertical")
     say = (lambda text: core.set_task(_task, detail=text)) if _task else None
+    # prefer the cinematic engine (MoneyPrinterTurbo) when it's installed and no personal media was attached;
+    # fall back to the classic engine on any problem so a video always comes out while the new one is unproven.
+    try:
+        import mpt
+        if mpt.ready() and not media:
+            return mpt.create(user, prompt, seconds, fmt, bool(voiceover), progress=say)
+    except Exception as e:
+        if say:
+            say(f"Cinematic engine hit a snag ({type(e).__name__}); using the classic engine")
+        core.log(user["id"], f"MoneyPrinterTurbo failed, used classic engine: {type(e).__name__}: {e}"[:300], "waiting")
     return video.create(core.LLM, user, prompt, seconds, fmt, bool(voiceover), progress=say, media=media)
 
 

@@ -50,6 +50,12 @@ Pixabay, records an ElevenLabs voice-over, adds music, titles and captions, and 
 your "Trillion Videos" folder. Keys go under Settings: Pixabay (free, pixabay.com/api/docs) for footage,
 ElevenLabs for the voice. Without them the video still renders, with light backdrops and no voice.
 Your own music: drop mp3 files into data\music and she uses those instead of the built-in track.
+Cinematic engine (MoneyPrinterTurbo): on the Videos page, press "Set up the cinematic engine" for a
+stronger option - the local brain writes the script, real stock footage becomes the moving background
+(using your Pixabay key), with a free voice, subtitles and music. Big one-time install in its own space
+(data\mpt), nothing paid, nothing touches Trillion's own packages. Once set up, "Create video" uses it
+automatically and the classic engine stays as a backup. It's a community project (github.com/harry0703/
+MoneyPrinterTurbo, MIT), driven headlessly on this PC.
 
 YOUR PHONE (the Phone page)
 Each login links its own Android phone. On the phone switch on USB debugging (Developer options),
