@@ -22,9 +22,14 @@ ROOT = core.DATA / "gensites"
 TPL_DIR = Path(__file__).resolve().parent / "webtemplates"
 # the look library: each entry is a self-contained, hand-built, verified template
 TEMPLATES = {
-    "premium":   {"file": "premium.html", "photo": False},   # animated WebGL shader-gradient hero
-    "cinematic": {"file": "cinematic.html", "photo": True},   # full-bleed real photo, Ken-Burns + scrim
+    "premium":   {"file": "premium.html", "photo": False},                 # animated WebGL shader-gradient hero
+    "cinematic": {"file": "cinematic.html", "photo": True, "dark": True},   # full-bleed real photo, Ken-Burns + scrim
+    "object3d":  {"file": "object3d.html", "photo": False, "dark": True},   # Three.js 3D crystal hero, lit + parallax
 }
+# categories that suit a 3D-object hero (products on show, modern/tech feel)
+OBJECT_WORDS = ("shop", "store", "retail", "boutique", "product", "auto", "car", "motor", "tyre", "parts",
+                "tech", "software", "app", "it ", "electronic", "jewel", "watch", "furniture", "decor",
+                "design", "agency", "detailing", "solar", "security", "print", "signage", "fabricat")
 # categories that look best as a cinematic photo hero (when the business has usable photos)
 CINEMATIC_WORDS = ("restaurant", "cafe", "coffee", "bar", "bistro", "grill", "diner", "eatery", "bakery",
                    "deli", "salon", "beauty", "spa", "hair", "barber", "nail", "hotel", "guest", "lodge",
@@ -96,10 +101,18 @@ def _dark_style(category):
 def pick_template(category, photos, look=""):
     """Choose the look. Explicit look wins; otherwise a cinematic photo hero for the right trades with photos,
     else the animated shader hero. Cinematic needs at least one photo, so fall back if there are none."""
-    chosen = look if look in TEMPLATES else (
-        "cinematic" if (photos and any(w in str(category).lower() for w in CINEMATIC_WORDS)) else "premium")
-    if chosen == "cinematic" and not photos:
-        chosen = "premium"
+    if look in TEMPLATES:
+        chosen = look
+    else:
+        c = str(category).lower()
+        if photos and any(w in c for w in CINEMATIC_WORDS):
+            chosen = "cinematic"
+        elif any(w in c for w in OBJECT_WORDS):
+            chosen = "object3d"
+        else:
+            chosen = "premium"
+    if TEMPLATES[chosen].get("photo") and not photos:   # a photo look with no photos -> fall back
+        chosen = "object3d" if any(w in str(category).lower() for w in OBJECT_WORDS) else "premium"
     return chosen
 
 
@@ -295,7 +308,7 @@ def build(user, info, progress=None):
     template = pick_template(cat, photos_rel, info.get("look") or "")
     style = info.get("style") or pick_style(cat, name)
     palette = PALETTES.get(style, PALETTES["violet"])
-    if template == "cinematic" and palette.get("mode") != "dark":
+    if TEMPLATES[template].get("dark") and palette.get("mode") != "dark":
         style = _dark_style(cat)
         palette = PALETTES[style]
     say("Writing the copy")
