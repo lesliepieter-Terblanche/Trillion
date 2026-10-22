@@ -9,6 +9,7 @@ is chosen to suit the trade. The quality comes from the template, not the model 
 import glob
 import json
 import os
+import random
 import re
 import secrets
 import shutil
@@ -460,6 +461,9 @@ def render(content, palette, photos_rel, template="premium"):
             html = html.replace("__" + k + "__", v)
     for k, v in content.items():
         html = html.replace("__" + k + "__", v)
+    # a varied scroll animation each build (AOS), so no two sites move the same way
+    html = html.replace("__AOS__", random.choice(["fade-up", "fade-up", "zoom-in", "fade-right",
+                                                   "fade-left", "fade-up", "zoom-in-up"]))
     return html
 
 
@@ -495,6 +499,10 @@ def build(user, info, progress=None):
     palette = PALETTES.get(style, PALETTES["violet"])
     if TEMPLATES[template].get("dark") and palette.get("mode") != "dark":
         style = _dark_style(cat)
+        palette = PALETTES[style]
+    if not info.get("style"):                   # design variety: vary the palette within the right mode each time
+        same = [s for s, p in PALETTES.items() if p["mode"] == palette["mode"]]
+        style = random.choice(same)
         palette = PALETTES[style]
     say("Writing the copy")
     content = plan(core.LLM if hasattr(core, "LLM") else (lambda u, m: {"content": ""}), user, info)
