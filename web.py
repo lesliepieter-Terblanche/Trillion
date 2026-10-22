@@ -304,14 +304,57 @@ def _inp(palette):
             "background:var(--card);color:var(--text);font-size:15px;font-family:inherit")
 
 
+def _parse_pricelist(raw):
+    """Turn typed lines into {name, price, desc}. Accepts 'Name | Price | note' or 'Name - Price'."""
+    items = []
+    for line in str(raw or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if "|" in line:
+            parts = [p.strip() for p in line.split("|")]
+            name, price = parts[0], (parts[1] if len(parts) > 1 else "")
+            desc = parts[2] if len(parts) > 2 else ""
+        else:
+            m = re.match(r"^(.*?)\s*[-–—:]\s*(R?\s?[\d][\d\s.,]*)\s*$", line)
+            if m:
+                name, price, desc = m.group(1).strip(), m.group(2).strip(), ""
+            else:
+                name, price, desc = line, "", ""
+        if name:
+            items.append({"name": name, "price": price, "desc": desc})
+    return items[:40]
+
+
+def _pricelist_html(info):
+    items = info.get("pricelist_items")
+    if items is None:
+        items = _parse_pricelist(info.get("pricelist"))
+    if not items:
+        return ""
+    rows = []
+    for it in items:
+        desc = f'<div class="muted" style="font-size:13px;margin-top:2px">{_esc(it["desc"])}</div>' if it.get("desc") else ""
+        price = f'<div style="font-weight:700;color:var(--accent);white-space:nowrap;font-size:16px">{_esc(it["price"])}</div>' if it.get("price") else ""
+        rows.append('<div style="display:flex;justify-content:space-between;gap:20px;align-items:baseline;'
+                    'padding:16px 0;border-bottom:1px solid var(--border)">'
+                    f'<div><div style="font-weight:600;font-size:16.5px">{_esc(it["name"])}</div>{desc}</div>{price}</div>')
+    head = _esc(info.get("pricelist_head") or "Our prices")
+    return ('<section class="pad" id="prices" style="background:var(--surface)"><div class="wrap" style="max-width:680px">'
+            f'<div class="sectlabel reveal">Price list</div><h2 class="reveal">{head}</h2>'
+            f'<div class="reveal" style="margin-top:30px">{"".join(rows)}</div></div></section>')
+
+
 def _addons(info, palette):
-    """Build the optional feature blocks the owner ticked. Returns {PROMO, CONTACT, FLOAT} (each '' if off)."""
+    """Build the optional feature blocks the owner ticked. Returns the injection tokens (each '' if off)."""
     addons = [str(a).lower() for a in (info.get("addons") or [])]
     phone = info.get("phone") or ""
     num = _wa_number(phone)
     email = info.get("email") or ""
     booking = "booking" in addons
-    out = {"PROMO": "", "CONTACT": "", "FLOAT": ""}
+    out = {"PROMO": "", "CONTACT": "", "FLOAT": "", "PRICELIST": ""}
+    if "pricelist" in addons:
+        out["PRICELIST"] = _pricelist_html(info)
     # floating WhatsApp button
     if "whatsapp" in addons and num:
         msg = quote_plus(f"Hi, I found your website and would like to get in touch.")
@@ -423,8 +466,8 @@ def build(user, info, progress=None):
     detail = {"style": style, "mode": palette["mode"], "template": template, "business": name, "category": cat,
               "photos": len(photos_rel), "photos_rel": photos_rel, "addons": info.get("addons") or [],
               "info": {k: info.get(k) for k in
-                       ("business", "category", "location", "address", "phone", "hours", "services",
-                        "about", "rating", "reviews", "link")}}
+                       ("business", "category", "location", "address", "phone", "email", "hours", "services",
+                        "about", "rating", "reviews", "link", "pricelist")}}
     sid = core.x("""INSERT INTO gensites(user_id,title,business,category,style,token,folder,thumb,detail,status,created)
                     VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
                  (uid, name, name, cat, style, token, str(folder), thumb, json.dumps(detail), "done", time.time()))
@@ -578,6 +621,8 @@ def revise(user, sid, change, progress=None):
         addons.add("booking")
     if _re.search(r"promo|offer|advert|banner|special", low):
         addons.add("promo")
+    if _re.search(r"price list|pricelist|\bprices\b|\bmenu\b", low):
+        addons.add("pricelist")
     for w, a in (("whatsapp", "whatsapp"), ("form", "form"), ("booking", "booking"), ("promo", "promo"),
                  ("banner", "promo"), ("advert", "promo")):
         if _re.search(r"(remove|no|without|drop)\s[\w\s]*" + w, low):

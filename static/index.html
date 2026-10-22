@@ -906,7 +906,9 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
         <label style="display:flex;gap:7px;align-items:center"><input type="checkbox" id="wb-form" checked> Enquiry form</label>
         <label style="display:flex;gap:7px;align-items:center"><input type="checkbox" id="wb-book"> Booking form</label>
         <label style="display:flex;gap:7px;align-items:center"><input type="checkbox" id="wb-promo"> Promo / advert banner</label>
+        <label style="display:flex;gap:7px;align-items:center"><input type="checkbox" id="wb-pl-chk"> Price list</label>
       </div></div>
+    <div id="wb-pl-wrap" hidden><label class="field"><span>Price list — one item per line: <b>Name | Price | optional note</b></span><textarea id="wb-pl" rows="4" placeholder="Haircut | R120&#10;Beard trim | R60 | includes hot towel&#10;Kids cut | R80&#10;Fade | R150"></textarea></label></div>
     <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="wb-go">GENERATE WEBSITE</button></div>
     <div class="msg" id="wb-msg"></div>
   </div>
@@ -1670,13 +1672,14 @@ function drawWeb(sites){
 }
 $('wb-gkey-save')&&($('wb-gkey-save').onclick=async()=>{const v=$('wb-gkey').value.trim();const m=$('wb-gkey-msg');if(!v){m.className='msg bad';m.textContent='Paste the key first.';return;}
   try{await api('/api/secrets/google_places',{method:'PUT',json:{value:v,enabled:true}});m.className='msg ok';m.textContent='Saved. Links will now pull full business details.';$('wb-gkey').value='';}catch(e){m.className='msg bad';m.textContent=e.message;}});
+$('wb-pl-chk')&&($('wb-pl-chk').onchange=()=>{$('wb-pl-wrap').hidden=!$('wb-pl-chk').checked;});
 $('wb-go')&&($('wb-go').onclick=async()=>{
   const name=$('wb-name').value.trim();const link=$('wb-link').value.trim();
   if(!name&&!link){$('wb-msg').className='msg bad';$('wb-msg').textContent='Enter a business name or paste a Google Maps link.';return;}
   const photos=$('wb-photos').value.split('\n').map(x=>x.trim()).filter(x=>x);
-  const addons=[];if($('wb-wa').checked)addons.push('whatsapp');if($('wb-form').checked)addons.push('form');if($('wb-book').checked)addons.push('booking');if($('wb-promo').checked)addons.push('promo');
+  const addons=[];if($('wb-wa').checked)addons.push('whatsapp');if($('wb-form').checked)addons.push('form');if($('wb-book').checked)addons.push('booking');if($('wb-promo').checked)addons.push('promo');if($('wb-pl-chk').checked)addons.push('pricelist');
   const body={business:name,link,category:$('wb-cat').value.trim(),location:$('wb-loc').value.trim(),phone:$('wb-phone').value.trim(),
-    services:$('wb-svc').value.trim(),hours:$('wb-hours').value.trim(),style:$('wb-style').value,look:$('wb-look').value,addons,photos};
+    services:$('wb-svc').value.trim(),hours:$('wb-hours').value.trim(),pricelist:$('wb-pl').value.trim(),style:$('wb-style').value,look:$('wb-look').value,addons,photos};
   $('wb-msg').className='msg muted';$('wb-msg').textContent='Building the website — a minute or two. You can watch the steps in the Control Room.';
   try{await api('/api/gensites',{json:body});}catch(e){$('wb-msg').className='msg bad';$('wb-msg').textContent=e.message;return;}
   clearInterval(webPoll);let n=0;
