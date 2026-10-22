@@ -358,6 +358,11 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
 .stg-drives{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}.stg-drive{border:1px solid var(--edge2);padding:12px;display:flex;flex-direction:column;gap:6px}
 #stg{gap:22px}
 .wfjob{border:1px solid var(--edge2);border-radius:10px;padding:12px;margin-bottom:12px}
+.wfsteps{margin-top:8px;font-size:12.5px}
+.wfsteps>summary{cursor:pointer;opacity:.75;user-select:none;padding:2px 0}
+.wfsteps ol{margin:6px 0 2px;padding-left:20px;line-height:1.55}
+.wfsteps li.cur{color:var(--a);font-weight:600}
+.wfsteps .wft{opacity:.45;font-size:11px;margin-left:4px}
 .wfhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
 .wfdept{font-size:11px;font-weight:700;letter-spacing:.04em;padding:2px 8px;border-radius:20px;background:var(--a);color:#fff}
 .wfflow{display:flex;align-items:center;gap:0;flex-wrap:wrap;row-gap:8px}
@@ -2367,16 +2372,22 @@ $('mb-now')&&($('mb-now').onclick=async()=>{const m=$('mb-msg');m.className='msg
 let wfTimer=null;
 function wfNode(kind,name,sub,cur){return `<span class="wfnode k-${kind}${cur?' cur':''}"><small>${esc(sub||kind)}</small><span>${esc(name||'')}</span></span>`;}
 function wfFlow(j){const live=(j.status==='in_progress'||j.status==='waiting');
+  const nodes=(j.steps||[]).filter(s=>s.kind!=='progress');   // the structural path; the play-by-play is the dropdown below
   const parts=[wfNode('department',j.department,'department',false)];
-  (j.steps||[]).forEach((s,i)=>parts.push(wfNode(s.kind,s.name,s.kind,live&&i===j.steps.length-1)));
-  if(!(j.steps||[]).length&&j.model)parts.push(wfNode('model',j.model,'model',live));
+  nodes.forEach((s,i)=>parts.push(wfNode(s.kind,s.name,s.kind,live&&i===nodes.length-1)));
+  if(!nodes.length&&j.model)parts.push(wfNode('model',j.model,'model',live));
   return parts.join('<span class="wfarrow">&#8594;</span>');}
+function wfSteps(j){const ps=(j.steps||[]).filter(s=>s.kind==='progress');if(!ps.length)return '';
+  const live=(j.status==='in_progress'||j.status==='waiting');
+  const items=ps.map((s,i)=>`<li class="${live&&i===ps.length-1?'cur':''}">${esc(s.label||s.name)} <span class="wft">${new Date(s.ts*1000).toLocaleTimeString()}</span></li>`).join('');
+  return `<details class="wfsteps"${live?' open':''}><summary>Steps it's going through (${ps.length})</summary><ol>${items}</ol></details>`;}
 function wfJob(j,done){const st=j.status==='in_progress'?'running':(j.status==='waiting'?'waiting for you':j.status);
   return `<div class="wfjob${done?' done':''}"><div class="wfhead"><span class="wfdept">${esc(j.department)}</span><b style="flex:1;min-width:120px">${esc(j.title)}</b>`
     +`<span class="tag ${j.status==='completed'?'ok':(j.status==='failed'?'bad':'')}">${esc(st)}</span>`
     +(!done?`<button class="btn" data-tc="${j.id}" style="min-height:30px;font-size:12px;opacity:.75">Cancel</button>`:'')+`</div>`
     +`<div class="wfflow">${wfFlow(j)}</div>`
-    +(j.detail&&!done?`<div class="muted" style="font-size:12.5px;margin-top:8px">Now: ${esc(j.detail)}</div>`:'')+`</div>`;}
+    +(j.detail&&!done?`<div class="muted" style="font-size:12.5px;margin-top:8px">Now: ${esc(j.detail)}</div>`:'')
+    +wfSteps(j)+`</div>`;}
 function wfDraw(d){
   $('wf-running').innerHTML=(d.running&&d.running.length)?d.running.map(j=>wfJob(j,false)).join(''):'<div class="muted">Nothing running right now. Give Trillion a job and watch it flow through here, live.</div>';
   $('wf-recent').innerHTML=(d.recent&&d.recent.length)?'<h3 style="margin:18px 0 6px">Just finished</h3>'+d.recent.map(j=>wfJob(j,true)).join(''):'';

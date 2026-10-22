@@ -237,6 +237,8 @@ def set_task(tid, status=None, detail=None):
         x("UPDATE tasks SET status=?, updated=? WHERE id=?", (status, time.time(), tid))
     if detail is not None:
         x("UPDATE tasks SET detail=?, updated=? WHERE id=?", (detail[:200], time.time(), tid))
+        if detail.strip() and (status is None or status in ("in_progress", "waiting")):
+            add_step(tid, "progress", detail[:60], detail)   # keep a live timeline of what it's doing now
     if status in ("completed", "failed"):
         for fn in ON_TASK_END:
             try:
