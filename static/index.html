@@ -927,6 +927,13 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <div class="btns" id="gm-disc" style="justify-content:flex-start" hidden><button class="btn" id="gm-off">DISCONNECT GMAIL</button></div>
     <div class="msg" id="gm-msg"></div>
   </div>
+  <div class="panel" id="fn-panel" style="gap:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px"><b>Public preview links</b><span class="pill" id="fn-pill"></span></div>
+    <div class="muted" style="font-size:12px">So a prospect outside your network can open the link you email them. This makes <b>only</b> the preview pages (/site/) public over Tailscale Funnel — the dashboard and everything else stay private. Needs Funnel enabled for this PC in the Tailscale admin console (the button will show the exact link if it isn't).</div>
+    <div id="fn-base" class="muted" style="font-size:12px"></div>
+    <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="fn-on">TURN ON PUBLIC LINKS</button><button class="btn" id="fn-off" hidden>TURN OFF</button></div>
+    <div class="msg" id="fn-msg"></div>
+  </div>
   <div id="dash-stats" style="display:flex;gap:12px;flex-wrap:wrap;margin:16px 0"></div>
   <div class="panel" style="overflow:auto;padding:4px"><table id="dash-table" style="width:100%;border-collapse:collapse;font-size:13.5px"></table></div>
   <div class="msg" id="dash-msg"></div>
@@ -1609,6 +1616,9 @@ async function loadDash(){try{drawDash(await (await api('/api/leads')).json());}
 function drawDash(d){
   const g=d.gmail||{};$('gm-pill').textContent=g.connected?('connected · '+g.address):'not connected';$('gm-pill').className='pill'+(g.connected?' on':'');
   $('gm-connect').hidden=!!g.connected;$('gm-disc').hidden=!g.connected;
+  const fn=d.funnel||{};$('fn-pill').textContent=fn.on?'on · public':(fn.installed?'off':'no Tailscale');$('fn-pill').className='pill'+(fn.on?' on':'');
+  $('fn-base').innerHTML=fn.public_base?('Prospects open: <b>'+esc(fn.public_base)+'…</b>'):'Connect Tailscale on this PC to get a public address.';
+  $('fn-on').hidden=!!fn.on;$('fn-off').hidden=!fn.on;
   const c=(d.stats&&d.stats.counts)||{},st=d.stats||{};
   const tiles=[['Sites made',st.total||0,'var(--text)'],['Emailed',(c.emailed||0)+(c.followed_up||0)+(c.replied||0)+(c.accepted||0)+(c.declined||0),'#3b82f6'],['Replied',c.replied||0,'#22c55e'],['Accepted',c.accepted||0,'#16a34a'],['Declined',c.declined||0,'#ef4444']];
   $('dash-stats').innerHTML=tiles.map(t=>`<div class="panel" style="flex:1;min-width:110px;text-align:center;padding:16px 10px"><div style="font-size:30px;font-weight:800;color:${t[2]}">${t[1]}</div><div class="muted" style="font-size:12px">${t[0]}</div></div>`).join('');
@@ -1631,6 +1641,8 @@ function drawDash(d){
 }
 $('gm-save')&&($('gm-save').onclick=async()=>{const m=$('gm-msg');m.className='msg muted';m.textContent='Checking…';try{const r=await (await api('/api/gmail/connect',{json:{address:$('gm-addr').value.trim(),app_password:$('gm-pw').value}})).json();if(r.ok){m.className='msg ok';m.textContent='Connected as '+r.address;$('gm-pw').value='';loadDash();}else{m.className='msg bad';m.textContent=r.error||'Could not connect.';}}catch(e){m.className='msg bad';m.textContent=e.message;}});
 $('gm-off')&&($('gm-off').onclick=async()=>{await api('/api/gmail/disconnect',{json:{}});loadDash();});
+$('fn-on')&&($('fn-on').onclick=async()=>{const m=$('fn-msg');m.className='msg muted';m.textContent='Turning on public preview links…';try{const r=await (await api('/api/funnel',{json:{on:true}})).json();if(r.ok){m.className='msg ok';m.textContent='On — emailed links now open for anyone.';}else{m.className='msg bad';m.textContent=(r.error||'Could not turn on.')+' If it mentions enabling Funnel, open that link in the Tailscale admin, allow it, then try again.';}loadDash();}catch(e){m.className='msg bad';m.textContent=e.message;}});
+$('fn-off')&&($('fn-off').onclick=async()=>{const m=$('fn-msg');m.className='msg muted';m.textContent='Turning off…';try{await api('/api/funnel',{json:{on:false}});m.className='msg';m.textContent='';loadDash();}catch(e){m.className='msg bad';m.textContent=e.message;}});
 // ---------- Web Studio ----------
 let webPoll=null;
 async function loadWeb(){

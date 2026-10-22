@@ -290,6 +290,38 @@ def share_on_tailscale(port, on=True, https_port=None):
         return False
 
 
+def funnel_sites(port=8787, on=True):
+    """Expose ONLY the /site/<token>/ preview pages to the public internet over HTTPS (Tailscale Funnel), so a
+    prospect outside your tailnet can open the link you email them. Nothing else on Trillion is exposed - the
+    dashboard and APIs stay private. Needs Funnel enabled for this node in the Tailscale admin console."""
+    exe = tailscale_exe()
+    if not exe:
+        return {"ok": False, "error": "Tailscale is not installed on this PC."}
+    if on:
+        args = [exe, "funnel", "--bg", "--set-path=/site", f"http://127.0.0.1:{port}/site"]
+    else:
+        args = [exe, "funnel", "--set-path=/site", "off"]
+    try:
+        r = subprocess.run(args, capture_output=True, text=True, timeout=40, creationflags=NO_WINDOW)
+        if r.returncode == 0:
+            return {"ok": True}
+        return {"ok": False, "error": ((r.stderr or r.stdout or "Tailscale Funnel could not start.").strip())[:400]}
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return {"ok": False, "error": f"Could not run Tailscale ({type(e).__name__})."}
+
+
+def funnel_status():
+    exe = tailscale_exe()
+    if not exe:
+        return {"installed": False, "on": False}
+    try:
+        out = subprocess.run([exe, "funnel", "status"], capture_output=True, text=True, timeout=12,
+                             creationflags=NO_WINDOW).stdout or ""
+        return {"installed": True, "on": ("/site" in out), "raw": out[-600:]}
+    except Exception:
+        return {"installed": True, "on": False}
+
+
 def publish(key):
     port = APPS[key]["port"]
     inner = PUBLISH[key][1]

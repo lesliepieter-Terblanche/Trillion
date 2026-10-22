@@ -2022,7 +2022,26 @@ def gmail_disconnect(user=Depends(auth)):
 
 @app.get("/api/leads")
 def leads_list(user=Depends(auth)):
-    return {"leads": leads.listing(user), "stats": leads.stats(user), "gmail": mail.status(user)}
+    return {"leads": leads.listing(user), "stats": leads.stats(user), "gmail": mail.status(user),
+            "funnel": _funnel_state()}
+
+
+def _funnel_state():
+    st = apps.funnel_status()
+    dns = (TAILSCALE.get("v") or {}).get("dns") or ""
+    st["public_base"] = (f"https://{dns}/site/" if dns else "")
+    return st
+
+
+@app.get("/api/funnel")
+def funnel_get(user=Depends(auth)):
+    return _funnel_state()
+
+
+@app.post("/api/funnel")
+def funnel_set(p: dict = Body(...), user=Depends(admin)):
+    res = apps.funnel_sites(8787, bool(p.get("on", True)))
+    return {**res, **_funnel_state()}
 
 
 @app.patch("/api/leads/{lid}")
@@ -2034,7 +2053,9 @@ def leads_update(lid: int, p: dict = Body(...), user=Depends(auth)):
 
 @app.post("/api/leads/{lid}/send")
 def leads_send(lid: int, request: Request, user=Depends(auth)):
-    return leads.send_pitch(user, lid, app_host(request), request.url.scheme if request.url.scheme == "https" else "https")
+    # the preview link goes to an outside prospect, so use the public Tailscale DNS name (not the private IP)
+    dns = (TAILSCALE.get("v") or {}).get("dns") or app_host(request)
+    return leads.send_pitch(user, lid, dns, "https")
 
 
 @app.post("/api/gensites/{sid}/revise")
