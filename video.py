@@ -501,7 +501,10 @@ def render(out_path, brand, scenes, website="", accent="#ffb454", fmt="vertical"
     video_only = str(out_path) + ".video.mp4"
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     enc = subprocess.Popen([find_ffmpeg(), "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{w}x{h}", "-r", str(FPS),
-                            "-i", "-", "-c:v", "libx264", "-preset", "medium", "-crf", "19", "-pix_fmt", "yuv420p", video_only],
+                            "-i", "-",
+                            # a gentle cinematic grade: a touch more contrast and colour, slightly deeper, lightly sharpened
+                            "-vf", "eq=contrast=1.07:saturation=1.12:gamma=0.97,unsharp=5:5:0.5:5:5:0.0",
+                            "-c:v", "libx264", "-preset", "medium", "-crf", "19", "-pix_fmt", "yuv420p", video_only],
                            stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     n = 0
     cache = {}
@@ -526,6 +529,8 @@ def render(out_path, brand, scenes, website="", accent="#ffb454", fmt="vertical"
             progress(int(100 * n / total))
 
     try:
+        XF = max(2, int(FPS * 0.35))          # cross-dissolve length between scenes, for smoother flow
+        prev_last = None
         for idx, sc in enumerate(scenes):
             frames_needed = int(round((idx + 1) * per * FPS)) - int(round(idx * per * FPS))
             two = bool(sc.get("clip") and sc.get("clip2"))
@@ -551,12 +556,17 @@ def render(out_path, brand, scenes, website="", accent="#ffb454", fmt="vertical"
                 frame.paste(shade, (0, 0), shade)
                 layer = (cache.get(idx) or cache.setdefault(idx, text_layer(sc, 9.0, idx))) if lt > 1.4 else text_layer(sc, lt, idx)
                 frame.paste(layer, (0, 0), layer)
-                emit(frame, idx * per + lt, min(1.0, lt / 0.3 if idx == 0 else lt / 0.2 + 0.25, (per - lt) / 0.2 + 0.25))
+                if idx > 0 and prev_last is not None and k < XF:     # dissolve into the new scene instead of cutting to black
+                    frame = Image.blend(prev_last, frame, _ease((k + 1) / XF))
+                if k >= frames_needed - 1:
+                    prev_last = frame.copy()
+                emit(frame, idx * per + lt, min(1.0, lt / 0.4) if idx == 0 else 1.0)
             if src is not None:
                 src.close()
         fb = f_brand
         while probe.textlength(brand.upper(), font=fb) > w - 2 * margin and fb.size > 30:
             fb = _font(int(fb.size * 0.9))
+        ei = 0
         while n < total:
             lt = n / FPS - body
             frame = ImageChops.multiply(_camera(end_bg, w, h, max(0, lt) / END_LEN, (1.25, 1.05, 0.3, 0.2)), vig)
@@ -574,8 +584,11 @@ def render(out_path, brand, scenes, website="", accent="#ffb454", fmt="vertical"
                 sa = _ease((lt - 0.6) / 0.6)
                 d.text(((w - d.textlength(site, font=f_cap)) / 2, ly + int(h * 0.03)), site, font=f_cap,
                        fill=(240, 234, 224, int(255 * sa)))
+            if prev_last is not None and ei < XF:               # dissolve from the last scene into the end card
+                frame = Image.blend(prev_last, frame, _ease((ei + 1) / XF))
+            ei += 1
             frame.paste(layer, (0, 0), layer)
-            emit(frame, n / FPS, min(1.0, lt / 0.35, (END_LEN - lt) / 0.6))
+            emit(frame, n / FPS, min(1.0, (END_LEN - lt) / 0.6))
         enc.stdin.close()
         err = enc.stderr.read().decode(errors="replace")
         if enc.wait() != 0:
