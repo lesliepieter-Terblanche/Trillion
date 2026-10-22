@@ -205,8 +205,24 @@ _SKIP_IMG = ("logo", "icon", "sprite", "favicon", "placeholder", "loader", "spin
 
 
 def site_media(url, w, h, uid, limit=8, progress=None):
-    """Pull the real product photos straight off the given website, so the footage IS the brand -
-    no stock library, no uploads. Returns local JPEG paths (biggest/best first); [] if nothing usable."""
+    """Pull the real product photos straight off the given website, so the footage IS the brand - no stock
+    library, no uploads. Reads the page source first; if the site is a JavaScript app (source has no real
+    images), opens it in a headless browser when that engine is set up. Biggest/best first; [] if nothing."""
+    got = _site_media_static(url, w, h, uid, limit, progress)
+    if got:
+        return got
+    try:                                    # JavaScript store: the photos only exist once the page runs
+        import sitegrab
+        if sitegrab.ready():
+            return sitegrab.grab(url, w, h, uid, limit, progress)
+    except Exception:
+        pass
+    return got
+
+
+def _site_media_static(url, w, h, uid, limit=8, progress=None):
+    """Read product photos straight from the page source (og:image, <img>, srcset, JSON-LD). Fast, no browser.
+    Returns [] for JavaScript sites whose source carries no real images."""
     from urllib.parse import urljoin
     say = progress or (lambda t: None)
     if not url:

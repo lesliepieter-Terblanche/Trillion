@@ -864,6 +864,11 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <div id="mpt-setup" hidden><div class="btns" style="justify-content:flex-start"><button class="btn pri" id="mpt-install">SET UP THE CINEMATIC ENGINE</button></div></div>
     <div class="msg" id="mpt-msg"></div>
   </div>
+  <div class="panel" id="sg-panel"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><b>On-brand footage from your websites</b><span class="pill" id="sg-pill"></span></div>
+    <div class="muted" style="font-size:13px">Name a website in your request ("make a video for vapeessence.co.za") and Trillion uses the real product photos off that site as the footage - not stock clips. Most of your stores (VapeEssence, TrueHome, TackleTrail) are JavaScript sites whose photos only appear once the page runs, so this opens the site in a quiet background browser to grab them. One-time setup, installed on your PC; nothing paid. Attaching your own photos still works and takes priority.</div>
+    <div id="sg-setup" hidden><div class="btns" style="justify-content:flex-start"><button class="btn pri" id="sg-install">SET UP THE WEBSITE PHOTO-GRABBER</button></div></div>
+    <div class="msg" id="sg-msg"></div>
+  </div>
   <div class="grid2" id="vlist"></div>
 </div>
 
@@ -1497,8 +1502,17 @@ function mptDraw(d){const ready=d.ready,job=d.job||{};
   else if(job.error){m.className='msg bad';m.textContent='Setup failed: '+job.error;}else{m.className='msg';m.textContent='';}}
 $('mpt-install')&&($('mpt-install').onclick=async()=>{const m=$('mpt-msg');m.className='msg muted';m.textContent='Downloading and installing in the background - this is big and takes a while. You can carry on.';try{await api('/api/mpt/install',{json:{}});}catch(e){}
   const t=setInterval(async()=>{try{const d=await (await api('/api/mpt')).json();mptDraw(d);if(d.ready){clearInterval(t);}else if(d.job&&!d.job.running&&d.job.error){clearInterval(t);}}catch(e){}},8000);});
+async function sgLoad(){try{sgDraw(await (await api('/api/sitegrab')).json());}catch(e){}}
+function sgDraw(d){const ready=d.ready,job=d.job||{};
+  $('sg-pill').textContent=ready?'ready':(job.running?'setting up…':'not set up');$('sg-pill').className='pill'+(ready?' on':'');
+  $('sg-setup').hidden=ready;$('sg-install').disabled=!!job.running;
+  const m=$('sg-msg');if(ready){m.className='msg ok';m.textContent='Ready. Name a website in your request and Trillion pulls its real photos.';}
+  else if(job.running){m.className='msg muted';m.textContent=job.status||'Setting up…';}
+  else if(job.error){m.className='msg bad';m.textContent='Setup failed: '+job.error;}else{m.className='msg';m.textContent='';}}
+$('sg-install')&&($('sg-install').onclick=async()=>{const m=$('sg-msg');m.className='msg muted';m.textContent='Downloading the browser in the background - this takes a few minutes. You can carry on.';try{await api('/api/sitegrab/install',{json:{}});}catch(e){}
+  const t=setInterval(async()=>{try{const d=await (await api('/api/sitegrab')).json();sgDraw(d);if(d.ready){clearInterval(t);}else if(d.job&&!d.job.running&&d.job.error){clearInterval(t);}}catch(e){}},8000);});
 async function loadVideos(){
-  mptLoad();
+  mptLoad();sgLoad();
   if(S){$('vai').checked=S.user.settings.video_ai_images!==false;$('vai').onchange=()=>api('/api/settings',{method:'PUT',json:{video_ai_images:$('vai').checked}}).then(tick);}
   const vs=await (await api('/api/videos')).json();
   $('vlist').innerHTML=vs.map(v=>`<div class="panel" style="gap:10px">${v.exists?`<video controls preload="none" ${v.thumb?`poster="/api/videos/${v.id}/thumb"`:''} src="/api/videos/${v.id}/file" style="width:100%;max-height:420px;background:#000"></video>`:'<div class="bad">The file was moved or deleted.</div>'}

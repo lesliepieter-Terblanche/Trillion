@@ -2266,6 +2266,18 @@ def mpt_install(user=Depends(admin)):
     return mpt.start_install(user)
 
 
+@app.get("/api/sitegrab")
+def sitegrab_get(user=Depends(auth)):
+    import sitegrab
+    return sitegrab.state()
+
+
+@app.post("/api/sitegrab/install")
+def sitegrab_install(user=Depends(admin)):
+    import sitegrab
+    return sitegrab.start_install(user)
+
+
 @app.post("/api/scrape/run")
 def scrape_run(p: dict = Body(...), user=Depends(auth)):
     mode = (p.get("mode") or "page").strip()

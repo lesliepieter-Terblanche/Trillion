@@ -54,6 +54,11 @@ On-brand footage from a website: name a site in the request ("make a video for v
 and Trillion pulls the real product photos straight off that site and uses them as the footage - so
 the video shows the actual products, not stock clips. It grounds the script in what the site sells too.
 Attaching your own photos/clips still works and takes priority; stock footage is only the last resort.
+  Most modern stores (VapeEssence, TrueHome, TackleTrail) are JavaScript apps whose photos only appear
+  after the page runs in a browser - nothing can see them from the page source. For those, set up the
+  "website photo-grabber" once on the Videos page: it opens the site in a quiet headless browser (free,
+  on your PC) and lifts the real product photos off the live page. First setup downloads a browser
+  (a few minutes). If it's not set up, or a site blocks it, Trillion falls back to stock footage.
 Cinematic engine (MoneyPrinterTurbo): on the Videos page, press "Set up the cinematic engine" for a
 stronger option - the local brain writes the script, real stock footage becomes the moving background
 (using your Pixabay key), with a free voice, subtitles and music. Big one-time install in its own space
