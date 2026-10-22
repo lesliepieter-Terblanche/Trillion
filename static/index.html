@@ -1698,8 +1698,9 @@ async function wbLoadLink(){const link=$('wb-link').value.trim();if(!link)return
     else if(apiSt==='OVER_QUERY_LIMIT'){cls='bad';note='Google Places quota/billing issue — check billing is enabled. '+d.business+' loaded by name only.';}
     else if(apiSt.indexOf('error')===0){cls='bad';note='Could not reach Google Places just now. '+d.business+' loaded by name only.';}
     else if(apiSt==='ZERO_RESULTS'){cls='bad';note='Loaded '+d.business+' (name/area), but Places could not match this exact business for the extra detail.';}
-    else{cls='ok';note='Loaded '+d.business+' — '+(d.phone?'phone, ':'')+(d.hours?'hours, ':'')+(d.photos?d.photos+' photos, ':'')+(d.has_website?'but it already has a website':'no website ✓');}
-    m.className='msg '+cls;m.textContent=note;
+    else if(apiSt==='OK'){cls='ok';note='Loaded '+d.business+' — '+(d.phone?'phone, ':'')+(d.hours?'hours, ':'')+(d.photos?d.photos+' photos, ':'')+(d.has_website?'but it already has a website':'no website ✓');}
+    else{cls='bad';note='Loaded '+d.business+' by name only. Places status: '+apiSt+(d.resolved?' · link ok':'');}
+    m.className='msg '+cls;m.textContent=note+'  ['+apiSt+']';
   }catch(e){m.className='msg bad';m.textContent=e.message;}}
 $('wb-link-load')&&($('wb-link-load').onclick=wbLoadLink);
 $('wb-link')&&($('wb-link').addEventListener('change',wbLoadLink));

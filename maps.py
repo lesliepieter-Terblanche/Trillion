@@ -188,6 +188,8 @@ def extract(user, link):
     info["_api"] = "no_key" if not key else ("" if base["name"] else "no_name_in_link")
     if key and base["name"]:
         places, st = _search_new(key, f'{base["name"]} {base["address"]}'.strip(), 1)
+        if not places and st == "OK" and base["area"]:          # retry with a looser query
+            places, st = _search_new(key, f'{base["name"]} {base["area"]}'.strip(), 1)
         info["_api"] = st if st != "OK" else ("OK" if places else "ZERO_RESULTS")
         if places:
             got = _info_from_new(places[0], key, link)
