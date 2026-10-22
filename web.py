@@ -27,7 +27,12 @@ TEMPLATES = {
     "premium":   {"file": "premium.html", "photo": False},                 # animated WebGL shader-gradient hero
     "cinematic": {"file": "cinematic.html", "photo": True, "dark": True},   # full-bleed real photo, Ken-Burns + scrim
     "object3d":  {"file": "object3d.html", "photo": False, "dark": True},   # Three.js 3D crystal hero, lit + parallax
+    "editorial": {"file": "editorial.html", "photo": False},               # clean split layout, light & professional
 }
+# professional / clean trades suit the editorial split look
+EDITORIAL_WORDS = ("law", "attorney", "legal", "advocate", "account", "financ", "consult", "estate", "property",
+                   "agency", "architect", "dentist", "dental", "clinic", "doctor", "medical", "optom", "physio",
+                   "notary", "insurance", "broker", "recruit", "marketing", "studio")
 # categories that suit a 3D-object hero (products on show, modern/tech feel)
 OBJECT_WORDS = ("retail", "product", "auto part", "car part", "motor", "tyre", "spares", "tech",
                 "software", "electronic", "jewel", "watch", "furniture", "agency", "solar",
@@ -111,6 +116,8 @@ def pick_template(category, photos, look=""):
             chosen = "cinematic"
         elif any(w in c for w in OBJECT_WORDS):
             chosen = "object3d"
+        elif any(w in c for w in EDITORIAL_WORDS):
+            chosen = "editorial"
         else:
             chosen = "premium"
     if TEMPLATES[chosen].get("photo") and not photos:   # a photo look with no photos -> fall back
