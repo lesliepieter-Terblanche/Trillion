@@ -72,6 +72,7 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:16px;justify-content:space-between;
   <div class="cta"><a class="btn primary" href="#contact">__CTA1__</a><a class="btn ghost" href="#services">__CTA2__</a></div>
  </div></section>
 <div class="strip"><div class="wrap">__STRIP__</div></div>
+__PROMO__
 <section class="pad" id="services"><div class="wrap">
  <div class="sectlabel reveal">__SERVICES_LABEL__</div><h2 class="reveal">__SERVICES_HEAD__</h2>
  <p class="lead reveal" style="margin:16px 0 44px">__SERVICES_SUB__</p>
@@ -83,6 +84,7 @@ __GALLERY_SECTION__
 <section class="pad" id="contact"><div class="wrap"><div class="cta-final reveal">
  <h2>__CTA_HEAD__</h2><p>__CTA_SUB__</p>
  <a class="btn dark" href="tel:__PHONE__" style="background:#fff;color:#111">Call __PHONE__</a></div></div></section>
+__CONTACT__
 <footer><div class="wrap">
  <div class="brand" style="font-size:18px"><span class="dot"></span>__BRAND__</div>
  <div class="contact"><div><b>Call</b>__PHONE__</div><div><b>Visit</b>__ADDR__</div><div><b>Hours</b>__HOURS__</div></div>
@@ -132,4 +134,5 @@ window.addEventListener('load',function(){if(!window.gsap)return;
  gsap.timeline({defaults:{ease:'power4.out'}}).to('.word',{yPercent:0,opacity:1,duration:1.05,stagger:.08},.1)
   .from('.herosub',{opacity:0,y:20,duration:.9},'-=.6').from('.cta .btn',{opacity:0,y:18,duration:.7,stagger:.12},'-=.5')
   .from('nav',{opacity:0,y:-16,duration:.7},0).from('.eyebrow',{opacity:0,y:14,duration:.7},.1);});
-</script></body></html>
+</script>__FLOAT__
+</body></html>

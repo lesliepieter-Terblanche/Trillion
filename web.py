@@ -15,6 +15,7 @@ import shutil
 import threading
 import time
 from pathlib import Path
+from urllib.parse import quote_plus
 
 import core
 
@@ -278,6 +279,83 @@ Keep it specific to this business and category. English, confident, no hashtags,
     }
 
 
+def _wa_number(phone):
+    d = re.sub(r"\D", "", str(phone or ""))
+    if not d:
+        return ""
+    if d.startswith("0"):
+        d = "27" + d[1:]          # South Africa default
+    elif len(d) == 9:
+        d = "27" + d
+    return d
+
+
+_WA_SVG = ('<svg viewBox="0 0 32 32" width="28" height="28" fill="#fff"><path d="M16 3C9.4 3 4 8.3 4 '
+           '14.9c0 2.3.7 4.5 1.9 6.4L4 29l7-1.8c1.8 1 3.9 1.5 6 1.5 6.6 0 12-5.3 12-11.9S22.6 3 16 3zm0 '
+           '21.7c-1.9 0-3.7-.5-5.3-1.5l-.4-.2-4.1 1.1 1.1-4-.2-.4a9.6 9.6 0 01-1.5-5.1c0-5.4 4.4-9.7 '
+           '9.9-9.7s9.9 4.3 9.9 9.7-4.4 9.8-9.9 9.8zm5.5-7.3c-.3-.1-1.8-.9-2-1-.3-.1-.5-.1-.7.1-.2.3-.8'
+           '.9-.9 1.1-.2.2-.3.2-.6.1-1.8-.9-3-1.6-4.2-3.6-.3-.5.3-.5.8-1.6.1-.2 0-.4 0-.5 0-.1-.7-1.6-.9'
+           '-2.2-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.2.2 2.1 3.3 5.2 '
+           '4.6 2.9 1.2 2.9.8 3.5.8.5 0 1.8-.7 2-1.4.2-.7.2-1.3.2-1.4-.1-.2-.3-.2-.6-.4z"/></svg>')
+
+
+def _inp(palette):
+    return ("width:100%;padding:13px 16px;border-radius:12px;border:1px solid var(--border);"
+            "background:var(--card);color:var(--text);font-size:15px;font-family:inherit")
+
+
+def _addons(info, palette):
+    """Build the optional feature blocks the owner ticked. Returns {PROMO, CONTACT, FLOAT} (each '' if off)."""
+    addons = [str(a).lower() for a in (info.get("addons") or [])]
+    phone = info.get("phone") or ""
+    num = _wa_number(phone)
+    email = info.get("email") or ""
+    booking = "booking" in addons
+    out = {"PROMO": "", "CONTACT": "", "FLOAT": ""}
+    # floating WhatsApp button
+    if "whatsapp" in addons and num:
+        msg = quote_plus(f"Hi, I found your website and would like to get in touch.")
+        out["FLOAT"] = (f'<a href="https://wa.me/{num}?text={msg}" target="_blank" rel="noopener" aria-label="WhatsApp" '
+                        'style="position:fixed;right:20px;bottom:20px;z-index:60;width:58px;height:58px;border-radius:50%;'
+                        'background:#25D366;display:flex;align-items:center;justify-content:center;'
+                        'box-shadow:0 12px 30px rgba(0,0,0,.35)">' + _WA_SVG + '</a>')
+    # promo / advertising banner
+    if "promo" in addons:
+        head = _esc(info.get("promo_head") or "New here? Let’s make it worth your while")
+        sub = _esc(info.get("promo_sub") or "Mention this page when you get in touch for a special welcome offer.")
+        href = f"https://wa.me/{num}" if num else "#contact"
+        out["PROMO"] = ('<section style="padding:0 clamp(20px,5vw,40px)"><div style="max-width:var(--maxw);margin:36px auto;'
+                        'background:linear-gradient(100deg,var(--accent),var(--accent2));border-radius:22px;padding:28px 32px;'
+                        'display:flex;flex-wrap:wrap;gap:18px;align-items:center;justify-content:space-between;color:#fff">'
+                        f'<div><div style="font-weight:750;font-size:21px;letter-spacing:-.01em">{head}</div>'
+                        f'<div style="opacity:.9;font-size:14.5px;margin-top:4px">{sub}</div></div>'
+                        f'<a class="btn" href="{href}" style="background:#fff;color:#111">Claim it</a></div></section>')
+    # enquiry / booking form (sends to WhatsApp, or email as a fallback)
+    if "form" in addons or booking:
+        head = "Book with us" if booking else "Send us a message"
+        label = "Send booking request" if booking else "Send message"
+        if num:
+            action = (f"var t=encodeURIComponent('Hi, my name is '+n+'. '+m+' (contact: '+c+')');"
+                      f"window.open('https://wa.me/{num}?text='+t,'_blank');")
+        elif email:
+            action = (f"window.location.href='mailto:{email}?subject=Website%20enquiry&body='+"
+                      "encodeURIComponent('Name: '+n+'\\nContact: '+c+'\\n\\n'+m);")
+        else:
+            action = "alert('Thanks! We will be in touch.');"
+        st = _inp(palette)
+        out["CONTACT"] = (
+            '<section class="pad" id="enquire" style="background:var(--surface)"><div class="wrap" style="max-width:640px">'
+            f'<div class="sectlabel reveal">{"Booking" if booking else "Contact"}</div><h2 class="reveal">{_esc(head)}</h2>'
+            '<div class="reveal" style="margin-top:26px;display:grid;gap:14px">'
+            f'<input id="f_n" placeholder="Your name" style="{st}">'
+            f'<input id="f_c" placeholder="Your phone or email" style="{st}">'
+            f'<textarea id="f_m" rows="3" placeholder="How can we help?" style="{st}"></textarea>'
+            f'<button class="btn primary" type="button" onclick="var n=document.getElementById(\'f_n\').value,'
+            f'c=document.getElementById(\'f_c\').value,m=document.getElementById(\'f_m\').value;{action}">{label}</button>'
+            '</div></div></section>')
+    return out
+
+
 def render(content, palette, photos_rel, template="premium"):
     tpl = TEMPLATES.get(template, TEMPLATES["premium"])
     html = (TPL_DIR / tpl["file"]).read_text(encoding="utf-8")
@@ -328,6 +406,7 @@ def build(user, info, progress=None):
         palette = PALETTES[style]
     say("Writing the copy")
     content = plan(core.LLM if hasattr(core, "LLM") else (lambda u, m: {"content": ""}), user, info)
+    content.update(_addons(info, palette))      # optional features the owner ticked
     say("Building the website")
     html = render(content, palette, photos_rel, template)
     (folder / "index.html").write_text(html, encoding="utf-8")
@@ -342,7 +421,7 @@ def build(user, info, progress=None):
     except Exception:
         pass
     detail = {"style": style, "mode": palette["mode"], "template": template, "business": name, "category": cat,
-              "photos": len(photos_rel), "photos_rel": photos_rel,
+              "photos": len(photos_rel), "photos_rel": photos_rel, "addons": info.get("addons") or [],
               "info": {k: info.get(k) for k in
                        ("business", "category", "location", "address", "phone", "hours", "services",
                         "about", "rating", "reviews", "link")}}
@@ -452,6 +531,7 @@ def revise(user, sid, change, progress=None):
         return {"error": f"I couldn't find that website (#{sid}) to change."}
     d = json.loads(row["detail"] or "{}")
     info = dict(d.get("info") or {})
+    info["addons"] = d.get("addons") or []
     style = d.get("style") or "violet"
     template = d.get("template") or "premium"
     photos_rel = d.get("photos_rel") or []
@@ -483,9 +563,25 @@ def revise(user, sid, change, progress=None):
                        r"shader|animated|colour|color|make|it|the|to|change|look|style|" + "|".join(_COLOUR) + r")\b",
                        " ", low)
     note = change if len(_re.sub(r"[^a-z0-9]+", "", leftover)) >= 4 else ""
+    # add or remove optional features
+    addons = set(info.get("addons") or [])
+    if _re.search(r"whats\s?app", low):
+        addons.add("whatsapp")
+    if _re.search(r"enquiry|contact form|message form|\bform\b|get in touch", low):
+        addons.add("form")
+    if _re.search(r"booking|book online|appointment|reservation", low):
+        addons.add("booking")
+    if _re.search(r"promo|offer|advert|banner|special", low):
+        addons.add("promo")
+    for w, a in (("whatsapp", "whatsapp"), ("form", "form"), ("booking", "booking"), ("promo", "promo"),
+                 ("banner", "promo"), ("advert", "promo")):
+        if _re.search(r"(remove|no|without|drop)\s[\w\s]*" + w, low):
+            addons.discard(a)
+    info["addons"] = list(addons)
     say("Rewriting the site")
     content = plan(core.LLM if hasattr(core, "LLM") else (lambda u, m: {"content": ""}),
                    user, dict(info, change_note=note))
+    content.update(_addons(info, palette))
     html = render(content, palette, photos_rel, template)
     folder = Path(row["folder"])
     folder.mkdir(parents=True, exist_ok=True)
@@ -500,7 +596,7 @@ def revise(user, sid, change, progress=None):
                 thumb = str(tp)
     except Exception:
         pass
-    d.update(style=style, mode=palette["mode"], template=template)
+    d.update(style=style, mode=palette["mode"], template=template, addons=info["addons"])
     core.x("UPDATE gensites SET style=?, detail=?, thumb=? WHERE id=?", (style, json.dumps(d), thumb, sid))
     return {"site_id": sid, "title": row["title"], "token": row["token"], "style": style,
             "mode": palette["mode"], "template": template, "notes": [f"Updated: now the {palette['mode']} {template} look."]}

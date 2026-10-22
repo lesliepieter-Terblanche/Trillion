@@ -73,6 +73,7 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:16px;justify-content:space-between;
   <div class="cta"><a class="btn primary" href="#contact">__CTA1__</a><a class="btn ghost" href="#services">__CTA2__</a></div>
  </div></section>
 <div class="strip"><div class="wrap">__STRIP__</div></div>
+__PROMO__
 <section class="pad" id="services"><div class="wrap">
  <div class="sectlabel reveal">__SERVICES_LABEL__</div><h2 class="reveal">__SERVICES_HEAD__</h2>
  <p class="lead reveal" style="margin:16px 0 44px">__SERVICES_SUB__</p>
@@ -84,6 +85,7 @@ __GALLERY_SECTION__
 <section class="pad" id="contact"><div class="wrap"><div class="cta-final reveal">
  <h2>__CTA_HEAD__</h2><p>__CTA_SUB__</p>
  <a class="btn dark" href="tel:__PHONE__" style="background:#fff;color:#111">Call __PHONE__</a></div></div></section>
+__CONTACT__
 <footer><div class="wrap">
  <div class="brand" style="font-size:18px"><span class="dot"></span>__BRAND__</div>
  <div class="contact"><div><b>Call</b>__PHONE__</div><div><b>Visit</b>__ADDR__</div><div><b>Hours</b>__HOURS__</div></div>
@@ -114,4 +116,5 @@ window.addEventListener('load',function(){if(!window.gsap)return;gsap.set('.word
   camera.position.x+=(mx*0.7-camera.position.x)*0.05;camera.position.y+=(-my*0.5-camera.position.y)*0.05;camera.lookAt(0,0,0);
   renderer.render(scene,camera);requestAnimationFrame(loop);})(t0);
  }catch(e){} })();
-</script></body></html>
+</script>__FLOAT__
+</body></html>
