@@ -119,24 +119,48 @@ def _dark_style(category):
     return "violet"
 
 
-def pick_template(category, photos, look=""):
-    """Choose the look. Explicit look wins; otherwise a cinematic photo hero for the right trades with photos,
-    else the animated shader hero. Cinematic needs at least one photo, so fall back if there are none."""
+# When the look is left on Auto, pick at RANDOM from a category-appropriate set so no two sites share a
+# layout — but every option in the set still suits that kind of business, so it stays on-brand.
+LAYOUT_POOLS = [
+    (EDITORIAL_WORDS, ["editorial", "premium", "ribbons", "object3d"]),
+    (("restaurant", "cafe", "coffee", "bar", "bistro", "grill", "diner", "eatery", "bakery", "deli", "restaur",
+      "hotel", "guest", "lodge", "pub", "takeaway"), ["cinematic", "premium", "orb", "object3d"]),
+    (("salon", "beauty", "spa", "hair", "barber", "nail", "wellness", "yoga", "pilates", "massage", "aesthetic",
+      "skin", "therap"), ["cinematic", "orb", "premium", "resonance"]),
+    (("gym", "fitness", "crossfit", "boxing", "club", "night", "lounge", "gaming", "esport"),
+     ["streams", "premium", "object3d", "liquid"]),
+    (("music", "sound", "audio", "recording", "dj", "venue", "event", "wedding", "church", "choir", "piano", "guitar"),
+     ["resonance", "premium", "streams", "orb"]),
+    (("auto", "detailing", "car ", "motor", "tyre", "spares", "mechanic", "panel", "workshop"),
+     ["liquid", "object3d", "premium", "streams"]),
+    (("jewel", "watch", "luxury", "boutique", "fashion", "interior", "decor", "furniture", "florist"),
+     ["cinematic", "liquid", "premium", "object3d"]),
+    (("tech", "software", "it service", "it support", "digital", "agency", "data", "cloud", "cyber", "network",
+      "startup", "security", "print", "signage"), ["ribbons", "object3d", "premium", "streams"]),
+    (("retail", "product", "supplier", "wholesale", "hardware", "electronic", "solar", "fabricat"),
+     ["object3d", "liquid", "premium", "ribbons"]),
+]
+DEFAULT_POOL = ["premium", "object3d", "orb", "ribbons", "editorial"]
+
+
+def _layout_pool(category, photos):
+    c = str(category).lower()
+    pool = next((looks for words, looks in LAYOUT_POOLS if any(w in c for w in words)), None) or DEFAULT_POOL
+    out = [t for t in pool if t in TEMPLATES and not (TEMPLATES[t].get("photo") and not photos)]
+    return out or ["premium"]
+
+
+def pick_template(category, photos, look="", avoid=""):
+    """Choose the look. An explicit look wins; otherwise pick at random from a category-appropriate pool so
+    sites vary every time. `avoid` lets a revise request land on a different layout than the current one.
+    Photo looks need at least one photo, so they're dropped from the pool when there are none."""
     if look in TEMPLATES:
         chosen = look
     else:
-        c = str(category).lower()
-        tu = next((k for k, words in THREEUI_WORDS.items() if any(w in c for w in words)), None)
-        if photos and any(w in c for w in CINEMATIC_WORDS):
-            chosen = "cinematic"
-        elif tu:
-            chosen = tu
-        elif any(w in c for w in OBJECT_WORDS):
-            chosen = "object3d"
-        elif any(w in c for w in EDITORIAL_WORDS):
-            chosen = "editorial"
-        else:
-            chosen = "premium"
+        pool = _layout_pool(category, photos)
+        if avoid in pool and len(pool) > 1:
+            pool = [t for t in pool if t != avoid]
+        chosen = random.choice(pool)
     if TEMPLATES[chosen].get("photo") and not photos:   # a photo look with no photos -> fall back
         chosen = "object3d" if any(w in str(category).lower() for w in OBJECT_WORDS) else "premium"
     return chosen
@@ -683,6 +707,9 @@ def revise(user, sid, change, progress=None):
         template = "cinematic" if photos_rel else "premium"
     elif _re.search(r"gradient|shader|animated", low):
         template = "premium"
+    elif _re.search(r"different|another|new|change the|other|vary|fresh|redesign|re-?design", low) and \
+            _re.search(r"layout|design|look|template|style", low):
+        template = pick_template(info.get("category", ""), photos_rel, avoid=template)   # reroll to a new layout
     # colour
     for w, s in _COLOUR.items():
         if _re.search(r"\b" + w + r"\b", low):
