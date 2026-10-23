@@ -1100,7 +1100,7 @@ const api=async(u,o={})=>{if(o.json!==undefined){o.method=o.method||'POST';o.hea
 const hm=t=>new Date(t*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false});
 let hold=0,S=null,sending=false,speakNext=false,settingsLoaded=false,cwd='';
 
-const LOADERS={apps:()=>loadApps(),sites:()=>{loadSites();loadClones();},bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),workflow:()=>wfLoad(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);loadStorage();},memory:()=>loadNotes(''),videos:()=>loadVideos(),web:()=>loadWeb(),dashboard:()=>loadDash(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();loadBackup();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
+const LOADERS={apps:()=>loadApps(),sites:()=>{loadSites();loadClones();},bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),workflow:()=>wfLoad(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);loadStorage();},memory:()=>loadNotes(''),videos:()=>loadVideos(),web:()=>{loadWeb();wbKeyState();},dashboard:()=>loadDash(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();loadBackup();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
 let VIEW='control';
 function go(v){
   VIEW=v;try{if(v!=='settings'&&mtTimer)micTestStop();}catch(e){}
@@ -1689,8 +1689,12 @@ function drawWeb(sites){
     try{await api('/api/gensites/'+b.dataset.wbc+'/revise',{json:{change:what.trim()}});}catch(e){$('wb-msg').className='msg bad';$('wb-msg').textContent=e.message;return;}
     clearInterval(webPoll);let n=0;webPoll=setInterval(async()=>{n++;try{const d=await (await api('/api/gensites')).json();drawWeb(d.sites||[]);if(n>18){clearInterval(webPoll);$('wb-msg').className='msg ok';$('wb-msg').textContent='Updated — refresh the preview to see the change.';}}catch(e){}},4000);});
 }
+async function wbKeyState(){try{const ks=await (await api('/api/secrets')).json();const k=(ks||[]).find(x=>x.name==='google_places');const m=$('wb-gkey-msg'),i=$('wb-gkey');if(!m||!i)return;
+  if(k&&k.set){i.placeholder='Key saved ('+k.hint+') — paste a new one only to replace it';$('wb-gkey-save').textContent='REPLACE KEY';if(!m.dataset.busy){m.className='msg ok';m.textContent='Google Places key saved ('+k.hint+'). It stays saved through updates.';}}
+  else{i.placeholder='saved securely, used only for Maps lookups';$('wb-gkey-save').textContent='SAVE KEY';if(!m.dataset.busy){m.className='msg muted';m.textContent='No Google Places key saved on this login yet.';}}}catch(e){}}
 $('wb-gkey-save')&&($('wb-gkey-save').onclick=async()=>{const v=$('wb-gkey').value.trim();const m=$('wb-gkey-msg');if(!v){m.className='msg bad';m.textContent='Paste the key first.';return;}
-  try{await api('/api/secrets/google_places',{method:'PUT',json:{value:v,enabled:true}});m.className='msg ok';m.textContent='Saved. Links will now pull full business details.';$('wb-gkey').value='';}catch(e){m.className='msg bad';m.textContent=e.message;}});
+  try{await api('/api/secrets/google_places',{method:'PUT',json:{value:v,enabled:true}});$('wb-gkey').value='';m.dataset.busy='';await wbKeyState();
+    const t=await (await api('/api/secrets/google_places/test',{method:'POST'})).json();m.className='msg '+(t.ok?'ok':'bad');m.textContent=t.ok?'Saved and tested: the key works. It stays saved through updates.':'Saved, but Google refused it (code '+t.status+'). Check the key is enabled for the Places API (New).';}catch(e){m.className='msg bad';m.textContent=e.message;}});
 $('wb-pl-chk')&&($('wb-pl-chk').onchange=()=>{$('wb-pl-wrap').hidden=!$('wb-pl-chk').checked;});
 let wbLinkSeq=0;
 async function wbLoadLink(){const link=$('wb-link').value.trim();if(!link)return;const m=$('wb-msg');const seq=++wbLinkSeq;m.className='msg muted';m.textContent='Reading the business from the link…';

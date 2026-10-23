@@ -185,11 +185,57 @@ def user_roots(user):
 
 
 # ---------- encrypted keys ----------
+# A second copy of the key that unlocks saved keys, outside the Trillion folder. If data/secret.key ever goes missing
+# or gets replaced (a moved folder, a sync tool, a restore), the saved keys can still be read instead of being lost.
+KEY_MIRROR = Path(os.environ.get("APPDATA") or Path.home()) / "Trillion" / "secret.key"
+_FERNET = {"f": None}
+
+
+def _unlocks(key_bytes):
+    """True if this key can read the saved keys (or there are none yet to test)."""
+    try:
+        r = q("SELECT value FROM secrets LIMIT 1", one=True)
+    except Exception:
+        return True
+    if not r:
+        return True
+    try:
+        Fernet(key_bytes).decrypt(r["value"])
+        return True
+    except Exception:
+        return False
+
+
+def _mirror(key_bytes):
+    try:
+        KEY_MIRROR.parent.mkdir(parents=True, exist_ok=True)
+        if not KEY_MIRROR.exists() or KEY_MIRROR.read_bytes().strip() != key_bytes.strip():
+            KEY_MIRROR.write_bytes(key_bytes)
+    except Exception:
+        pass
+
+
 def _fernet():
+    if _FERNET["f"]:
+        return _FERNET["f"]
     kf = DATA / "secret.key"
-    if not kf.exists():
-        kf.write_bytes(Fernet.generate_key())
-    return Fernet(kf.read_bytes())
+    main = kf.read_bytes().strip() if kf.exists() else b""
+    spare = KEY_MIRROR.read_bytes().strip() if KEY_MIRROR.exists() else b""
+    if main and _unlocks(main):
+        key = main
+    elif spare and _unlocks(spare):              # the data copy is missing or wrong, but the spare still works
+        key = spare
+        if main:
+            kf.with_name("secret.key.replaced").write_bytes(main)
+        kf.write_bytes(key)
+    elif main:                                    # neither unlocks the saved keys: keep the main one, change nothing
+        key = main
+    else:                                         # first run: make the key
+        key = Fernet.generate_key()
+        kf.write_bytes(key)
+    _mirror(key)
+    _FERNET["f"] = Fernet(key)
+    return _FERNET["f"]
 
 
 def set_secret(uid, name, value, enabled=True):
