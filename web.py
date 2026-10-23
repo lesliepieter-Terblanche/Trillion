@@ -28,6 +28,20 @@ TEMPLATES = {
     "cinematic": {"file": "cinematic.html", "photo": True, "dark": True},   # full-bleed real photo, Ken-Burns + scrim
     "object3d":  {"file": "object3d.html", "photo": False, "dark": True},   # Three.js 3D crystal hero, lit + parallax
     "editorial": {"file": "editorial.html", "photo": False},               # clean split layout, light & professional
+    # hero visuals adapted from ThreeUI Community (github.com/MengTo/threeui, MIT), recoloured to the site's palette
+    "ribbons":   {"file": "threeui-ribbons.html", "photo": False, "dark": True},    # dotted light ribbons, text left
+    "orb":       {"file": "threeui-orb.html", "photo": False, "dark": True},        # glowing smoke orb, text left
+    "liquid":    {"file": "threeui-liquid.html", "photo": False, "dark": True},     # raymarched chrome blob, text left
+    "resonance": {"file": "threeui-resonance.html", "photo": False, "dark": True},  # cymatic rings, centred text
+    "streams":   {"file": "threeui-streams.html", "photo": False, "dark": True},    # neon wave lines, centred text
+}
+# trades that suit each ThreeUI look (only used when the look is left on Auto)
+THREEUI_WORDS = {
+    "liquid":    ("auto", "detailing", "car ", "jewel", "watch", "luxury", "chrome", "metal", "engineer", "motor"),
+    "orb":       ("spa", "beauty", "wellness", "yoga", "pilates", "massage", "holistic", "therap", "aesthetic", "skin"),
+    "resonance": ("music", "sound", "audio", "recording", "dj", "venue", "event", "church", "choir", "piano", "guitar"),
+    "streams":   ("gym", "fitness", "club", "night", "lounge", "bar", "gaming", "esport", "crossfit", "boxing", "tattoo"),
+    "ribbons":   ("tech", "software", "it service", "it support", "digital", "agency", "data", "cloud", "cyber", "network", "startup"),
 }
 # professional / clean trades suit the editorial split look
 EDITORIAL_WORDS = ("law", "attorney", "legal", "advocate", "account", "financ", "consult", "estate", "property",
@@ -112,8 +126,11 @@ def pick_template(category, photos, look=""):
         chosen = look
     else:
         c = str(category).lower()
+        tu = next((k for k, words in THREEUI_WORDS.items() if any(w in c for w in words)), None)
         if photos and any(w in c for w in CINEMATIC_WORDS):
             chosen = "cinematic"
+        elif tu:
+            chosen = tu
         elif any(w in c for w in OBJECT_WORDS):
             chosen = "object3d"
         elif any(w in c for w in EDITORIAL_WORDS):
@@ -649,7 +666,17 @@ def revise(user, sid, change, progress=None):
     photos_rel = d.get("photos_rel") or []
     low = (change or "").lower()
     # look
-    if _re.search(r"\b(3d|object|crystal)\b", low):
+    if _re.search(r"\bribbons?\b", low):
+        template = "ribbons"
+    elif _re.search(r"\b(orb|sphere|smoke)\b", low):
+        template = "orb"
+    elif _re.search(r"\b(liquid|chrome|metal|metallic|blob)\b", low):
+        template = "liquid"
+    elif _re.search(r"\b(resonance|rings?|ripples?|cymatic)\b", low):
+        template = "resonance"
+    elif _re.search(r"\b(streams?|neon|waves?)\b", low):
+        template = "streams"
+    elif _re.search(r"\b(3d|object|crystal)\b", low):
         template = "object3d"
     elif _re.search(r"cinematic|photo hero|photo", low):
         template = "cinematic" if photos_rel else "premium"
@@ -672,7 +699,8 @@ def revise(user, sid, change, progress=None):
         palette = PALETTES[style]
     # is there a wording change beyond the design words?
     leftover = _re.sub(r"\b(light|dark|bright|brighter|moody|black|3d|object|crystal|cinematic|photo|hero|gradient|"
-                       r"shader|animated|colour|color|make|it|the|to|change|look|style|" + "|".join(_COLOUR) + r")\b",
+                       r"shader|animated|colour|color|make|it|the|to|change|look|style|ribbons?|orb|sphere|smoke|liquid|chrome|"
+                       r"metal|metallic|blob|resonance|rings?|ripples?|cymatic|streams?|neon|waves?|" + "|".join(_COLOUR) + r")\b",
                        " ", low)
     note = change if len(_re.sub(r"[^a-z0-9]+", "", leftover)) >= 4 else ""
     # add or remove optional features
