@@ -1231,7 +1231,8 @@ function render(){
 }
 function alertMsg(m){$('sub').textContent=m;}
 function statRefresh(){if(STAT&&!$('pop').hidden&&['pc','phone','ts','site','brain','hear'].includes(STAT)){$('popbody').innerHTML=`<div style="max-width:640px">${statBody(STAT)}</div>`;statBind();}}
-const linkify=t=>esc(t).replace(/https?:\/\/[^\s<]+[^\s<.,;:!?)\]]/g,u=>`<a href="${u}" target="_blank" rel="noopener">${u}</a>`);
+const linkify=t=>esc(t).replace(/https?:\/\/[^\s<]+[^\s<.,;:!?)\]]/g,u=>`<a href="${u}" target="_blank" rel="noopener">${u}</a>`)
+  .replace(/(^|[\s(])(\/api\/manuals\/\d+\/page\/\d+)(?![\w\/.])/g,(m,a,u)=>`${a}<a href="${u}" target="_blank" rel="noopener">open page ${u.split('/').pop()}</a>`);
 let popClose=null,popBack=null;
 const wide=()=>window.matchMedia('(min-width:821px)').matches;
 function replyPop(asked,r){
@@ -1335,6 +1336,7 @@ function stopSpeaking(){
 function stopBtn(){try{$('stop').hidden=!(speaking()||(S&&S.busy));}catch(e){}}
 function say(text){
   // resolves when she has finished speaking, so listening can pause meanwhile
+  text=String(text||'').replace(/\n*Manual pages:[\s\S]*$/,'').replace(/https?:\/\/\S+|\/api\/manuals\/\S+/g,'').trim();
   return new Promise(async done=>{
     let finished=false;const end=()=>{if(!finished){finished=true;curEnd=null;curAudio=null;stopBtn();done();}};
     curEnd=end;$('stop').hidden=false;

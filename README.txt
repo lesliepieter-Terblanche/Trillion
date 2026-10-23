@@ -21,6 +21,11 @@ WHAT WORKS IN THIS VERSION
 - A project is only something she DID (used a tool, sent, made, called, scraped, ran). Just chatting or asking a question is not a project and never clutters the queue, tiles or workflow
 - She evolves daily: every night she learns lasting knowledge from the whole day's conversation (on by default), AND looks for things you do by hand that she could automate. Safe, reversible automations (morning briefing, check-ins) she can switch on herself if you allow it on the Workflow page; anything that sends, pays or deletes always waits for your OK
 - Files and folders: list, find, read, write, copy, move, rename, open
+- Workshop manuals: she reads a whole PDF manual (thousands of pages) into a search index, sorted into its sections
+  (Engine, Engine Cooling, Brakes, Wiring, the diagnostic manuals ...). Ask about the vehicle in plain words, for
+  example "where are the water pipes in the engine bay", and she answers from the manual with the section, page,
+  the manual's own fix steps and links to the pages. A page opens in a viewer you can zoom, drag and turn. Say
+  "add the manual D:\...\manual.pdf" to read in another one, or "split the manual" for one PDF per section.
 - Deleting files and running commands always wait for approval on the dashboard
 - Creates Word, Excel and PowerPoint files, and notes
 - Second brain: she saves lasting facts, searches them, and reviews each day at 23:30

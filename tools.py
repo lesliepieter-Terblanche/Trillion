@@ -127,6 +127,17 @@ SPECS = [
        "like 9.99. Needs the user's approval.", {"product": S, "price": {"type": "number"}}),
     fn("gumroad_refund", "Refund one Gumroad sale in full. sale is the buyer's email address or the sale number. "
        "Needs the user's approval.", {"sale": S}),
+    fn("search_manual", "Search the user's workshop and repair manuals (for example the XUV500 workshop manual) for a "
+       "question about the vehicle: where a part is, how to remove or fix something, torque values, fuses, wiring, fault "
+       "codes. Returns the best pages with their section, page number, a text extract and a link to see the page. "
+       "manual is optional (its name or number).", {"query": S, "manual": S}, ["query"]),
+    fn("read_manual_page", "Read every word on one page of a manual, after search_manual found it. page is the PDF page number.",
+       {"manual": S, "page": {"type": "integer"}}, ["page"]),
+    fn("list_manuals", "List the workshop manuals that have been read in: where each PDF is, its pages and its sections.", {}),
+    fn("add_manual", "Read a PDF workshop or repair manual into the manual library so it can be searched page by page. "
+       "path is the PDF on the PC. A big manual takes a few minutes; it carries on by itself.", {"path": S, "name": S}, ["path"]),
+    fn("split_manual", "Save each section of a manual (Engine, Brakes, Wiring ...) as its own PDF in a folder next to it.",
+       {"manual": S}, []),
     fn("update_self", "Update Trillion herself to the newest version from GitHub, then restart. Owner only. "
        "Use when the user says update yourself, get the latest version, or pull the update.", {}),
     fn("run_command", "Run a Windows command. Owner only, and always needs approval on the dashboard.",
@@ -223,6 +234,9 @@ def describe(name, a):
         "revise_video": "Changing the video",
         "create_ai_clip": "Generating an AI clip",
         "create_ebook": "Writing an ebook",
+        "search_manual": f"Searching the manual for {g('query')}", "read_manual_page": f"Reading manual page {g('page')}",
+        "list_manuals": "Listing the manuals", "add_manual": f"Reading in the manual {g('path')}",
+        "split_manual": "Splitting the manual into sections",
         "system_status": "Checking the PC", "update_self": "Updating myself from GitHub", "run_command": f"Run command: {g('command')}",
     }.get(name, name)
 
@@ -527,6 +541,42 @@ def t_web_search(user, query, count=6):
 
 
 # ---------- cast: Google Home / Chromecast ----------
+# ---------- workshop manuals ----------
+def _manual(fn_):
+    import manuals
+    try:
+        return fn_(manuals)
+    except manuals.ManualError as e:
+        return {"error": str(e)}
+
+
+def t_search_manual(user, query, manual=""):
+    def go(manuals):
+        hits = manuals.search(user, query, manual or None)
+        if not hits:
+            return {"hits": [], "note": "Nothing in the manuals matches that. Try other words, or the part's name."}
+        return {"hits": hits, "note": "Give the user the link of the page that answers it so they can see the picture."}
+    return _manual(go)
+
+
+def t_read_manual_page(user, page, manual=""):
+    return _manual(lambda manuals: manuals.page_text(user, manuals.find(user, manual)["id"], page))
+
+
+def t_list_manuals(user):
+    return _manual(lambda manuals: {"manuals": manuals.listing(user)})
+
+
+def t_add_manual(user, path, name=""):
+    p = resolve(user, path)
+    return _manual(lambda manuals: {"manual": manuals.add(user, p, name or None),
+                                    "note": "It is being read now; search_manual works once it says ready."})
+
+
+def t_split_manual(user, manual=""):
+    return _manual(lambda manuals: manuals.split(user, manuals.find(user, manual)["id"]))
+
+
 def t_list_cast_devices(user):
     import cast
     if not cast.available():

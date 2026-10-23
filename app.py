@@ -70,7 +70,9 @@ import web
 import mail
 import leads
 import maps
+import manuals
 gumroad.init()
+manuals.init()
 routines.init()
 web.init()
 leads.init()
@@ -340,7 +342,13 @@ Connectors switched on for this user (call connector_tools first, then connector
 {connectors}
 
 Routines this user has set up (each runs by itself when they say its phrase; they are edited on the Routines page):
-{routines.prompt_line(user)}"""
+{routines.prompt_line(user)}
+
+Workshop manuals you have read in full and can search page by page (search_manual, then read_manual_page for a whole page;
+add_manual reads in a new PDF; split_manual saves one PDF per section). For any question about the vehicle, answer from
+the manual, say the section and page, give the manual's own fix steps and cautions, and give the page link so they can
+see the picture. Never make up a step, a torque value or a part location that the manual does not give:
+{manuals.prompt_line(user)}"""
 
 
 UPDATE_RE = re.compile(r"\b(update|upgrade)\s+(yourself|your ?self|herself|trillion|now)\b|"
@@ -994,6 +1002,8 @@ def tools_for(user, text):
     if not (user["is_admin"] and core.settings(user).get("phone_serial")):
         skip |= {"rea_phone_app", "rea_phone_traffic"}                                # owner only, and need a linked phone
     skip |= {t for t, k in apps.TOOL_APP.items() if not apps.usable(user, k)}       # only apps this login has connected
+    if not manuals.has_any(user):
+        skip |= {"search_manual", "read_manual_page", "split_manual"}
     return [s_ for s_ in tools.SPECS if s_["function"]["name"] not in skip]
 
 
@@ -1527,13 +1537,23 @@ def run_agent(user, text, files=None):
             seen, file_notes = "The user attached files, but they could not be opened.", ["I could not open the attached files."]
         if hist and hist[-1]["role"] == "user":
             hist[-1]["content"] = text + "\n\n" + seen
+    manual_hits = []
+    if manuals.about(user, text):                # a question about the vehicle: hand the brain the manual's best pages
+        try:
+            core.set_task(tid, detail="Looking it up in the workshop manual")
+            manual_hits = manuals.search(user, text, limit=5)
+        except Exception:
+            manual_hits = []
     specs = tools_for(user, text)
-    fast = bool(core.settings(user).get("fast_answers", True)) and not NEEDS_TOOLS.search(text) and len(text) < 400 and not files
+    fast = bool(core.settings(user).get("fast_answers", True)) and not NEEDS_TOOLS.search(text) and len(text) < 400 \
+        and not files and not manual_hits          # a manual question gets the full brain: it has pages to read
     if fast:
         specs = None
     LIVE.pop(uid, None)
     msgs = [{"role": "system", "content": system_prompt(user, text) + (
         "\n\nThis turn is a plain question: you have no tools now. Just answer it, briefly and directly." if fast else "")}] + [dict(h) for h in hist]
+    if manual_hits:                             # what she looked up herself, not something the user sent
+        msgs.insert(len(msgs) - 1, {"role": "system", "content": manuals.for_brain(manual_hits, user)})
     status, waiting, reply, used_tools = "completed", False, "", False
     try:
         for _ in range(10):
@@ -1582,6 +1602,10 @@ def run_agent(user, text, files=None):
         status = "failed"
     if file_notes:
         reply = (reply + "\n\n" + " ".join(file_notes)).strip()
+    if manual_hits and status == "completed":   # the pages themselves, to open and look at the pictures
+        reply += "\n\nManual pages:\n" + "\n".join(
+            f"{h['section']}, page {h['page']}" + (f" ({h['ref']})" if h["ref"] else "") + f": {h['link']}"
+            for h in manual_hits[:4])
     core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
     if not used_tools and status == "completed":
         # a normal chat (she just answered, did nothing) is not a project - keep it out of the queue and tiles
@@ -2795,6 +2819,99 @@ async def upload(request: Request, name: str = "file", user=Depends(auth)):
     f = attach.record(user, path)
     core.log(user["id"], f"Received {f['name']}", "done")
     return {k: f[k] for k in ("id", "name", "kind", "size")}
+
+
+@app.get("/api/manuals")
+def manuals_list(user=Depends(auth)):
+    return {"manuals": manuals.listing(user)}
+
+
+@app.post("/api/manuals")
+def manuals_add(p: dict = Body(...), user=Depends(auth)):
+    try:
+        return manuals.add(user, tools.resolve(user, p.get("path")), p.get("name"))
+    except (manuals.ManualError, PermissionError) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/manuals/{mid}/search")
+def manuals_search(mid: int, q: str = "", user=Depends(auth)):
+    return {"hits": manuals.search(user, q, str(mid), limit=12)}
+
+
+@app.get("/api/manuals/{mid}/page/{page}.png")
+def manuals_page_png(mid: int, page: int, user=Depends(auth)):
+    try:
+        return Response(manuals.page_png(user, mid, page), media_type="image/png",
+                        headers={"Cache-Control": "private, max-age=86400"})
+    except manuals.ManualError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.get("/api/manuals/{mid}/page/{page}.pdf")
+def manuals_page_pdf(mid: int, page: int, user=Depends(auth)):
+    try:
+        data, name = manuals.page_pdf(user, mid, page)
+    except manuals.ManualError as e:
+        raise HTTPException(404, str(e))
+    return Response(data, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{name}"'})
+
+
+@app.get("/api/manuals/{mid}/page/{page}", response_class=HTMLResponse)
+def manuals_page_view(mid: int, page: int, user=Depends(auth)):
+    """One page of a manual to look at closely: zoom with the wheel or two fingers, drag to move, turn it, step through."""
+    m = manuals.get(user, mid)
+    if not m:
+        raise HTTPException(404, "That manual is not yours.")
+    page = max(1, min(int(page), m["pages"] or 1))
+    try:
+        info = manuals.page_text(user, mid, page)
+    except manuals.ManualError:
+        info = {"section": "", "ref": ""}
+    import html as _h
+    title = _h.escape(f"{m['name']} - {info['section']} - page {page}" + (f" ({info['ref']})" if info["ref"] else ""))
+    return MANUAL_VIEWER.replace("{TITLE}", title).replace("{MID}", str(mid)).replace("{PAGE}", str(page)) \
+        .replace("{LAST}", str(m["pages"] or 1))
+
+
+MANUAL_VIEWER = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{TITLE}</title><style>
+:root{color-scheme:dark}body{margin:0;background:#111;color:#eee;font:15px system-ui,sans-serif;overflow:hidden;height:100vh;display:flex;flex-direction:column}
+header{display:flex;gap:6px;align-items:center;padding:8px 10px;background:#1c1c1c;flex-wrap:wrap}
+header b{flex:1 1 240px;font-weight:600;font-size:14px}
+button,a.b{background:#2c2c2c;color:#eee;border:1px solid #444;border-radius:8px;padding:8px 12px;font:inherit;cursor:pointer;text-decoration:none}
+button:hover,a.b:hover{background:#3a3a3a}#stage{flex:1;position:relative;overflow:hidden;touch-action:none;cursor:grab}
+#pic{position:absolute;left:50%;top:50%;transform-origin:center;max-width:none;user-select:none;-webkit-user-drag:none;background:#fff}
+#hint{position:absolute;bottom:8px;left:0;right:0;text-align:center;color:#999;font-size:12px;pointer-events:none}
+</style></head><body><header><b>{TITLE}</b>
+<button id="prev" title="Previous page">&larr;</button><button id="next" title="Next page">&rarr;</button>
+<button id="zin" title="Zoom in">+</button><button id="zout" title="Zoom out">&minus;</button>
+<button id="rl" title="Turn left">&#8634;</button><button id="rr" title="Turn right">&#8635;</button>
+<button id="fit" title="Fit to screen">Fit</button><a class="b" href="/api/manuals/{MID}/page/{PAGE}.pdf" target="_blank">PDF</a></header>
+<div id="stage"><img id="pic" src="/api/manuals/{MID}/page/{PAGE}.png" alt="{TITLE}" draggable="false">
+<div id="hint">Scroll or pinch to zoom, drag to move, arrow keys for the next page</div></div>
+<script>
+const P={PAGE},L={LAST},img=document.getElementById('pic'),st=document.getElementById('stage');
+let s=1,r=0,x=0,y=0;const draw=()=>img.style.transform=`translate(calc(-50% + ${x}px),calc(-50% + ${y}px)) rotate(${r}deg) scale(${s})`;
+const fit=()=>{const w=img.naturalWidth,h=img.naturalHeight,turned=r%180!==0;const W=st.clientWidth,H=st.clientHeight;
+  s=Math.min(W/(turned?h:w),H/(turned?w:h))*0.98;x=y=0;draw();};
+img.onload=fit;addEventListener('resize',fit);
+const zoom=(f,cx,cy)=>{const b=st.getBoundingClientRect();cx=(cx??b.left+b.width/2)-b.left-b.width/2;cy=(cy??b.top+b.height/2)-b.top-b.height/2;
+  const n=Math.max(0.1,Math.min(12,s*f));x=cx-(cx-x)*n/s;y=cy-(cy-y)*n/s;s=n;draw();};
+st.addEventListener('wheel',e=>{e.preventDefault();zoom(e.deltaY<0?1.15:1/1.15,e.clientX,e.clientY);},{passive:false});
+const pts=new Map();let last=null;
+st.addEventListener('pointerdown',e=>{st.setPointerCapture(e.pointerId);pts.set(e.pointerId,[e.clientX,e.clientY]);last=null;});
+st.addEventListener('pointermove',e=>{if(!pts.has(e.pointerId))return;const o=pts.get(e.pointerId);pts.set(e.pointerId,[e.clientX,e.clientY]);
+  if(pts.size===1){x+=e.clientX-o[0];y+=e.clientY-o[1];draw();}
+  else if(pts.size===2){const [a,b]=[...pts.values()];const d=Math.hypot(a[0]-b[0],a[1]-b[1]);if(last)zoom(d/last,(a[0]+b[0])/2,(a[1]+b[1])/2);last=d;}});
+const up=e=>{pts.delete(e.pointerId);last=null;};st.addEventListener('pointerup',up);st.addEventListener('pointercancel',up);
+const go=n=>{if(n>=1&&n<=L)location.href='/api/manuals/{MID}/page/'+n;};
+document.getElementById('prev').onclick=()=>go(P-1);document.getElementById('next').onclick=()=>go(P+1);
+document.getElementById('zin').onclick=()=>zoom(1.3);document.getElementById('zout').onclick=()=>zoom(1/1.3);
+document.getElementById('rl').onclick=()=>{r=(r+270)%360;fit();};document.getElementById('rr').onclick=()=>{r=(r+90)%360;fit();};
+document.getElementById('fit').onclick=fit;
+addEventListener('keydown',e=>{if(e.key==='ArrowLeft')go(P-1);if(e.key==='ArrowRight')go(P+1);if(e.key==='+'||e.key==='=')zoom(1.3);if(e.key==='-')zoom(1/1.3);});
+</script></body></html>"""
 
 
 @app.get("/api/uploads/{fid}/file")
