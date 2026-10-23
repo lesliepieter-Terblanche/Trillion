@@ -101,6 +101,38 @@ STYLE_BY_WORD = {"restaurant": "ember", "cafe": "ember", "coffee": "ember", "gri
                  "landscap": "emerald", "garden": "emerald", "pest": "emerald", "solar": "emerald", "farm": "emerald"}
 
 
+# Premium Google-Fonts pairings (all OFL), rotated per build so sites don't share a typographic identity.
+# head = display font for headings/logo, body = text font. Loaded from Google Fonts with a clean system
+# fallback, so a blocked/offline load degrades gracefully instead of breaking the layout.
+_SANS_FB = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif"
+_SERIF_FB = "Georgia,'Times New Roman',serif"
+FONT_PAIRS = [
+    {"head": "Sora", "body": "Inter", "hw": "600;700;800", "serif": False},
+    {"head": "Fraunces", "body": "Inter", "hw": "500;600;700", "serif": True},
+    {"head": "Space Grotesk", "body": "Inter", "hw": "500;600;700", "serif": False},
+    {"head": "Playfair Display", "body": "Source Sans 3", "hw": "600;700;800", "serif": True},
+    {"head": "Poppins", "body": "Inter", "hw": "600;700;800", "serif": False},
+    {"head": "DM Serif Display", "body": "DM Sans", "hw": "400", "serif": True},
+    {"head": "Archivo", "body": "Inter", "hw": "600;700;800", "serif": False},
+    {"head": "Bricolage Grotesque", "body": "Inter", "hw": "600;700;800", "serif": False},
+    {"head": "Epilogue", "body": "Inter", "hw": "600;700;800", "serif": False},
+]
+
+
+def _font_tokens(font=None):
+    """Return (__FONT__ body family, __FONTDEF__ <link>+heading CSS) for a chosen or random pairing."""
+    pair = FONT_PAIRS[font % len(FONT_PAIRS)] if isinstance(font, int) else random.choice(FONT_PAIRS)
+    head, body, hw = pair["head"], pair["body"], pair["hw"]
+    fam = f"{head.replace(' ', '+')}:wght@{hw}&family={body.replace(' ', '+')}:wght@400;500;600;700"
+    link = f"https://fonts.googleapis.com/css2?family={fam}&display=swap"
+    hfb = _SERIF_FB if pair["serif"] else _SANS_FB
+    fontdef = ('<link rel="preconnect" href="https://fonts.googleapis.com">'
+               '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+               f'<link rel="stylesheet" href="{link}">'
+               f"<style>h1,h2,h3,h4,.brand{{font-family:'{head}',{hfb}}}</style>")
+    return f"'{body}',{_SANS_FB}", fontdef
+
+
 def pick_style(category, hint=""):
     c = (str(category) + " " + str(hint)).lower()
     for word, pal in STYLE_BY_WORD.items():
@@ -539,10 +571,13 @@ def _addons(info, palette):
     return out
 
 
-def render(content, palette, photos_rel, template="premium"):
+def render(content, palette, photos_rel, template="premium", font=None):
     tpl = TEMPLATES.get(template, TEMPLATES["premium"])
     html = (TPL_DIR / tpl["file"]).read_text(encoding="utf-8")
     content = dict(content)
+    body_fam, fontdef = _font_tokens(font)
+    content["FONT"] = body_fam
+    content["FONTDEF"] = fontdef
     content["GALLERY_SECTION"] = _gallery_section(photos_rel[1:] if tpl.get("photo") else photos_rel)
     if tpl.get("photo"):
         content["HERO_PHOTO"] = photos_rel[0] if photos_rel else ""
@@ -598,7 +633,10 @@ def build(user, info, progress=None):
     content = plan(core.LLM if hasattr(core, "LLM") else (lambda u, m: {"content": ""}), user, info)
     content.update(_addons(info, palette))      # optional features the owner ticked
     say("Building the website")
-    html = render(content, palette, photos_rel, template)
+    font_idx = info.get("font_idx")
+    if not isinstance(font_idx, int):
+        font_idx = random.randrange(len(FONT_PAIRS))     # a different typeface pairing each build
+    html = render(content, palette, photos_rel, template, font=font_idx)
     (folder / "index.html").write_text(html, encoding="utf-8")
     thumb = ""
     try:
@@ -610,7 +648,8 @@ def build(user, info, progress=None):
                 thumb = str(tp)
     except Exception:
         pass
-    detail = {"style": style, "mode": palette["mode"], "template": template, "business": name, "category": cat,
+    detail = {"style": style, "mode": palette["mode"], "template": template, "font": font_idx,
+              "business": name, "category": cat,
               "photos": len(photos_rel), "photos_rel": photos_rel, "addons": info.get("addons") or [],
               "info": {k: info.get(k) for k in
                        ("business", "category", "location", "address", "phone", "email", "hours", "services",
@@ -731,7 +770,10 @@ def revise(user, sid, change, progress=None):
     style = d.get("style") or "violet"
     template = d.get("template") or "premium"
     photos_rel = d.get("photos_rel") or []
+    font_idx = d.get("font") if isinstance(d.get("font"), int) else random.randrange(len(FONT_PAIRS))
     low = (change or "").lower()
+    if _re.search(r"\b(font|fonts|typeface|typography|lettering)\b", low):
+        font_idx = (font_idx + 1 + random.randrange(len(FONT_PAIRS) - 1)) % len(FONT_PAIRS)   # reroll to a new one
     # look
     if _re.search(r"\bribbons?\b", low):
         template = "ribbons"
@@ -794,7 +836,7 @@ def revise(user, sid, change, progress=None):
     content = plan(core.LLM if hasattr(core, "LLM") else (lambda u, m: {"content": ""}),
                    user, dict(info, change_note=note))
     content.update(_addons(info, palette))
-    html = render(content, palette, photos_rel, template)
+    html = render(content, palette, photos_rel, template, font=font_idx)
     folder = Path(row["folder"])
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "index.html").write_text(html, encoding="utf-8")
@@ -808,7 +850,7 @@ def revise(user, sid, change, progress=None):
                 thumb = str(tp)
     except Exception:
         pass
-    d.update(style=style, mode=palette["mode"], template=template, addons=info["addons"])
+    d.update(style=style, mode=palette["mode"], template=template, font=font_idx, addons=info["addons"])
     core.x("UPDATE gensites SET style=?, detail=?, thumb=? WHERE id=?", (style, json.dumps(d), thumb, sid))
     return {"site_id": sid, "title": row["title"], "token": row["token"], "style": style,
             "mode": palette["mode"], "template": template, "notes": [f"Updated: now the {palette['mode']} {template} look."]}
