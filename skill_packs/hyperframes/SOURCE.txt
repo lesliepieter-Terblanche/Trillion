@@ -1,0 +1,5 @@
+Source: https://github.com/heygen-com/hyperframes
+Package: hyperframes (npm)
+Licence: Apache-2.0
+
+Trillion renders Web Studio pitch videos with the HyperFrames CLI (pitchvideo.py). The playbook in this pack is Trillion's own.

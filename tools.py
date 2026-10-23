@@ -51,6 +51,10 @@ SPECS = [
     fn("camera_move", "Move a PTZ camera: action is left, right, up, down, zoom_in, zoom_out or stop. camera is its name. "
        "Only works on cameras that support ONVIF.", {"camera": S, "action": S}, ["camera", "action"]),
     fn("seo_rankings", "Google rankings of the user's websites for their tracked search words, from SerpBear.", {"domain": S}, []),
+    fn("competitor_watch", "Watch competitor websites for changes (prices, specials, new products and pages) and report "
+       "what changed. action: add (url, optional name and hours between checks), list, remove (url or name), "
+       "changes (what changed in the last days, default 7). Each login has its own list.",
+       {"action": S, "url": S, "name": S, "hours": {"type": "integer"}, "days": {"type": "integer"}}, ["action"]),
     fn("automations", "List the user's n8n automation workflows and whether each is on.", {}),
     fn("automation_switch", "Switch an n8n workflow on or off by its name.", {"name": S, "on": {"type": "boolean"}}),
     fn("read_website", "Open a website in a browser on the PC, read the whole site page by page, analyse it, and make files from "
@@ -62,6 +66,12 @@ SPECS = [
        "the user's own business in the layout and style of url, with new words; brand is the business name and about what it does.",
        {"url": S, "mode": S, "brand": S, "about": S, "permission": {"type": "boolean"}, "max_pages": {"type": "integer"}}, ["url", "mode"]),
     fn("check_website", "Check whether a website is up and how fast it answers.", {"url": S}),
+    fn("pitch_video", "Make a 30-second cinematic walkthrough video (MP4) of a website Web Studio built, to send with the "
+       "pitch: title card, desktop and phone walkthrough, features or scores, call to action, with a free voice-over when "
+       "the Kokoro voice is on. site_id is the Web Studio site number. Optional scores compare the prospect's current site "
+       "with the new one, e.g. {\"Performance\": [38, 99], \"SEO\": [60, 92]} - only use numbers a Lighthouse audit returned. "
+       "Runs in the background (about 2-4 minutes); the WhatsApp pitch then sends the video with the link.",
+       {"site_id": {"type": "integer"}, "scores": {"type": "object"}}, ["site_id"]),
     fn("system_status", "Get the PC's current processor, memory, disk and graphics card readings.", {}),
     fn("use_skill", "Load the full instructions of one of the user's installed skills. Call this before doing "
        "a job that one of the listed skills covers, then follow what it says.", {"name": S}),
@@ -209,6 +219,7 @@ def describe(name, a):
         "use_skill": f"Reading the skill {g('name')}", "draft_skill": f"Drafting a playbook: {g('name')}",
         "connector_tools": f"Checking what {g('connector')} can do",
         "connector_call": f"Using {g('connector')}: {g('tool')}",
+        "pitch_video": "Making a pitch video",
         "rea_phone_app": f"Reverse-engineering the phone app {g('app')} (pulling its APK and handing it to Claude Code)",
         "rea_phone_traffic": f"Capturing the network traffic of the phone app {g('app')}",
         "gumroad_sales": "Reading Gumroad sales", "gumroad_publish": f"{'Publish' if a.get('published') else 'Unpublish'} {g('product')} on Gumroad",
@@ -226,6 +237,7 @@ def describe(name, a):
         "phone_locate": "Locating the phone", "phone_ring": "Ringing the phone",
         "clone_website": f"{'Copying' if g('mode') == 'copy' else 'Rebuilding the style of'} {g('url')}",
         "seo_rankings": "Checking Google rankings",
+        "competitor_watch": "Checking competitor websites",
         "automations": "Checking automations", "automation_switch": f"Switching {g('name')} {'on' if a.get('on') else 'off'}",
         "read_website": f"Reading the website {g('url')}",
         "watch_alert": f"Alert on the watch: {g('text')[:80]}",
@@ -517,6 +529,19 @@ def t_save_note(user, title, body, domain="PERSONAL"):
 
 def t_search_memory(user, query):
     return {"results": [{"title": n["title"], "body": n["body"][:1500]} for n in search_notes(user["id"], query)]}
+
+
+def t_pitch_video(user, site_id, scores=None):
+    import pitchvideo
+    clean = {}
+    for k, v in (scores or {}).items():
+        try:
+            clean[str(k)[:20]] = [max(0, min(100, int(v[0]))), max(0, min(100, int(v[1])))]
+        except Exception:
+            pass
+    r = pitchvideo.start(user, int(site_id), clean or None)
+    return dict(r, note="Rendering in the background, about 2-4 minutes. It appears on the Web Studio page, and the "
+                        "WhatsApp pitch for this lead will send it with the link.")
 
 
 def t_web_search(user, query, count=6):
@@ -968,6 +993,20 @@ def _app(fn, *a, **k):
         return fn(*a, **k)
     except apps.AppError as e:
         return {"error": str(e)}
+
+
+def t_competitor_watch(user, action, url="", name="", hours=6, days=7):
+    import apps
+    a = str(action or "").lower()
+    if a.startswith("add") or a == "watch":
+        return _app(apps.competitor_add, user, url, name, hours)
+    if a.startswith("remove") or a.startswith("stop") or a.startswith("delete"):
+        return _app(apps.competitor_remove, user, url or name)
+    if a.startswith("change") or a.startswith("report") or a == "what changed":
+        r = _app(apps.competitor_changes, user, days)
+        return r if isinstance(r, dict) else {"changes": r, "note": "Nothing changed in that time." if not r else ""}
+    r = _app(apps.competitor_list, user)
+    return r if isinstance(r, dict) else {"watching": r}
 
 
 def t_seo_rankings(user, domain=""):

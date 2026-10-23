@@ -1017,7 +1017,9 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
       <label class="field"><span>Brain</span><select id="s-brain"><option value="local">Local only (free)</option><option value="gemini">Gemini (needs your key under Keys)</option><option value="anthropic">Claude (needs an API key under Keys)</option></select></label>
       <label class="field"><span>Local model</span><input id="s-local_model"></label>
       <label class="field"><span>Cloud model name</span><input id="s-cloud_model"></label>
-      <label class="field"><span>Voice</span><select id="s-voice"><option value="browser">This PC's voice (free)</option><option value="elevenlabs">ElevenLabs (needs your key under Keys)</option></select></label>
+      <label class="field"><span>Voice</span><select id="s-voice"><option value="browser">This PC's basic voice (free)</option><option value="kokoro">Kokoro natural voice (free, runs on this PC)</option><option value="elevenlabs">ElevenLabs (needs your key under Keys)</option></select></label>
+      <label class="field"><span>Kokoro voice</span><select id="s-kokoro_voice"><option value="bf_emma">Emma (British, female)</option><option value="bf_isabella">Isabella (British, female)</option><option value="bf_alice">Alice (British, female)</option><option value="bm_george">George (British, male)</option><option value="bm_fable">Fable (British, male)</option><option value="bm_lewis">Lewis (British, male)</option><option value="af_heart">Heart (American, female)</option><option value="af_bella">Bella (American, female)</option><option value="af_nicole">Nicole (American, female)</option><option value="am_michael">Michael (American, male)</option><option value="am_fenrir">Fenrir (American, male)</option><option value="am_puck">Puck (American, male)</option></select></label>
+      <div class="msg muted" id="kokoro-msg" style="font-size:12px"></div>
       <label class="field"><span>ElevenLabs voice ID</span><input id="s-eleven_voice_id"></label>
       <div class="panel" style="background:var(--well)"><b>Microphone on this device</b>
         <div class="muted" style="font-size:13px">This choice is kept for this browser on this device only. A webcam's microphone is usually not the one Windows picks by itself, so choose it here.</div>
@@ -1100,7 +1102,7 @@ const api=async(u,o={})=>{if(o.json!==undefined){o.method=o.method||'POST';o.hea
 const hm=t=>new Date(t*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false});
 let hold=0,S=null,sending=false,speakNext=false,settingsLoaded=false,cwd='';
 
-const LOADERS={apps:()=>loadApps(),sites:()=>{loadSites();loadClones();},bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),workflow:()=>wfLoad(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);loadStorage();},memory:()=>loadNotes(''),videos:()=>loadVideos(),web:()=>{loadWeb();wbKeyState();},dashboard:()=>loadDash(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();loadBackup();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
+const LOADERS={apps:()=>loadApps(),sites:()=>{loadSites();loadClones();},bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),workflow:()=>wfLoad(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);loadStorage();},memory:()=>loadNotes(''),videos:()=>loadVideos(),web:()=>{loadWeb();wbKeyState();},dashboard:()=>loadDash(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();loadBackup();kokoroState();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
 let VIEW='control';
 function go(v){
   VIEW=v;try{if(v!=='settings'&&mtTimer)micTestStop();}catch(e){}
@@ -1334,6 +1336,19 @@ function stopSpeaking(){
   const e=curEnd;curEnd=null;talking=false;stopBtn();if(e)e();   // resolve say() so voice mode goes back to listening
 }
 function stopBtn(){try{$('stop').hidden=!(speaking()||(S&&S.busy));}catch(e){}}
+async function kokoroState(){const m=$('kokoro-msg');if(!m)return;try{const d=await (await api('/api/tts/kokoro')).json();
+  const t={ready:'Kokoro voice is ready.',downloaded:'Kokoro voice is downloaded; it loads the first time she speaks.',downloading:'Downloading the Kokoro voice (about 120 MB, once). She uses the basic voice until it is ready.',loading:'Loading the Kokoro voice…',not_downloaded:'Pick Kokoro and press Save to download it (about 120 MB, once).',error:'Kokoro could not start: '+(d.error||'unknown')+'. She uses the basic voice meanwhile and tries again later.'};
+  m.textContent=t[d.status]||'';if(d.status==='downloading'||d.status==='loading')setTimeout(kokoroState,5000);}catch(e){}}
+// Kokoro speaks sentence by sentence: the first one plays while the next is being made, so replies start quickly
+async function sayKokoro(text,end){
+  let parts=[text];try{parts=text.split(new RegExp('(?<=[.!?])\\s+')).filter(Boolean);}catch(e){}
+  const get=t=>api('/api/tts',{json:{text:t}}).then(r=>r.status===200?r.blob():null).catch(()=>null);
+  let next=get(parts[0]);
+  for(let i=0;i<parts.length;i++){const blob=await next;if(curEnd!==end)return true;if(!blob)return i>0;
+    next=i+1<parts.length?get(parts[i+1]):null;
+    await new Promise(res=>{curUrl=URL.createObjectURL(blob);const a=new Audio(curUrl);curAudio=a;a.onended=res;a.onerror=res;a.play().catch(res);});
+    if(curEnd!==end)return true;}
+  end();return true;}
 function say(text){
   // resolves when she has finished speaking, so listening can pause meanwhile
   text=String(text||'').replace(/\n*Manual pages:[\s\S]*$/,'').replace(/https?:\/\/\S+|\/api\/manuals\/\S+/g,'').trim();
@@ -1341,6 +1356,7 @@ function say(text){
     let finished=false;const end=()=>{if(!finished){finished=true;curEnd=null;curAudio=null;stopBtn();done();}};
     curEnd=end;$('stop').hidden=false;
     setTimeout(end,Math.min(240000,4000+text.length*90));
+    if(S&&S.user&&S.user.settings&&S.user.settings.voice==='kokoro'){try{if(await sayKokoro(text,end))return;}catch(e){}}
     try{const r=await api('/api/tts',{json:{text}});
       if(r.status===200){curUrl=URL.createObjectURL(await r.blob());const a=new Audio(curUrl);curAudio=a;a.onended=end;a.onerror=end;a.play().catch(end);return;}}catch(e){}
     if('speechSynthesis' in window){speechSynthesis.cancel();
@@ -1680,10 +1696,19 @@ function drawWeb(sites){
       <div class="btns" style="justify-content:flex-start">
         <a class="btn pri" href="${link}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;text-decoration:none;min-height:40px;font-size:12px">OPEN / PREVIEW</a>
         <a class="btn" href="/api/gensites/${s.id}/file" download style="display:inline-flex;align-items:center;text-decoration:none;min-height:40px;font-size:12px">DOWNLOAD HTML</a>
+        <button class="btn" data-wbv="${s.id}" style="min-height:40px;font-size:12px">${s.has_video?'NEW PITCH VIDEO':'PITCH VIDEO'}</button>
+        ${s.has_video?`<a class="btn" href="/api/gensites/${s.id}/pitch-video?download=1" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;text-decoration:none;min-height:40px;font-size:12px">▶ WATCH VIDEO</a>`:''}
         <button class="btn" data-wbc="${s.id}" style="min-height:40px;font-size:12px">CHANGE…</button>
         <button class="btn" data-wbd="${s.id}" style="min-height:40px;font-size:12px">DELETE</button></div>
     </div>`;}).join('')||'<div class="muted">No sites yet. Fill in a business above and press Generate.</div>';
   document.querySelectorAll('[data-wbd]').forEach(b=>b.onclick=async()=>{await api('/api/gensites/'+b.dataset.wbd,{method:'DELETE'});loadWeb();});
+  document.querySelectorAll('[data-wbv]').forEach(b=>b.onclick=async()=>{const id=b.dataset.wbv,m=$('wb-msg');b.disabled=true;
+    m.className='msg muted';m.textContent='Making a 30-second pitch video (about 2-4 minutes)…';
+    try{await api('/api/gensites/'+id+'/pitch-video',{json:{}});}catch(e){m.className='msg bad';m.textContent=e.message;b.disabled=false;return;}
+    const poll=setInterval(async()=>{try{const d=await (await api('/api/gensites/'+id+'/pitch-video')).json();
+      if(d.status==='running'){m.textContent='Pitch video: '+(d.step||'working')+'…';return;}
+      clearInterval(poll);b.disabled=false;if(d.ready){m.className='msg ok';m.textContent='Pitch video ready. It goes out with the WhatsApp pitch for this lead.';loadWeb();}
+      else{m.className='msg bad';m.textContent='Pitch video failed: '+(d.error||'unknown');}}catch(e){}},4000);});
   document.querySelectorAll('[data-wbc]').forEach(b=>b.onclick=async()=>{const what=prompt('What should change? e.g. "make it light", "use the 3D look", "change colours to blue", "warmer", "reword the headline"');if(!what||!what.trim())return;
     $('wb-msg').className='msg muted';$('wb-msg').textContent='Updating the site — the preview link stays the same. Watch the Control Room.';
     try{await api('/api/gensites/'+b.dataset.wbc+'/revise',{json:{change:what.trim()}});}catch(e){$('wb-msg').className='msg bad';$('wb-msg').textContent=e.message;return;}
@@ -1811,7 +1836,7 @@ $('skform').onsubmit=async e=>{e.preventDefault();const url=$('skurl').value.tri
   }catch(e){$('skmsg').className='msg bad';$('skmsg').textContent=e.message;}};
 $('cnsave').onclick=async()=>{try{await api('/api/connectors',{json:{name:$('cnname').value,description:$('cndesc').value,command:$('cncmd').value}});$('cnname').value=$('cndesc').value=$('cncmd').value='';$('cnmsg').textContent='';loadSkills();}catch(e){$('cnmsg').className='msg bad';$('cnmsg').textContent=e.message;}};
 // settings
-const SK=['personality','assistant_name','brand','site','accent','brain','local_model','cloud_model','voice','eleven_voice_id'];
+const SK=['personality','assistant_name','brand','site','accent','brain','local_model','cloud_model','voice','eleven_voice_id','kokoro_voice'];
 const LABEL={gemini:'Google Gemini',anthropic:'Claude (API key)',elevenlabs:'ElevenLabs voice',pixabay:'Pixabay stock footage (free key from pixabay.com/api/docs)'};
 async function loadPhone(){
   let p;try{p=await (await api('/api/phone')).json();}catch(e){p={adb:false,error:'Could not check the phone just now: '+e.message};}let h='';
@@ -1851,7 +1876,7 @@ function drawThemes(){const cur=(S.user.settings.theme||'night');
   $('themes').innerHTML=THEMES.map(t=>`<button type="button" class="sw ${t[0]===cur?'on':''}" data-th="${t[0]}" aria-pressed="${t[0]===cur}"><i>${t[4].map(c=>`<span style="background:${c}"></span>`).join('')}</i><b>${t[1]}</b><small>${t[2]}</small></button>`).join('');
   $('themes').querySelectorAll('[data-th]').forEach(b=>b.onclick=async()=>{const t=THEMES.find(x=>x[0]===b.dataset.th);
     try{await api('/api/settings',{method:'PUT',json:{theme:t[0],accent:t[3]}});await tick();$('s-accent').value=t[3];drawThemes();$('thmsg').className='msg ok';$('thmsg').textContent=t[1]+' mode is on.';}catch(e){$('thmsg').className='msg bad';$('thmsg').textContent=e.message;}});}
-const SECF={look:['assistant_name','personality','brand','site','accent'],brain:['brain','local_model','cloud_model','voice','eleven_voice_id']};
+const SECF={look:['assistant_name','personality','brand','site','accent'],brain:['brain','local_model','cloud_model','voice','eleven_voice_id','kokoro_voice']};
 const SC_MARK={ok:'●',warn:'▲',fail:'✕'},SC_CLS={ok:'ok',warn:'muted',fail:'bad'};
 async function runSelfCheck(){const L=$('sc-list'),P=$('sc-pill');P.textContent='checking...';P.className='pill';L.innerHTML='';
   try{const r=await (await api('/api/selfcheck')).json();

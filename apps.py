@@ -76,6 +76,16 @@ APPS = {
                   "the 'Wyze (via bridge)' type and the camera's name.",
         "note": "Viewing is local once set up. Uses the open docker-wyze-bridge project.",
     },
+    "changedetection": {
+        "disk": 1,
+        "name": "Competitor watch (changedetection.io)", "port": 5010, "group": "Marketing",
+        "what": "Watches competitor websites and tells you what changed: new prices, specials, products and pages. "
+                "Each login keeps its own list, and Trillion reports the changes in plain words.",
+        "get": "own", "ram": "about 250 MB", "connect": [], "shared": True,
+        "signup": "Nothing to sign up. Ask Trillion to 'watch competitor <website>', or add sites in its own page. "
+                  "She checks them every few hours and reports what changed.",
+        "note": "Open source (changedetection.io, Apache-2.0). Runs on this PC; nothing is sent to a cloud service.",
+    },
     "anythingllm": {
         "disk": 3,
         "name": "AnythingLLM", "port": 3005, "group": "Knowledge",
@@ -90,7 +100,8 @@ APPS = {
 GROUPS = ["Marketing", "Customers", "Accounting", "Automation", "Knowledge", "Cameras"]
 # the one port each app is opened on: (compose service, port inside the container)
 PUBLISH = {"serpbear": ("app", 3000), "n8n": ("n8n", 5678), "activepieces": ("app", 80),
-           "searxng": ("searxng", 8080), "anythingllm": ("anythingllm", 3001), "wyze-bridge": ("wyze-bridge", 5000)}
+           "searxng": ("searxng", 8080), "anythingllm": ("anythingllm", 3001), "wyze-bridge": ("wyze-bridge", 5000),
+           "changedetection": ("changedetection", 5000)}
 MEM_CHOICES = (0, 6, 8, 10, 12, 16)
 _JOBS, _LOCK = {}, threading.Lock()
 _CACHE = {"t": 0, "v": None}
@@ -475,6 +486,21 @@ search:
     environment:
       - SEARXNG_BASE_URL={yaml_str(url + '/')}
 """, encoding="utf-8")
+    elif key == "changedetection":
+        (dest / "datastore").mkdir(parents=True, exist_ok=True)
+        (dest / "docker-compose.yml").write_text(f"""services:
+  changedetection:
+    image: ghcr.io/dgtlmoon/changedetection.io:latest
+    restart: unless-stopped
+    ports:
+      - {publish(key)}
+    volumes:
+      - ./datastore:/datastore
+    environment:
+      - BASE_URL={yaml_str(url)}
+      - DISABLE_VERSION_CHECK=true
+      - TZ=Africa/Johannesburg
+""", encoding="utf-8")
     elif key == "wyze-bridge":
         (dest / "tokens").mkdir(parents=True, exist_ok=True)
         pfx = "127.0.0.1:" if prefs()["private"] else ""
@@ -837,8 +863,119 @@ def workflow_switch(user, name, on):
     return {"workflow": hit["name"], "on": bool(on)}
 
 
-CHAT = {"serpbear", "n8n"}
-TOOL_APP = {"seo_rankings": "serpbear", "automations": "n8n", "automation_switch": "n8n"}
+# ---------- competitor watch (changedetection.io) ----------
+def _cd_headers():
+    try:
+        d = json.loads((folder("changedetection") / "datastore" / "changedetection.json").read_text(encoding="utf-8"))
+        tok = d["settings"]["application"]["api_access_token"]
+    except Exception:
+        raise AppError("Competitor watch is still starting up. Give it a minute after installing, then try again.")
+    return {"x-api-key": tok}
+
+
+def _cd(method, path, **kw):
+    return http("changedetection", method, "/api/v1" + path, headers=_cd_headers(), **kw)
+
+
+def _cd_tag(user, create=False):
+    """Each login's watches carry a tag with that login's name, so lists and reports stay per person."""
+    title = f"Trillion: {user['name']}"
+    for uid, t in (_cd("GET", "/tags") or {}).items():
+        if (t or {}).get("title") == title:
+            return uid, title
+    if not create:
+        return None, title
+    return None, title                     # created on the first watch (adding a watch with this tag makes it)
+
+
+def _cd_tidy_once():
+    """A fresh changedetection.io adds two demo watches; remove them once."""
+    marker = folder("changedetection") / "trillion_tidied.done"
+    if marker.exists():
+        return
+    for uid, w in (_cd("GET", "/watch") or {}).items():
+        if w.get("url") in ("https://news.ycombinator.com/", "https://changedetection.io/CHANGELOG.txt"):
+            try:
+                _cd("DELETE", f"/watch/{uid}")
+            except AppError:
+                pass
+    marker.write_text("done", encoding="utf-8")
+
+
+def _cd_mine(user):
+    tag, _ = _cd_tag(user)
+    if not tag:
+        return {}
+    return {uid: w for uid, w in (_cd("GET", "/watch") or {}).items() if tag in (w.get("tags") or [])}
+
+
+def competitor_add(user, url, name="", hours=6):
+    url = str(url or "").strip()
+    if not url:
+        raise AppError("Give me the website address to watch.")
+    if not re.match(r"^https?://", url):
+        url = "https://" + url
+    _cd_tidy_once()
+    for uid, w in _cd_mine(user).items():
+        if w.get("url", "").rstrip("/") == url.rstrip("/"):
+            return {"already_watching": url, "name": w.get("title") or name}
+    _, title = _cd_tag(user, create=True)
+    hours = max(1, min(int(hours or 6), 168))
+    r = _cd("POST", "/watch", json={"url": url, "title": (name or "").strip()[:80] or None, "tag": title,
+                                     "time_between_check": {"hours": hours}})
+    return {"watching": url, "name": name, "every_hours": hours, "id": (r or {}).get("uuid")}
+
+
+def competitor_list(user):
+    out = []
+    for uid, w in _cd_mine(user).items():
+        out.append({"name": w.get("title") or w.get("page_title") or w.get("url"), "url": w.get("url"),
+                    "last_changed": time.strftime("%Y-%m-%d %H:%M", time.localtime(w["last_changed"])) if w.get("last_changed") else "no change yet",
+                    "problem": w.get("last_error") or ""})
+    return out
+
+
+def competitor_remove(user, which):
+    which = str(which or "").lower().strip()
+    for uid, w in _cd_mine(user).items():
+        if which and (which in (w.get("url") or "").lower() or which in (w.get("title") or "").lower()):
+            _cd("DELETE", f"/watch/{uid}")
+            return {"stopped_watching": w.get("url")}
+    raise AppError("I am not watching a site like that for you.")
+
+
+def competitor_changes(user, days=7):
+    """What changed on this login's watched sites in the last few days: lines added and removed, newest first."""
+    import difflib
+    since = time.time() - max(1, min(int(days or 7), 90)) * 86400
+    out = []
+    for uid, w in _cd_mine(user).items():
+        if not w.get("last_changed") or w["last_changed"] < since:
+            continue
+        hist = _cd("GET", f"/watch/{uid}/history") or {}
+        stamps = sorted(hist, key=int)
+        if len(stamps) < 2:
+            continue
+        get = lambda ts: str(httpx.get(base("changedetection") + f"/api/v1/watch/{uid}/history/{ts}",
+                                         headers=_cd_headers(), timeout=40).text)
+        old, new = get(stamps[-2]).splitlines(), get(stamps[-1]).splitlines()
+        added, removed = [], []
+        for ln in difflib.unified_diff(old, new, lineterm="", n=0):
+            if ln.startswith("+") and not ln.startswith("+++") and ln[1:].strip():
+                added.append(ln[1:].strip()[:200])
+            elif ln.startswith("-") and not ln.startswith("---") and ln[1:].strip():
+                removed.append(ln[1:].strip()[:200])
+        out.append({"name": w.get("title") or w.get("page_title") or w.get("url"), "url": w.get("url"),
+                    "when": time.strftime("%Y-%m-%d %H:%M", time.localtime(int(stamps[-1]))),
+                    "added": added[:12], "removed": removed[:12],
+                    "more": max(0, len(added) + len(removed) - 24)})
+    out.sort(key=lambda c: c["when"], reverse=True)
+    return out
+
+
+CHAT = {"serpbear", "n8n", "changedetection"}
+TOOL_APP = {"seo_rankings": "serpbear", "automations": "n8n", "automation_switch": "n8n",
+            "competitor_watch": "changedetection"}
 
 
 def usable(user, key):

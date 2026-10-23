@@ -1,0 +1,5 @@
+Source: https://github.com/mobile-next/mobile-mcp
+Package: @mobilenext/mobile-mcp (npm)
+Licence: Apache-2.0
+
+Used by Trillion through the "Phone control (Mobile MCP)" connector. The playbook in this pack is Trillion's own.

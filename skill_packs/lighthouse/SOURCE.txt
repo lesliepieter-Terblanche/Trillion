@@ -1,0 +1,5 @@
+Source: https://github.com/danielsogl/lighthouse-mcp-server
+Package: @danielsogl/lighthouse-mcp (npm)
+Licence: MIT
+
+Used by Trillion through the "Website audit (Lighthouse)" connector. The playbook in this pack is Trillion's own.

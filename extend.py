@@ -38,6 +38,7 @@ def init():
     starter_pack()
     add_rea_once()
     add_inspo_once()
+    add_once_v38()
     try:
         install_packs()
     except Exception:
@@ -80,6 +81,62 @@ def add_inspo_once():
         core.x("INSERT OR IGNORE INTO connector_access(connector_id,user_id,enabled) VALUES(?,?,1)", (cid, u["id"]))
     core.log(owner["id"], "Connector added: Design inspiration (Inspo)", "done")
     marker.write_text("added", encoding="utf-8")
+
+
+def add_once_v38():
+    """The owner asked for Lighthouse and Mobile MCP (23 Oct 2026). Lighthouse is read-only, so every login gets it;
+    phone control starts owner-only. Markers keep either from coming back if he removes it."""
+    owner = core.q("SELECT * FROM users WHERE is_admin=1 ORDER BY id LIMIT 1", one=True)
+    if not owner:
+        return
+    for key, everyone in (("lighthouse", True), ("mobile", False)):
+        marker = core.DATA / f"{key}_connector_v1.done"
+        if marker.exists():
+            continue
+        cat = next(c for c in CATALOG if c["key"] == key)
+        row = core.q("SELECT id FROM connectors WHERE name=?", (cat["name"],), one=True)
+        cid = row["id"] if row else add_connector(cat["name"], cat["description"], cat["command"], owner["id"], cat.get("env"))
+        if everyone:
+            for u in core.q("SELECT id FROM users"):
+                core.x("INSERT OR IGNORE INTO connector_access(connector_id,user_id,enabled) VALUES(?,?,1)", (cid, u["id"]))
+        core.log(owner["id"], f"Connector added: {cat['name']}", "done")
+        marker.write_text("added", encoding="utf-8")
+
+
+def _find_chrome():
+    """Lighthouse needs Chrome. Use the installed Chrome if there is one (Lighthouse finds that itself); otherwise the
+    Chromium that Setup installed for Browser control."""
+    import glob as _glob
+    for env in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"):
+        base = os.environ.get(env)
+        if base and Path(base, "Google", "Chrome", "Application", "chrome.exe").exists():
+            return ""
+    roots = [os.path.join(os.environ.get("LOCALAPPDATA", ""), "ms-playwright"), str(Path.home() / ".cache" / "ms-playwright")]
+    for root in roots:
+        hits = sorted(_glob.glob(os.path.join(root, "chromium-*", "chrome-win*", "chrome.exe")) +
+                      _glob.glob(os.path.join(root, "chromium-*", "chrome-linux*", "chrome")), reverse=True)
+        if hits:
+            return hits[0]
+    return ""
+
+
+def runtime_env(command):
+    """Settings worked out when a connector starts (they depend on what is installed on this PC right now)."""
+    env = {}
+    try:
+        if "lighthouse-mcp" in command and not os.environ.get("CHROME_PATH"):
+            ch = _find_chrome()
+            if ch:
+                env["CHROME_PATH"] = ch
+        if "mobile-mcp" in command:
+            import phone
+            adb = Path(phone.find_adb()).resolve()
+            env["PATH"] = str(adb.parent) + os.pathsep + os.environ.get("PATH", "")
+            if adb.parent.name.lower() == "platform-tools":
+                env["ANDROID_HOME"] = str(adb.parent.parent)
+    except Exception:
+        pass
+    return env
 
 
 def starter_pack():
@@ -327,6 +384,19 @@ CATALOG = [
                     "(Inspo, github.com/Nutlope/inspo, MIT licence)",
      "command": "npx -y inspo-mcp@0.1.16 --stdio", "needs": "Node.js",
      "env": {"INSPO_PROFILE": "lite", "INSPO_IMAGES": "none", "INSPO_MAX_TOKENS": "1400"}},
+    {"key": "lighthouse", "name": "Website audit (Lighthouse)",
+     "description": "Google's Lighthouse audit for any website: speed, mobile, SEO, accessibility, security and Core Web "
+                    "Vitals scores with what to fix. Use it to audit a prospect's existing site for a Web Studio pitch, "
+                    "and to check sites Trillion builds before they are sent. Read-only, no account. "
+                    "(lighthouse-mcp, github.com/danielsogl/lighthouse-mcp-server, MIT licence)",
+     "command": "npx -y @danielsogl/lighthouse-mcp@2.0.1", "needs": "Node.js 22 and Chrome (or the browser Setup installs)"},
+    {"key": "mobile", "name": "Phone control (Mobile MCP)",
+     "description": "Controls an Android phone on USB debugging by reading its screen as a list of buttons and text, "
+                    "then tapping, typing and swiping. More dependable than working from screenshots. Owner only to "
+                    "start with; uses the same phone link (ADB) as the Phone page. "
+                    "(Mobile MCP, github.com/mobile-next/mobile-mcp, Apache-2.0 licence)",
+     "command": "npx -y @mobilenext/mobile-mcp@1.0.12", "needs": "Node.js and a phone on USB debugging",
+     "env": {"MOBILEMCP_DISABLE_TELEMETRY": "1"}},
     {"key": "windows", "name": "Windows control",
      "description": "Operates Windows itself: open apps, click, type, read what is on screen. (Windows-MCP)",
      "command": "uvx windows-mcp serve", "needs": "uv"},
@@ -370,7 +440,8 @@ class MCP:
                                      text=True, encoding="utf-8", errors="replace", bufsize=1,
                                      cwd=str(core.DATA),
                                      env=dict(os.environ, ANONYMIZED_TELEMETRY="false",            # no usage reporting
-                                              **{str(k): str(v) for k, v in self.env.items()}))    # per-connector settings
+                                              **{**runtime_env(self.command),                        # found on this PC
+                                                 **{str(k): str(v) for k, v in self.env.items()}}))  # per-connector settings
         threading.Thread(target=self._read, daemon=True).start()
         threading.Thread(target=self._drain, daemon=True).start()
         try:

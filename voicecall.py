@@ -96,6 +96,14 @@ def synth(text, user=None):
         try:
             import core, httpx
             s = core.settings(user)
+            if s.get("voice") == "kokoro":
+                try:
+                    import localvoice
+                    samples, sr = localvoice.synth(text, s.get("kokoro_voice"))
+                    if len(samples):
+                        return localvoice.pcm16k(samples, sr)
+                except Exception:
+                    pass
             key = core.get_secret(user["id"], "elevenlabs") if s.get("voice") == "elevenlabs" else None
             if key:
                 r = httpx.post(f"https://api.elevenlabs.io/v1/text-to-speech/{s.get('eleven_voice_id') or '21m00Tcm4TlvDq8ikWAM'}",

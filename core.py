@@ -24,7 +24,8 @@ DEFAULT_SETTINGS = {
     "heavy_model": "mistral-small:24b",   # the bigger local brain for hard/coding jobs (fits 16 GB VRAM at Q4)
     "heavy_answers": True,                 # route hard jobs (code, deep reasoning) to the heavy model when it is installed
     "cloud_model": "gemini-2.5-flash",
-    "voice": "browser",            # browser | elevenlabs
+    "voice": "browser",            # browser | kokoro (free, on this PC) | elevenlabs
+    "kokoro_voice": "bf_emma",
     "eleven_voice_id": "21m00Tcm4TlvDq8ikWAM",
     "roots": [],                   # folders this login may touch; ["*"] = whole PC
     "personality": "professional", # professional | warm | witty

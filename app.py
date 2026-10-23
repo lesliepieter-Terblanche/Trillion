@@ -2124,6 +2124,23 @@ def gensites_revise(sid: int, p: dict = Body(...), user=Depends(auth)):
     return web.start_revise(user, sid, p.get("change").strip())
 
 
+@app.post("/api/gensites/{sid}/pitch-video")
+def gensite_pitch_video(sid: int, p: dict = Body(default={}), user=Depends(auth)):
+    import pitchvideo
+    return pitchvideo.start(user, sid, p.get("scores"), p.get("voice", True))
+
+
+@app.get("/api/gensites/{sid}/pitch-video")
+def gensite_pitch_video_status(sid: int, download: int = 0, user=Depends(auth)):
+    import pitchvideo
+    st = pitchvideo.status(user, sid)
+    if download:
+        if st.get("status") != "done" or not st.get("file"):
+            raise HTTPException(404, "No pitch video yet")
+        return FileResponse(st["file"], media_type="video/mp4", filename=f"pitch-{sid}.mp4")
+    return {k: v for k, v in st.items() if k != "file"} | {"ready": st.get("status") == "done"}
+
+
 @app.delete("/api/gensites/{sid}")
 def gensites_forget(sid: int, user=Depends(auth)):
     return web.forget(user, sid)
@@ -3213,6 +3230,15 @@ async def stt(request: Request, user=Depends(auth)):
 @app.post("/api/tts")
 def tts(p: dict = Body(...), user=Depends(auth)):
     s = core.settings(user)
+    if s.get("voice") == "kokoro":                     # free local voice; falls back to the PC voice until ready
+        try:
+            import localvoice
+            samples, sr = localvoice.synth((p.get("text") or "")[:1200], s.get("kokoro_voice"))
+            if len(samples):
+                return Response(localvoice.wav_bytes(samples, sr), media_type="audio/wav")
+        except Exception:
+            pass
+        return Response(status_code=204)
     key = core.get_secret(user["id"], "elevenlabs") if s.get("voice") == "elevenlabs" else None
     if not key:
         return Response(status_code=204)  # the browser speaks with the PC's own voice
@@ -3226,6 +3252,14 @@ def tts(p: dict = Body(...), user=Depends(auth)):
     except Exception as e:
         core.log(user["id"], f"ElevenLabs voice failed, used the PC voice: {type(e).__name__}", "waiting")
         return Response(status_code=204)
+
+
+@app.get("/api/tts/kokoro")
+def kokoro_status(user=Depends(auth)):
+    import localvoice
+    if core.settings(user).get("voice") == "kokoro":
+        localvoice.prepare()
+    return {"status": localvoice.status(), "error": localvoice.STATE.get("error", ""), "voices": localvoice.VOICES}
 
 
 # ---------- live phone and Tailscale readings for the dashboard ----------
@@ -3306,7 +3340,7 @@ def messages(user=Depends(auth)):
 
 
 # ---------- settings and keys ----------
-EDITABLE = ["freevideo_url", "wake_word", "video_ai_images", "wa_inbox", "fast_answers", "theme", "quick_actions", "whatsapp_auto_contacts", "phone_own_number", "phone_full_control", "personality", "phone_country_code", "assistant_name", "brand", "accent", "site", "brain", "local_model", "heavy_model", "heavy_answers", "cloud_model", "voice",
+EDITABLE = ["freevideo_url", "wake_word", "video_ai_images", "wa_inbox", "fast_answers", "theme", "quick_actions", "whatsapp_auto_contacts", "phone_own_number", "phone_full_control", "personality", "phone_country_code", "assistant_name", "brand", "accent", "site", "brain", "local_model", "heavy_model", "heavy_answers", "cloud_model", "voice", "kokoro_voice",
             "eleven_voice_id", "daily_review", "call_done_announce", "call_done_device"]
 
 
@@ -3322,7 +3356,12 @@ def put_settings(p: dict = Body(...), user=Depends(auth)):
         s["theme"] = "night"
     if s.get("personality") not in PERSONAS:
         s["personality"] = "professional"
+    if s.get("voice") not in ("browser", "kokoro", "elevenlabs"):
+        s["voice"] = "browser"
     core.save_settings(user["id"], s)
+    if s.get("voice") == "kokoro":                 # start the one-time download as soon as it is picked
+        import localvoice
+        localvoice.prepare()
     if s.get("site"):
         threading.Thread(target=lambda: SITES.update({s["site"]: tools.site_check(s["site"])}), daemon=True).start()
     return s

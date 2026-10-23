@@ -90,6 +90,21 @@ def build(user, sites=None, now=None):
         except Exception:
             pass
 
+    # Competitor sites that changed since yesterday (only once Competitor watch is installed and has sites).
+    try:
+        import apps
+        if apps.usable(user, "changedetection"):
+            ch = apps.competitor_changes(user, days=1)
+            if ch:
+                lines.append(f"Competitors changed ({len(ch)}):")
+                for c in ch[:4]:
+                    what = "; ".join(c["added"][:2]) or ("removed: " + "; ".join(c["removed"][:2]))
+                    lines.append(f"  - {c['name']}: {what}"[:220])
+                spoken.append(f"{len(ch)} competitor site{'s' if len(ch) != 1 else ''} changed overnight, starting with "
+                              f"{ch[0]['name']}.")
+    except Exception:
+        pass
+
     # Morning verse (only if you asked for it).
     if p["verse"]:
         try:

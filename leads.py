@@ -225,7 +225,11 @@ def send_whatsapp(user, lid, host, scheme="https"):
            f"sample of what one could look like for you:\n{link}\n\nHave a look - no obligation at all. If you "
            f"like it, just reply and we can make it yours." + (f"\n\n{who}" if who else ""))
     try:
-        phone.send_whatsapp(user, lead["phone"], msg)
+        from pathlib import Path as _P
+        site = core.q("SELECT folder FROM gensites WHERE id=? AND user_id=?", (lead["site_id"], user["id"]), one=True) \
+            if lead["site_id"] else None
+        vid = _P(site["folder"]) / "pitch.mp4" if site and site["folder"] else None
+        phone.send_whatsapp(user, lead["phone"], msg, [str(vid)] if vid and vid.exists() else None)
     except Exception as e:
         return {"error": f"Could not send WhatsApp: {str(e)[:160]}"}
     core.x("UPDATE leads SET status=CASE WHEN status='site_created' THEN 'emailed' ELSE status END, "

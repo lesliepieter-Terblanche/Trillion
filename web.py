@@ -638,7 +638,8 @@ def listing(user):
         out.append({"id": r["id"], "title": r["title"], "business": r["business"], "category": r["category"],
                     "style": r["style"], "mode": d.get("mode"), "token": r["token"], "photos": d.get("photos", 0),
                     "has_thumb": bool(r["thumb"] and os.path.exists(r["thumb"])), "created": r["created"],
-                    "exists": os.path.exists(os.path.join(r["folder"], "index.html"))})
+                    "exists": os.path.exists(os.path.join(r["folder"], "index.html")),
+                    "has_video": os.path.exists(os.path.join(r["folder"], "pitch.mp4"))})
     return out
 
 

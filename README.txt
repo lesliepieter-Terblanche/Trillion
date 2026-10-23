@@ -20,6 +20,15 @@ WHAT WORKS IN THIS VERSION
 - Workflow page: watch what's running live - each job shows its department and the path it takes through your local brain, skills, connectors and tools, with the current step pulsing; Cancel a job from there too
 - A project is only something she DID (used a tool, sent, made, called, scraped, ran). Just chatting or asking a question is not a project and never clutters the queue, tiles or workflow
 - She evolves daily: every night she learns lasting knowledge from the whole day's conversation (on by default), AND looks for things you do by hand that she could automate. Safe, reversible automations (morning briefing, check-ins) she can switch on herself if you allow it on the Workflow page; anything that sends, pays or deletes always waits for your OK
+- Free natural voice (Kokoro): pick "Kokoro natural voice" under Settings, Brain and voice. It downloads once
+  (about 120 MB) and runs on this PC, so no ElevenLabs tokens. Phone calls use it too.
+- Web Studio pitch videos: PITCH VIDEO on a site makes a 30-second cinematic walkthrough (desktop and phone,
+  features or Lighthouse scores, call to action) with a Kokoro voice-over. The WhatsApp pitch sends it with the link.
+- Website audits (Lighthouse connector): "audit www.example.co.za" gives speed, mobile, SEO and accessibility scores.
+- Competitor watch (Apps page, Marketing): "watch competitor www.rival.co.za" - she reports price, special and page
+  changes, and the morning briefing lists what changed overnight. Each login has its own list.
+- Phone control by screen (Mobile MCP connector, owner only to start): reads the phone's buttons and text for
+  multi-step jobs in apps.
 - Files and folders: list, find, read, write, copy, move, rename, open
 - Workshop manuals: she reads a whole PDF manual (thousands of pages) into a search index, sorted into its sections
   (Engine, Engine Cooling, Brakes, Wiring, the diagnostic manuals ...). Ask about the vehicle in plain words, for
