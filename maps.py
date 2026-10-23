@@ -41,13 +41,34 @@ def is_maps_link(text):
     return bool(MAPS_LINK.search(text or ""))
 
 
+def _fetch(url):
+    """Follow the short link to the full maps URL and return (final_url, page_html)."""
+    try:
+        r = httpx.get(url, timeout=18, follow_redirects=True, headers=UA)
+        return str(r.url), (r.text or "")
+    except Exception:
+        return url, ""
+
+
 def resolve(url):
     """Follow the short link to the full maps URL."""
-    try:
-        r = httpx.get(url, timeout=15, follow_redirects=True, headers=UA)
-        return str(r.url)
-    except Exception:
-        return url
+    return _fetch(url)[0]
+
+
+def _name_from_html(html):
+    """When the name isn't in the URL path, read it from the resolved Maps page (og:title / <title>)."""
+    html = html or ""
+    m = (re.search(r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']', html, re.I)
+         or re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:title["\']', html, re.I))
+    if m:
+        t = m.group(1).strip()
+    else:
+        mt = re.search(r"<title[^>]*>([^<]+)</title>", html, re.I)
+        t = mt.group(1).strip() if mt else ""
+    t = re.sub(r"\s*[-–·|]\s*Google\s*Maps\s*$", "", t, flags=re.I).strip()
+    if not t or t.lower() in ("google maps", "google"):
+        return ""
+    return t
 
 
 def parse_url(final):
@@ -200,16 +221,20 @@ def search(user, query, limit=20, only_no_website=True):
 
 def extract(user, link):
     """Return a business-info dict ready for web.build(), from a Google Maps link."""
-    final = resolve(link.strip())
+    final, html = _fetch(link.strip())
     base = parse_url(final)
-    info = {"business": base["name"], "category": "", "location": base["area"] or base["address"],
+    name = base["name"] or _name_from_html(html)        # fall back to the page title when the URL has no name
+    info = {"business": name, "category": "", "location": base["area"] or base["address"],
             "address": base["address"], "phone": "", "source_link": link, "has_website": None}
     key = key_for(user)
-    info["_api"] = "no_key" if not key else ("" if base["name"] else "no_name_in_link")
-    if key and base["name"]:
-        places, st = _search_new(key, f'{base["name"]} {base["address"]}'.strip(), 1)
+    info["_api"] = "no_key" if not key else ("" if name else "no_name_in_link")
+    if key and name:
+        q = f'{name} {base["address"]}'.strip() if base["address"] else name
+        places, st = _search_new(key, q, 1)
         if not places and st == "OK" and base["area"]:          # retry with a looser query
-            places, st = _search_new(key, f'{base["name"]} {base["area"]}'.strip(), 1)
+            places, st = _search_new(key, f'{name} {base["area"]}'.strip(), 1)
+        if not places and st == "OK":                           # last resort: name only
+            places, st = _search_new(key, name, 1)
         info["_api"] = st if st != "OK" else ("OK" if places else "ZERO_RESULTS")
         if places:
             pid = places[0].get("id")

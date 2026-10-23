@@ -1736,7 +1736,8 @@ async function wbLoadLink(){const link=$('wb-link').value.trim();if(!link)return
     else if(apiSt==='ZERO_RESULTS'){cls='bad';note='Loaded '+d.business+' (name/area), but Places could not match this exact business for the extra detail.';}
     else if(apiSt==='OK'){cls='ok';note='Loaded '+d.business+' — '+(d.phone?'phone, ':'')+(d.hours?'hours, ':'')+(d.photos?d.photos+' photos, ':'')+(d.has_website?'but it already has a website':'no website ✓');}
     else{cls='bad';note='Loaded '+d.business+' by name only. Places status: '+apiSt+(d.resolved?' · link ok':'');}
-    m.className='msg '+cls;m.textContent=note+'  ['+apiSt+']';
+    let rshow='';if(d.resolved){try{const u=new URL(d.resolved);rshow=decodeURIComponent((u.pathname.match(/\/place\/([^/@]+)/)||[])[1]||'').replace(/\+/g,' ');}catch(_){}}
+    m.className='msg '+cls;m.innerHTML=esc(note)+'  ['+esc(apiSt)+']'+(d.resolved?'<div class="muted" style="font-size:11px;margin-top:4px;word-break:break-all">Link opens: '+esc(rshow||d.resolved)+'</div>':'');
   }catch(e){m.className='msg bad';m.textContent=e.message;}}
 $('wb-link-load')&&($('wb-link-load').onclick=wbLoadLink);
 $('wb-link')&&($('wb-link').addEventListener('change',wbLoadLink));
