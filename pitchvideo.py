@@ -29,13 +29,59 @@ def _e(s):
     return html.escape(str(s or ""), quote=True)
 
 
+def _browser_exe():
+    """A real Chrome/Edge executable on this PC (Edge ships with Windows), for HyperFrames and as a launch fallback.
+    Unlike extend._find_chrome (which returns '' when Chrome is installed, for Lighthouse), this returns the path."""
+    import glob as _glob
+    cands = []
+    for env in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"):
+        base = os.environ.get(env)
+        if not base:
+            continue
+        cands += [Path(base, "Google", "Chrome", "Application", "chrome.exe"),
+                  Path(base, "Microsoft", "Edge", "Application", "msedge.exe")]
+    for p in cands:
+        try:
+            if p.exists():
+                return str(p)
+        except Exception:
+            pass
+    for root in (os.path.join(os.environ.get("LOCALAPPDATA", ""), "ms-playwright"),
+                 str(Path.home() / ".cache" / "ms-playwright")):
+        hits = sorted(_glob.glob(os.path.join(root, "chromium-*", "chrome-win*", "chrome.exe")) +
+                      _glob.glob(os.path.join(root, "chromium-*", "chrome-linux*", "chrome")), reverse=True)
+        if hits:
+            return hits[0]
+    return ""
+
+
 def _find_browser():
-    """HyperFrames needs Chrome: use the installed Chrome, else the Chromium Setup installed for Browser control."""
+    """HyperFrames needs a Chrome-family browser: prefer a real installed Chrome/Edge, else whatever extend finds."""
+    exe = _browser_exe()
+    if exe:
+        return exe
     try:
         import extend
         return extend._find_chrome()
     except Exception:
         return ""
+
+
+def _launch(p, args):
+    """Launch a browser that's actually on the PC — a real Chrome/Edge binary, then Edge/Chrome by channel
+    (Edge ships with Windows), and only then Playwright's bundled Chromium (often not downloaded)."""
+    exe = _browser_exe()
+    if exe:
+        try:
+            return p.chromium.launch(executable_path=exe, args=args)
+        except Exception:
+            pass
+    for ch in ("msedge", "chrome"):
+        try:
+            return p.chromium.launch(channel=ch, args=args)
+        except Exception:
+            pass
+    return p.chromium.launch(args=args)
 
 
 def _env():
@@ -65,11 +111,7 @@ def shots(site_html, out_dir):
     from playwright.sync_api import sync_playwright
     out = {}
     with sync_playwright() as p:
-        kw = {}
-        br = _find_browser()
-        if br:
-            kw["executable_path"] = br
-        b = p.chromium.launch(args=["--ignore-gpu-blocklist", "--enable-unsafe-swiftshader"], **kw)
+        b = _launch(p, ["--ignore-gpu-blocklist", "--enable-unsafe-swiftshader"])
         try:
             for name, vp, scale in (("desktop", {"width": 1440, "height": 900}, 1),
                                     ("phone", {"width": 390, "height": 844}, 2)):
