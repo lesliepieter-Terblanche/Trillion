@@ -179,15 +179,57 @@ def _headline(text):
     return words.replace("§G§", '<span class="grad">').replace("§/§", "</span>")
 
 
-ICONS = ["✨", "⭐", "\U0001f525", "\U0001f3af", "\U0001f6e0️", "\U0001f91d", "\U0001f4c8", "\U0001f3c6"]
+def _svc_icon(it, i):
+    """A crisp SVG icon for a service — honour an explicit one, else choose by what the service is about."""
+    import webicons
+    key = it.get("ic")
+    if key and key in webicons._ICON:
+        return webicons._svg(key)
+    return webicons.svg_for((it.get("t") or "") + " " + (it.get("d") or ""), i)
 
 
-def _services_html(items):
+def _services_cards(items):
     out = []
     for i, it in enumerate(items):
-        out.append(f'<div class="card reveal"><div class="ic">{it.get("ic") or ICONS[i % len(ICONS)]}</div>'
+        out.append(f'<div class="card reveal"><div class="ic" style="color:#fff">{_svc_icon(it, i)}</div>'
                    f'<h3>{_esc(it.get("t"))}</h3><p>{_esc(it.get("d"))}</p></div>')
-    return "".join(out)
+    return '<div class="grid g3">' + "".join(out) + "</div>"
+
+
+def _services_rows(items):
+    out = []
+    for i, it in enumerate(items):
+        out.append('<div class="reveal" style="display:flex;gap:20px;align-items:flex-start;padding:22px 24px;'
+                   'border:1px solid var(--border);border-radius:18px;background:var(--card)">'
+                   '<div style="flex:none;width:54px;height:54px;border-radius:15px;display:flex;align-items:center;'
+                   'justify-content:center;background:var(--surface);color:var(--accent)">' + _svc_icon(it, i) + '</div>'
+                   f'<div><h3 style="margin:0 0 6px;font-size:20px;line-height:1.2">{_esc(it.get("t"))}</h3>'
+                   f'<p style="margin:0;color:var(--muted);line-height:1.6">{_esc(it.get("d"))}</p></div></div>')
+    return '<div style="display:grid;gap:16px;margin-top:44px;max-width:760px">' + "".join(out) + "</div>"
+
+
+def _services_numbered(items):
+    out = []
+    for i, it in enumerate(items):
+        out.append('<div class="reveal" style="display:flex;gap:24px;align-items:baseline;padding:26px 0;'
+                   'border-top:1px solid var(--border)">'
+                   f'<div style="font-size:clamp(26px,5vw,40px);font-weight:800;color:var(--accent);line-height:1;'
+                   f'font-variant-numeric:tabular-nums;flex:none">{i + 1:02d}</div>'
+                   f'<div style="flex:1"><h3 style="margin:0 0 6px;font-size:21px;line-height:1.2">{_esc(it.get("t"))}</h3>'
+                   f'<p style="margin:0;color:var(--muted);line-height:1.6;max-width:62ch">{_esc(it.get("d"))}</p></div>'
+                   f'<div style="flex:none;color:var(--accent);opacity:.85">{_svc_icon(it, i)}</div></div>')
+    return '<div style="display:grid;margin-top:40px">' + "".join(out) + "</div>"
+
+
+_SERVICE_LAYOUTS = [_services_cards, _services_cards, _services_rows, _services_numbered]
+
+
+def _services_html(items, layout=None):
+    """Render the services block in one of several layouts so the body doesn't look identical every build.
+    `layout` (0-based index) pins one — used so a revise keeps the same body unless asked to change it."""
+    fns = _SERVICE_LAYOUTS
+    fn = fns[layout % len(fns)] if isinstance(layout, int) else random.choice(fns)
+    return fn(items)
 
 
 def _reviews_html(items):
