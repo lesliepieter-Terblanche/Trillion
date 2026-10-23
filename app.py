@@ -4028,7 +4028,7 @@ def connectors_add(p: dict = Body(...), user=Depends(admin)):
     cat = next((c for c in extend.CATALOG if c["key"] == p.get("catalog")), None)
     try:
         if cat:
-            cid = extend.add_connector(cat["name"], cat["description"], cat["command"], user["id"])
+            cid = extend.add_connector(cat["name"], cat["description"], cat["command"], user["id"], cat.get("env"))
         else:
             cid = extend.add_connector(p.get("name", ""), p.get("description", ""), p.get("command", ""), user["id"])
     except ValueError as e:

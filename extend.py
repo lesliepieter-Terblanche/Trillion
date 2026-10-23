@@ -37,6 +37,7 @@ def init():
     core.x("UPDATE connectors SET command='uvx windows-mcp serve' WHERE command='uvx windows-mcp'")
     starter_pack()
     add_rea_once()
+    add_inspo_once()
     try:
         install_packs()
     except Exception:
@@ -59,6 +60,25 @@ def add_rea_once():
     if cat["name"] not in {r["name"] for r in core.q("SELECT name FROM connectors")}:
         add_connector(cat["name"], cat["description"], cat["command"], owner["id"])
         core.log(owner["id"], "Connector added: Reverse engineering (REA)", "done")
+    marker.write_text("added", encoding="utf-8")
+
+
+def add_inspo_once():
+    """The owner asked for Inspo (23 Oct 2026): add it once and switch it on for every login, since it is free and
+    read-only. Runs in the small-model profile (fewer tools, text-only answers) because the local brain picks tools more
+    reliably from a short list and cannot see pictures. A marker keeps it from coming back if he removes it."""
+    marker = core.DATA / "inspo_connector_v1.done"
+    if marker.exists():
+        return
+    owner = core.q("SELECT * FROM users WHERE is_admin=1 ORDER BY id LIMIT 1", one=True)
+    if not owner:
+        return
+    cat = next(c for c in CATALOG if c["key"] == "inspo")
+    row = core.q("SELECT id FROM connectors WHERE name=?", (cat["name"],), one=True)
+    cid = row["id"] if row else add_connector(cat["name"], cat["description"], cat["command"], owner["id"], cat.get("env"))
+    for u in core.q("SELECT id FROM users"):
+        core.x("INSERT OR IGNORE INTO connector_access(connector_id,user_id,enabled) VALUES(?,?,1)", (cid, u["id"]))
+    core.log(owner["id"], "Connector added: Design inspiration (Inspo)", "done")
     marker.write_text("added", encoding="utf-8")
 
 
@@ -300,6 +320,13 @@ CATALOG = [
                     "Owner only. REA runs without asking for approval; heavy native-binary jobs are handed to Claude Code on your "
                     "Pro plan, which does the work and reports back. (REA, github.com/morluto/rea, MIT licence)",
      "command": "npx -y rea-agents@6.4.0 mcp", "needs": "Node.js 22.19 or newer"},
+    {"key": "inspo", "name": "Design inspiration (Inspo)",
+     "description": "A free library of 2,320 pages from 832 real, professionally designed websites: their colours, fonts, "
+                    "spacing and layouts, plus ready-made sections (heroes, pricing, footers). Use it before building or "
+                    "redesigning a website or page so it looks agency-made, not AI-made. Read-only, no account, no key. "
+                    "(Inspo, github.com/Nutlope/inspo, MIT licence)",
+     "command": "npx -y inspo-mcp@0.1.16 --stdio", "needs": "Node.js",
+     "env": {"INSPO_PROFILE": "lite", "INSPO_IMAGES": "none", "INSPO_MAX_TOKENS": "1400"}},
     {"key": "windows", "name": "Windows control",
      "description": "Operates Windows itself: open apps, click, type, read what is on screen. (Windows-MCP)",
      "command": "uvx windows-mcp serve", "needs": "uv"},
