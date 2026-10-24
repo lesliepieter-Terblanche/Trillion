@@ -264,22 +264,59 @@ def _services_html(items, layout=None):
     return fn(items)
 
 
+# A dependency-free swipe slider (CSS scroll-snap + a tiny inline script for dots & gentle autoplay). No CDN,
+# so it always loads; if the script is blocked the track is still a swipeable scrolling row with content visible.
+SLIDER_ASSETS = (
+    "<style>"
+    ".tslider{margin-top:44px}"
+    ".ttrack{position:relative;display:flex;gap:20px;overflow-x:auto;scroll-snap-type:x mandatory;"
+    "scroll-behavior:smooth;-webkit-overflow-scrolling:touch;padding:4px 2px 8px;scrollbar-width:none}"
+    ".ttrack::-webkit-scrollbar{display:none}"
+    ".tslide{scroll-snap-align:center;flex:0 0 clamp(270px,78%,380px)}"
+    ".tslide.gal{flex-basis:clamp(240px,70%,320px)}"
+    ".tslide.gal .tile{aspect-ratio:4/5;border-radius:16px;overflow:hidden;border:1px solid var(--border);height:100%}"
+    ".tslide.gal img{width:100%;height:100%;object-fit:cover}"
+    ".tdots{display:flex;gap:9px;justify-content:center;margin-top:24px;flex-wrap:wrap}"
+    ".tdot{width:9px;height:9px;border-radius:50%;border:0;background:var(--border);cursor:pointer;padding:0;"
+    "transition:width .3s,background .3s}.tdot.on{background:var(--accent);width:26px;border-radius:6px}"
+    "</style>"
+    "<script>(function(){function go(t,s){t.scrollTo({left:s.offsetLeft-(t.clientWidth-s.offsetWidth)/2,behavior:'smooth'});}"
+    "function init(sl){if(sl.__i)return;sl.__i=1;var t=sl.querySelector('.ttrack'),dw=sl.querySelector('.tdots');"
+    "var S=[].slice.call(t.children);if(S.length<2){if(dw)dw.style.display='none';return;}"
+    "var D=S.map(function(_,i){var b=document.createElement('button');b.className='tdot'+(i?'':' on');"
+    "b.setAttribute('aria-label','Slide '+(i+1));b.onclick=function(){go(t,S[i]);};dw.appendChild(b);return b;});"
+    "function up(){var c=t.scrollLeft+t.clientWidth/2,bi=0,bd=1e18;S.forEach(function(s,i){var m=s.offsetLeft+s.offsetWidth/2,"
+    "d=Math.abs(m-c);if(d<bd){bd=d;bi=i;}});D.forEach(function(d,i){d.classList.toggle('on',i===bi);});return bi;}"
+    "t.addEventListener('scroll',function(){clearTimeout(t.__t);t.__t=setTimeout(up,90);});"
+    "var ap=parseInt(sl.getAttribute('data-autoplay')||'0',10),tm;function nx(){var i=up();go(t,S[(i+1)%S.length]);}"
+    "function on(){if(ap)tm=setInterval(nx,ap);}function off(){clearInterval(tm);}"
+    "sl.addEventListener('mouseenter',off);sl.addEventListener('mouseleave',on);"
+    "t.addEventListener('touchstart',off,{passive:true});on();}"
+    "function all(){document.querySelectorAll('.tslider').forEach(init);}"
+    "if(document.readyState!='loading')all();else document.addEventListener('DOMContentLoaded',all);})();</script>")
+
+
 def _reviews_html(items):
-    out = []
+    cards = []
     for it in items:
-        out.append(f'<div class="rev reveal"><div class="stars">★★★★★</div>'
-                   f'<p>“{_esc(it.get("t"))}”</p><div class="who">{_esc(it.get("n"))} '
-                   f'<span>· {_esc(it.get("w") or "Google review")}</span></div></div>')
-    return "".join(out)
+        cards.append('<div class="tslide"><div class="rev reveal"><div class="stars">★★★★★</div>'
+                     f'<p>“{_esc(it.get("t"))}”</p><div class="who">{_esc(it.get("n"))} '
+                     f'<span>· {_esc(it.get("w") or "Google review")}</span></div></div></div>')
+    return ('<div class="tslider" data-autoplay="5500"><div class="ttrack">'
+            + "".join(cards) + '</div><div class="tdots"></div></div>')
 
 
 def _gallery_section(photos_rel):
     if not photos_rel:
         return ""
-    tiles = "".join(f'<div class="tile"><img src="{p}" alt="" loading="lazy"></div>' for p in photos_rel)
+    slides = "".join(f'<div class="tslide gal"><div class="tile"><img src="{p}" alt="" loading="lazy"></div></div>'
+                     for p in photos_rel)
+    inner = (f'<div class="tslider" data-autoplay="4200"><div class="ttrack">{slides}</div>'
+             '<div class="tdots"></div></div>') if len(photos_rel) > 1 else \
+            f'<div class="gallery" style="margin-top:44px"><div class="tile"><img src="{photos_rel[0]}" alt="" loading="lazy"></div></div>'
     return ('<section class="pad" style="background:var(--surface)"><div class="wrap">'
             '<div class="sectlabel reveal">Gallery</div><h2 class="reveal">A look inside</h2>'
-            f'<div class="gallery" style="margin-top:44px">{tiles}</div></div></section>')
+            f'{inner}</div></section>')
 
 
 # ---------- photos ----------
@@ -578,6 +615,7 @@ def render(content, palette, photos_rel, template="premium", font=None):
     body_fam, fontdef = _font_tokens(font)
     content["FONT"] = body_fam
     content["FONTDEF"] = fontdef
+    content["SLIDERJS"] = SLIDER_ASSETS
     content["GALLERY_SECTION"] = _gallery_section(photos_rel[1:] if tpl.get("photo") else photos_rel)
     if tpl.get("photo"):
         content["HERO_PHOTO"] = photos_rel[0] if photos_rel else ""
