@@ -479,7 +479,7 @@ For "services", name the 3 actual services a {cat or 'business like this'} provi
         "STRIP": "".join(f"<span>{_esc(s)}</span>" for s in strip),
         "SERVICES_LABEL": _esc(g("services_label", "What we do")), "SERVICES_HEAD": _esc(g("services_head", "Built on doing it right")),
         "SERVICES_SUB": _esc(g("services_sub", f"Everything you'd expect from a top {cat or 'local business'}, and nothing you wouldn't.")),
-        "SERVICES": _services_html(svc_list),
+        "SERVICES": _services_html(svc_list, info.get("_svc_layout")),
         "REVIEWS_HEAD": _esc(g("reviews_head", "What people say")), "REVIEWS": _reviews_html(rev_list),
         "CTA_HEAD": _esc(g("cta_head", "Ready when you are")),
         "CTA_SUB": _esc(g("cta_sub", "Get in touch today and we'll take it from there.")),
@@ -667,6 +667,10 @@ def build(user, info, progress=None):
         same = [s for s, p in PALETTES.items() if p["mode"] == palette["mode"]]
         style = random.choice(same)
         palette = PALETTES[style]
+    svc_layout = info.get("svc_layout")
+    if not isinstance(svc_layout, int):
+        svc_layout = random.randrange(len(_SERVICE_LAYOUTS))   # vary the services body layout each build
+    info["_svc_layout"] = svc_layout
     say("Writing the copy")
     content = plan(core.LLM if hasattr(core, "LLM") else (lambda u, m: {"content": ""}), user, info)
     content.update(_addons(info, palette))      # optional features the owner ticked
@@ -687,7 +691,7 @@ def build(user, info, progress=None):
     except Exception:
         pass
     detail = {"style": style, "mode": palette["mode"], "template": template, "font": font_idx,
-              "business": name, "category": cat,
+              "svc_layout": svc_layout, "business": name, "category": cat,
               "photos": len(photos_rel), "photos_rel": photos_rel, "addons": info.get("addons") or [],
               "info": {k: info.get(k) for k in
                        ("business", "category", "location", "address", "phone", "email", "hours", "services",
@@ -725,7 +729,7 @@ def start(user, info):
     return {"task_id": tid, "started": True}
 
 
-def start_revise(user, sid, change):
+def start_revise(user, sid, change, opts=None):
     init()
     row = core.q("SELECT title FROM gensites WHERE id=? AND user_id=?", (sid, user["id"]), one=True)
     tid = core.add_task(user["id"], f"Change website: {(row['title'] if row else 'site')}", domain="work") \
@@ -733,7 +737,7 @@ def start_revise(user, sid, change):
 
     def go():
         try:
-            res = revise(user, sid, change, progress=(lambda t: core.set_task(tid, detail=t)) if tid else None)
+            res = revise(user, sid, change, progress=(lambda t: core.set_task(tid, detail=t)) if tid else None, opts=opts)
             if tid:
                 core.set_task(tid, status="failed" if res.get("error") else "completed",
                               detail=res.get("error") or "Website updated")
@@ -780,6 +784,7 @@ def listing(user):
         d = json.loads(r["detail"] or "{}")
         out.append({"id": r["id"], "title": r["title"], "business": r["business"], "category": r["category"],
                     "style": r["style"], "mode": d.get("mode"), "token": r["token"], "photos": d.get("photos", 0),
+                    "template": d.get("template"), "addons": d.get("addons") or [],
                     "has_thumb": bool(r["thumb"] and os.path.exists(r["thumb"])), "created": r["created"],
                     "exists": os.path.exists(os.path.join(r["folder"], "index.html")),
                     "has_video": os.path.exists(os.path.join(r["folder"], "pitch.mp4"))})
@@ -794,10 +799,12 @@ _TO_LIGHT = {"violet": "slate", "ember": "azure", "teal": "emerald"}
 _TO_DARK = {"azure": "violet", "emerald": "teal", "slate": "violet"}
 
 
-def revise(user, sid, change, progress=None):
+def revise(user, sid, change, progress=None, opts=None):
     """Regenerate a site with a plain-language change (dark/light, a different look or colours, reworded copy),
-    keeping the same folder and preview link so anything already shared stays valid."""
+    keeping the same folder and preview link so anything already shared stays valid. `opts` carries explicit
+    structured choices from the CHANGE panel (hero/colour/mode/layout/font/add-ons) which win over the text."""
     import re as _re
+    opts = opts or {}
     say = progress or (lambda t: None)
     row = _row(user, sid)
     if not row:
@@ -809,6 +816,7 @@ def revise(user, sid, change, progress=None):
     template = d.get("template") or "premium"
     photos_rel = d.get("photos_rel") or []
     font_idx = d.get("font") if isinstance(d.get("font"), int) else random.randrange(len(FONT_PAIRS))
+    svc_layout = d.get("svc_layout") if isinstance(d.get("svc_layout"), int) else random.randrange(len(_SERVICE_LAYOUTS))
     low = (change or "").lower()
     if _re.search(r"\b(font|fonts|typeface|typography|lettering)\b", low):
         font_idx = (font_idx + 1 + random.randrange(len(FONT_PAIRS) - 1)) % len(FONT_PAIRS)   # reroll to a new one
@@ -843,6 +851,28 @@ def revise(user, sid, change, progress=None):
         style = (_TO_LIGHT if want == "light" else _TO_DARK).get(style, "azure" if want == "light" else "violet")
     if want == "light" and TEMPLATES[template].get("dark"):
         template = "premium"                      # the photo/3D looks are dark-only
+    # ---- explicit choices from the CHANGE panel win over anything parsed from the text ----
+    o_look = str(opts.get("look") or "").strip()
+    if o_look in TEMPLATES:
+        template = o_look
+    elif o_look in ("shuffle", "auto", "surprise"):
+        template = pick_template(info.get("category", ""), photos_rel, avoid=template)
+    o_col = str(opts.get("colour") or opts.get("color") or "").strip().lower()
+    if o_col in PALETTES:
+        style = o_col
+    o_mode = str(opts.get("mode") or "").strip().lower()
+    if o_mode in ("light", "dark") and PALETTES.get(style, PALETTES["violet"])["mode"] != o_mode:
+        style = (_TO_LIGHT if o_mode == "light" else _TO_DARK).get(style, "azure" if o_mode == "light" else "violet")
+    if opts.get("font") in ("change", "shuffle", "new"):
+        font_idx = (font_idx + 1 + random.randrange(len(FONT_PAIRS) - 1)) % len(FONT_PAIRS)
+    o_lay = opts.get("layout")
+    if o_lay in ("shuffle", "change", "new"):
+        pool = [i for i in range(len(_SERVICE_LAYOUTS)) if i != svc_layout] or [svc_layout]
+        svc_layout = random.choice(pool)
+    elif isinstance(o_lay, int):
+        svc_layout = o_lay % len(_SERVICE_LAYOUTS)
+    if o_mode == "light" and TEMPLATES[template].get("dark"):
+        template = "premium"
     palette = PALETTES.get(style, PALETTES["violet"])
     if TEMPLATES[template].get("dark") and palette["mode"] != "dark":
         style = _dark_style(info.get("category", ""))
@@ -869,7 +899,12 @@ def revise(user, sid, change, progress=None):
                  ("banner", "promo"), ("advert", "promo")):
         if _re.search(r"(remove|no|without|drop)\s[\w\s]*" + w, low):
             addons.discard(a)
+    if isinstance(opts.get("addons"), list):        # the panel sends the exact set of ticked add-ons
+        addons = set(str(a).lower() for a in opts["addons"])
     info["addons"] = list(addons)
+    if opts.get("pricelist"):
+        info["pricelist"] = opts["pricelist"]
+    info["_svc_layout"] = svc_layout
     say("Rewriting the site")
     content = plan(core.LLM if hasattr(core, "LLM") else (lambda u, m: {"content": ""}),
                    user, dict(info, change_note=note))
@@ -888,7 +923,10 @@ def revise(user, sid, change, progress=None):
                 thumb = str(tp)
     except Exception:
         pass
-    d.update(style=style, mode=palette["mode"], template=template, font=font_idx, addons=info["addons"])
+    d.update(style=style, mode=palette["mode"], template=template, font=font_idx,
+             svc_layout=svc_layout, addons=info["addons"])
+    if opts.get("pricelist"):
+        d.setdefault("info", {})["pricelist"] = opts["pricelist"]
     core.x("UPDATE gensites SET style=?, detail=?, thumb=? WHERE id=?", (style, json.dumps(d), thumb, sid))
     return {"site_id": sid, "title": row["title"], "token": row["token"], "style": style,
             "mode": palette["mode"], "template": template, "notes": [f"Updated: now the {palette['mode']} {template} look."]}

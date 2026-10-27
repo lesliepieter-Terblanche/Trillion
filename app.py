@@ -2119,9 +2119,14 @@ def leads_whatsapp(lid: int, request: Request, user=Depends(auth)):
 
 @app.post("/api/gensites/{sid}/revise")
 def gensites_revise(sid: int, p: dict = Body(...), user=Depends(auth)):
-    if not (p.get("change") or "").strip():
-        raise HTTPException(400, "Say what to change.")
-    return web.start_revise(user, sid, p.get("change").strip())
+    opts = p.get("opts") if isinstance(p.get("opts"), dict) else {}
+    change = (p.get("change") or "").strip()
+    # the CHANGE panel may send only structured choices (no free text) — that's still a valid change
+    has_opts = any(opts.get(k) for k in ("look", "colour", "color", "mode", "layout", "font", "pricelist")) \
+        or isinstance(opts.get("addons"), list)
+    if not change and not has_opts:
+        raise HTTPException(400, "Choose something to change or type an instruction.")
+    return web.start_revise(user, sid, change, opts=opts)
 
 
 @app.post("/api/gensites/{sid}/pitch-video")

@@ -1700,6 +1700,33 @@ function drawWeb(sites){
         ${s.has_video?`<a class="btn" href="/api/gensites/${s.id}/pitch-video?download=1" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;text-decoration:none;min-height:40px;font-size:12px">▶ WATCH VIDEO</a>`:''}
         <button class="btn" data-wbc="${s.id}" style="min-height:40px;font-size:12px">CHANGE…</button>
         <button class="btn" data-wbd="${s.id}" style="min-height:40px;font-size:12px">DELETE</button></div>
+      <div id="wbch-${s.id}" hidden style="margin-top:14px;padding:16px;border:1px solid var(--edge2);border-radius:12px;background:var(--panel2,rgba(127,127,127,.06));display:grid;gap:12px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+          <label class="field"><span>Hero / look</span><select data-ch="look">
+            <option value="">Keep current</option><option value="shuffle">🎲 Surprise me</option>
+            <option value="premium">Animated gradient</option><option value="object3d">3D object</option>
+            <option value="editorial">Editorial / split</option><option value="cinematic">Cinematic photo</option>
+            <option value="ribbons">Light ribbons</option><option value="orb">Glowing orb</option>
+            <option value="liquid">Liquid chrome</option><option value="resonance">Cymatic rings</option>
+            <option value="streams">Neon streams</option></select></label>
+          <label class="field"><span>Colour</span><select data-ch="colour">
+            <option value="">Keep current</option><option value="violet">Violet</option><option value="ember">Ember</option>
+            <option value="teal">Teal</option><option value="azure">Azure</option><option value="emerald">Emerald</option>
+            <option value="slate">Slate</option></select></label>
+          <label class="field"><span>Light / dark</span><select data-ch="mode">
+            <option value="">Keep current</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
+          <label class="field"><span>Body layout</span><select data-ch="layout">
+            <option value="">Keep current</option><option value="shuffle">🎲 Shuffle</option></select></label>
+          <label class="field"><span>Font pairing</span><select data-ch="font">
+            <option value="">Keep current</option><option value="change">🎲 Change</option></select></label>
+        </div>
+        <div><div class="muted" style="font-size:12px;margin-bottom:6px">Features</div>
+          <div style="display:flex;flex-wrap:wrap;gap:14px;font-size:13.5px">
+            ${['whatsapp:WhatsApp button','form:Enquiry form','booking:Booking form','promo:Promo banner','pricelist:Price list'].map(x=>{const k=x.split(':')[0];return `<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-ch-addon="${k}" ${(s.addons||[]).includes(k)?'checked':''}> ${x.split(':')[1]}</label>`;}).join('')}
+          </div></div>
+        <label class="field"><span>Full prompt — anything else (reword copy, specific tweaks)</span><textarea data-ch="note" rows="2" placeholder='e.g. "make the headline punchier", "warmer tone", "mention we are open Sundays"'></textarea></label>
+        <div class="btns" style="justify-content:flex-start"><button class="btn pri" data-wbapply="${s.id}" style="min-height:38px;font-size:12px">APPLY CHANGES</button><button class="btn" data-wbcancel="${s.id}" style="min-height:38px;font-size:12px">CANCEL</button></div>
+      </div>
     </div>`;}).join('')||'<div class="muted">No sites yet. Fill in a business above and press Generate.</div>';
   document.querySelectorAll('[data-wbd]').forEach(b=>b.onclick=async()=>{await api('/api/gensites/'+b.dataset.wbd,{method:'DELETE'});loadWeb();});
   document.querySelectorAll('[data-wbv]').forEach(b=>b.onclick=async()=>{const id=b.dataset.wbv,m=$('wb-msg');b.disabled=true;
@@ -1709,9 +1736,16 @@ function drawWeb(sites){
       if(d.status==='running'){m.textContent='Pitch video: '+(d.step||'working')+'…';return;}
       clearInterval(poll);b.disabled=false;if(d.ready){m.className='msg ok';m.textContent='Pitch video ready. It goes out with the WhatsApp pitch for this lead.';loadWeb();}
       else{m.className='msg bad';m.textContent='Pitch video failed: '+(d.error||'unknown');}}catch(e){}},4000);});
-  document.querySelectorAll('[data-wbc]').forEach(b=>b.onclick=async()=>{const what=prompt('What should change? e.g. "make it light", "use the 3D look", "change colours to blue", "warmer", "reword the headline"');if(!what||!what.trim())return;
-    $('wb-msg').className='msg muted';$('wb-msg').textContent='Updating the site — the preview link stays the same. Watch the Control Room.';
-    try{await api('/api/gensites/'+b.dataset.wbc+'/revise',{json:{change:what.trim()}});}catch(e){$('wb-msg').className='msg bad';$('wb-msg').textContent=e.message;return;}
+  document.querySelectorAll('[data-wbc]').forEach(b=>b.onclick=()=>{const p=$('wbch-'+b.dataset.wbc);if(p)p.hidden=!p.hidden;});
+  document.querySelectorAll('[data-wbcancel]').forEach(b=>b.onclick=()=>{const p=$('wbch-'+b.dataset.wbcancel);if(p)p.hidden=true;});
+  document.querySelectorAll('[data-wbapply]').forEach(b=>b.onclick=async()=>{const id=b.dataset.wbapply,p=$('wbch-'+id);
+    const opts={};p.querySelectorAll('[data-ch]').forEach(el=>{const k=el.dataset.ch,v=(el.value||'').trim();if(v)opts[k]=v;});
+    const note=opts.note||'';delete opts.note;
+    opts.addons=[...p.querySelectorAll('[data-ch-addon]')].filter(c=>c.checked).map(c=>c.dataset.chAddon);
+    const touched=Object.keys(opts).some(k=>k!=='addons'&&opts[k])||note;
+    if(!touched&&opts.addons.length===0){$('wb-msg').className='msg bad';$('wb-msg').textContent='Pick something to change or type an instruction first.';return;}
+    p.hidden=true;$('wb-msg').className='msg muted';$('wb-msg').textContent='Updating the site — the preview link stays the same. Watch the Control Room.';
+    try{await api('/api/gensites/'+id+'/revise',{json:{change:note,opts:opts}});}catch(e){$('wb-msg').className='msg bad';$('wb-msg').textContent=e.message;return;}
     clearInterval(webPoll);let n=0;webPoll=setInterval(async()=>{n++;try{const d=await (await api('/api/gensites')).json();drawWeb(d.sites||[]);if(n>18){clearInterval(webPoll);$('wb-msg').className='msg ok';$('wb-msg').textContent='Updated — refresh the preview to see the change.';}}catch(e){}},4000);});
 }
 async function wbKeyState(){try{const ks=await (await api('/api/secrets')).json();const k=(ks||[]).find(x=>x.name==='google_places');const m=$('wb-gkey-msg'),i=$('wb-gkey');if(!m||!i)return;
