@@ -137,10 +137,22 @@ SPECS = [
        "like 9.99. Needs the user's approval.", {"product": S, "price": {"type": "number"}}),
     fn("gumroad_refund", "Refund one Gumroad sale in full. sale is the buyer's email address or the sale number. "
        "Needs the user's approval.", {"sale": S}),
-    fn("search_manual", "Search the user's workshop and repair manuals (for example the XUV500 workshop manual) for a "
-       "question about the vehicle: where a part is, how to remove or fix something, torque values, fuses, wiring, fault "
-       "codes. Returns the best pages with their section, page number, a text extract and a link to see the page. "
-       "manual is optional (its name or number).", {"query": S, "manual": S}, ["query"]),
+    fn("network_devices", "See what's on the user's home network — find a smart TV, printer, camera, phone, the "
+       "router. Use this for ANY question about devices on the network, Wi-Fi, LAN, or 'what's connected'. Returns "
+       "each device's IP, MAC, vendor, name and a best-guess type. This is NOT the car manual — use it whenever the "
+       "user mentions their network, an IP address, a TV, or a device at home. deep=true also port-scans (slower).",
+       {"deep": {"type": "boolean"}}),
+    fn("find_device", "Identify ONE device on the home network by its IP address (e.g. 192.168.68.111) or by name "
+       "(e.g. 'the TV'). Pings it, reads its MAC/vendor/hostname, checks open ports and asks it over SSDP, then says "
+       "what it most likely is and how to use it. Use this when the user gives an IP or asks 'what is this device' / "
+       "'can you see my TV'.", {"target": S}, ["target"]),
+    fn("wake_device", "Send a Wake-on-LAN packet to turn on a device (TV, PC) that supports it. Give an IP, name or "
+       "MAC address.", {"target": S}, ["target"]),
+    fn("search_manual", "Search the user's uploaded vehicle workshop/repair manuals (e.g. the XUV500 manual) for a "
+       "question ABOUT A VEHICLE only: where a car part is, how to remove or fix it, torque values, fuses, car wiring, "
+       "fault codes. Do NOT use this for the home network, Wi-Fi, IP addresses, TVs or any non-vehicle question. "
+       "Returns the best pages with section, page number, an extract and a link. manual is optional.",
+       {"query": S, "manual": S}, ["query"]),
     fn("read_manual_page", "Read every word on one page of a manual, after search_manual found it. page is the PDF page number.",
        {"manual": S, "page": {"type": "integer"}}, ["page"]),
     fn("list_manuals", "List the workshop manuals that have been read in: where each PDF is, its pages and its sections.", {}),
@@ -249,6 +261,8 @@ def describe(name, a):
         "search_manual": f"Searching the manual for {g('query')}", "read_manual_page": f"Reading manual page {g('page')}",
         "list_manuals": "Listing the manuals", "add_manual": f"Reading in the manual {g('path')}",
         "split_manual": "Splitting the manual into sections",
+        "network_devices": "Scanning the home network", "find_device": f"Looking up {g('target')} on the network",
+        "wake_device": f"Sending a wake signal to {g('target')}",
         "system_status": "Checking the PC", "update_self": "Updating myself from GitHub", "run_command": f"Run command: {g('command')}",
     }.get(name, name)
 
@@ -573,6 +587,30 @@ def _manual(fn_):
         return fn_(manuals)
     except manuals.ManualError as e:
         return {"error": str(e)}
+
+
+def t_network_devices(user, deep=False):
+    import netscan
+    try:
+        return netscan.scan(deep=bool(deep), user=user)
+    except Exception as e:
+        return {"error": f"Could not scan the network ({type(e).__name__})."}
+
+
+def t_find_device(user, target):
+    import netscan
+    try:
+        return netscan.lookup(target, user=user)
+    except Exception as e:
+        return {"error": f"Could not look up {target} ({type(e).__name__})."}
+
+
+def t_wake_device(user, target):
+    import netscan
+    try:
+        return netscan.wake(target, user=user)
+    except Exception as e:
+        return {"error": f"Could not wake {target} ({type(e).__name__})."}
 
 
 def t_search_manual(user, query, manual=""):
