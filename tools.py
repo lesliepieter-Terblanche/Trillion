@@ -148,6 +148,20 @@ SPECS = [
        "'can you see my TV'.", {"target": S}, ["target"]),
     fn("wake_device", "Send a Wake-on-LAN packet to turn on a device (TV, PC) that supports it. Give an IP, name or "
        "MAC address.", {"target": S}, ["target"]),
+    fn("tv_connect", "Connect to an Android smart TV over the network with ADB (target is its IP or name). Needed "
+       "before the other tv_ tools. Tells you clearly if the TV's Developer-options / network debugging isn't on yet.",
+       {"target": S}, ["target"]),
+    fn("tv_apps", "List the apps on a connected Android TV, and which of them are launchers (home screens).",
+       {"target": S}, ["target"]),
+    fn("tv_install_launcher", "Install a new home-screen launcher on an Android TV and set it as default — use when "
+       "the TV's own launcher is dead or unwanted. which is 'flauncher' (light & open-source, the default). The APK "
+       "is fetched from F-Droid. For any other launcher, use tv_install_app with its APK.", {"target": S, "which": S}, ["target"]),
+    fn("tv_install_app", "Sideload an APK onto an Android TV. apk is a file path on the PC or an http(s) URL.",
+       {"target": S, "apk": S}, ["target", "apk"]),
+    fn("tv_set_launcher", "Set an installed launcher as the Android TV's default home. package e.g. "
+       "me.efesser.flauncher.", {"target": S, "package": S}, ["target", "package"]),
+    fn("tv_shell", "Run a raw ADB shell command on an Android TV. Owner only, needs approval.",
+       {"target": S, "command": S}, ["target", "command"]),
     fn("search_manual", "Search the user's uploaded vehicle workshop/repair manuals (e.g. the XUV500 manual) for a "
        "question ABOUT A VEHICLE only: where a car part is, how to remove or fix it, torque values, fuses, car wiring, "
        "fault codes. Do NOT use this for the home network, Wi-Fi, IP addresses, TVs or any non-vehicle question. "
@@ -166,6 +180,7 @@ SPECS = [
        {"command": S}),
 ]
 NEEDS_APPROVAL = {"delete_path", "run_command", "phone_send_whatsapp", "phone_shell", "gumroad_set_price", "gumroad_refund",
+                  "tv_install_app", "tv_install_launcher", "tv_set_launcher", "tv_shell",
                   }
 MONEY = {"gumroad_set_price", "gumroad_refund"}      # payment matters: these always wait for your OK, even on a call
 _CTX = threading.local()
@@ -263,6 +278,9 @@ def describe(name, a):
         "split_manual": "Splitting the manual into sections",
         "network_devices": "Scanning the home network", "find_device": f"Looking up {g('target')} on the network",
         "wake_device": f"Sending a wake signal to {g('target')}",
+        "tv_connect": f"Connecting to the TV ({g('target')})", "tv_apps": "Listing the TV's apps",
+        "tv_install_launcher": f"Installing {g('which') or 'a launcher'} on the TV", "tv_install_app": "Installing the app on the TV",
+        "tv_set_launcher": "Setting the TV's default launcher", "tv_shell": f"Running on the TV: {g('command')}",
         "system_status": "Checking the PC", "update_self": "Updating myself from GitHub", "run_command": f"Run command: {g('command')}",
     }.get(name, name)
 
@@ -611,6 +629,54 @@ def t_wake_device(user, target):
         return netscan.wake(target, user=user)
     except Exception as e:
         return {"error": f"Could not wake {target} ({type(e).__name__})."}
+
+
+def t_tv_connect(user, target):
+    import tvadb
+    try:
+        return tvadb.connect(target)
+    except Exception as e:
+        return {"error": f"Could not connect to the TV ({type(e).__name__}): {str(e)[:120]}"}
+
+
+def t_tv_apps(user, target):
+    import tvadb
+    try:
+        return tvadb.apps(target)
+    except Exception as e:
+        return {"error": f"Could not read the TV's apps ({type(e).__name__})."}
+
+
+def t_tv_install_launcher(user, target, which="flauncher"):
+    import tvadb
+    try:
+        return tvadb.install_launcher(target, which)
+    except Exception as e:
+        return {"error": f"Could not install the launcher ({type(e).__name__}): {str(e)[:120]}"}
+
+
+def t_tv_install_app(user, target, apk):
+    import tvadb
+    try:
+        return tvadb.install(target, apk)
+    except Exception as e:
+        return {"error": f"Could not install the app ({type(e).__name__}): {str(e)[:120]}"}
+
+
+def t_tv_set_launcher(user, target, package):
+    import tvadb
+    try:
+        return tvadb.set_launcher(target, package)
+    except Exception as e:
+        return {"error": f"Could not set the launcher ({type(e).__name__})."}
+
+
+def t_tv_shell(user, target, command):
+    import tvadb
+    try:
+        return tvadb.tv_shell(target, command)
+    except Exception as e:
+        return {"error": f"Could not run that on the TV ({type(e).__name__})."}
 
 
 def t_search_manual(user, query, manual=""):
