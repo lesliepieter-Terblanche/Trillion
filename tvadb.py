@@ -185,6 +185,7 @@ KEYS = {
     "back": 4, "home": 3, "menu": 82, "vol_up": 24, "vol_down": 25, "mute": 164, "power": 26,
     "play_pause": 85, "play": 126, "pause": 127, "next": 87, "prev": 88, "stop": 86,
     "fast_forward": 90, "rewind": 89, "search": 84, "info": 165, "channel_up": 166, "channel_down": 167,
+    "input": 178, "source": 178, "tv": 170, "settings": 176,
 }
 
 

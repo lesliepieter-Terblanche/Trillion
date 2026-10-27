@@ -161,7 +161,8 @@ SPECS = [
     fn("tv_set_launcher", "Set an installed launcher as the Android TV's default home. package e.g. "
        "me.efesser.flauncher.", {"target": S, "package": S}, ["target", "package"]),
     fn("tv_press", "Press a remote button on the Android TV: up, down, left, right, ok, back, home, menu, vol_up, "
-       "vol_down, mute, power, play_pause, next, prev, search. Use when the user says to navigate or control the TV.",
+       "vol_down, mute, power, play_pause, next, prev, search, input (switch HDMI source, e.g. to a Chromecast), "
+       "settings. Use when the user says to navigate or control the TV.",
        {"target": S, "button": S}, ["target", "button"]),
     fn("tv_type", "Type text into whatever is focused on the Android TV (e.g. a search box).",
        {"target": S, "text": S}, ["target", "text"]),
