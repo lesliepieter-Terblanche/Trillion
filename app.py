@@ -4237,6 +4237,36 @@ def deco_set(p: dict = Body(...), user=Depends(admin)):
     return extend.deco_status(user)
 
 
+@app.post("/api/tv/connect")
+def tv_connect_ep(p: dict = Body(...), user=Depends(admin)):
+    import tvadb
+    return tvadb.connect((p.get("target") or "").strip())
+
+
+@app.get("/api/tv/apps")
+def tv_apps_ep(target: str, user=Depends(admin)):
+    import tvadb
+    return tvadb.apps(target.strip())
+
+
+@app.post("/api/tv/key")
+def tv_key_ep(p: dict = Body(...), user=Depends(admin)):
+    import tvadb
+    return tvadb.key((p.get("target") or "").strip(), (p.get("key") or "").strip())
+
+
+@app.post("/api/tv/text")
+def tv_text_ep(p: dict = Body(...), user=Depends(admin)):
+    import tvadb
+    return tvadb.text((p.get("target") or "").strip(), p.get("text") or "")
+
+
+@app.post("/api/tv/launch")
+def tv_launch_ep(p: dict = Body(...), user=Depends(admin)):
+    import tvadb
+    return tvadb.launch((p.get("target") or "").strip(), (p.get("package") or "").strip())
+
+
 @app.get("/api/emergent")
 def emergent_get(user=Depends(admin)):
     return extend.emergent_status(user)

@@ -179,6 +179,55 @@ def install_launcher(target, which="flauncher", port=5555):
                     " — press Home on the TV and choose it as the launcher.")}
 
 
+# Remote-control key names -> Android keyevent codes
+KEYS = {
+    "up": 19, "down": 20, "left": 21, "right": 22, "ok": 23, "center": 23, "enter": 66,
+    "back": 4, "home": 3, "menu": 82, "vol_up": 24, "vol_down": 25, "mute": 164, "power": 26,
+    "play_pause": 85, "play": 126, "pause": 127, "next": 87, "prev": 88, "stop": 86,
+    "fast_forward": 90, "rewind": 89, "search": 84, "info": 165, "channel_up": 166, "channel_down": 167,
+}
+
+
+def key(target, name, port=5555):
+    """Press a remote button on the TV (up/down/left/right/ok/back/home/menu/vol_up/vol_down/mute/power/...)."""
+    addr, err = _ensure(target, port)
+    if err:
+        return err
+    code = KEYS.get(str(name or "").lower().strip())
+    if code is None:
+        return {"ok": False, "error": f"Unknown button '{name}'. Try one of: {', '.join(sorted(KEYS))}."}
+    c, out = phone._run(["-s", addr, "shell", "input", "keyevent", str(code)], timeout=15)
+    return {"ok": c == 0, "key": name, "addr": addr}
+
+
+def text(target, s, port=5555):
+    """Type text into whatever field is focused on the TV (e.g. a search box)."""
+    addr, err = _ensure(target, port)
+    if err:
+        return err
+    safe = re.sub(r"[^\w .,:/@!?+\-]", "", str(s or ""))[:200].replace(" ", "%s")
+    c, out = phone._run(["-s", addr, "shell", "input", "text", safe], timeout=20)
+    return {"ok": c == 0, "typed": s, "addr": addr}
+
+
+def launch(target, package, port=5555):
+    """Open an app on the TV by its package name."""
+    addr, err = _ensure(target, port)
+    if err:
+        return err
+    pkg = str(package or "").strip()
+    c, out = phone._run(["-s", addr, "shell", "monkey", "-p", pkg, "-c",
+                         "android.intent.category.LAUNCHER", "1"], timeout=20)
+    ok = c == 0 and "No activities found" not in (out or "")
+    return {"ok": ok, "package": pkg, "addr": addr,
+            "note": "Opened." if ok else "Couldn't open that app — check the package name with tv_apps."}
+
+
+def power(target, port=5555):
+    """Toggle the TV's power (sleep/wake) via the power key."""
+    return key(target, "power", port)
+
+
 def tv_shell(target, command, port=5555):
     """Run a raw ADB shell command on the TV. Owner only, needs approval."""
     addr, err = _ensure(target, port)

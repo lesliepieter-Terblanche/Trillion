@@ -58,6 +58,8 @@ nav button.on{color:var(--ink);border-color:var(--a)}
 .badges{display:flex;flex-wrap:wrap;gap:16px;align-items:center;font-family:var(--mono);font-size:13px}
 main{flex:1;width:100%;max-width:1400px;margin:0 auto;padding:26px 16px 130px;display:flex;flex-direction:column;gap:26px}
 .view{display:none;flex-direction:column;gap:26px}.view.on{display:flex}
+.tvk{background:var(--panel2,#1a1a24);color:var(--text);border:1px solid var(--edge2);border-radius:12px;font-size:20px;cursor:pointer;min-height:48px;padding:10px 14px;transition:transform .05s,background .15s}
+.tvk:active{transform:scale(.94);background:var(--accent,#39f)}.tvk.wide{font-size:13px;flex:1;min-width:84px}
 .stage{display:flex;flex-wrap:wrap;gap:28px}
 .rail{flex:1 1 250px;display:flex;flex-direction:column;gap:18px;min-width:0}
 .center{flex:999 1 460px;min-width:0;display:flex;flex-direction:column;align-items:center;text-align:center;gap:18px}
@@ -736,6 +738,43 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
   <div id="ap-list" style="display:flex;flex-direction:column;gap:26px"></div>
 </div>
 
+<div class="view" id="v-tvremote">
+  <h2>TV Remote</h2>
+  <div class="muted">Control an Android TV over your network — your phone becomes the remote. The TV needs ADB / network debugging switched on; if it isn't, Connect will tell you.</div>
+  <div class="panel" style="gap:12px">
+    <div class="two"><label class="field" style="flex:3"><span>TV address (IP or name)</span><input id="tvr-target" placeholder="192.168.68.111"></label>
+      <div style="display:flex;align-items:flex-end"><button class="btn pri" id="tvr-connect" style="min-height:40px;font-size:12px">CONNECT</button></div></div>
+    <div class="msg" id="tvr-msg"></div>
+  </div>
+  <div class="panel" id="tvr-pad" style="gap:14px;max-width:360px;margin:0 auto;align-items:center">
+    <div style="display:grid;grid-template-columns:repeat(3,64px);grid-template-rows:repeat(3,64px);gap:8px;justify-content:center">
+      <div></div><button class="tvk" data-k="up">▲</button><div></div>
+      <button class="tvk" data-k="left">◀</button><button class="tvk" data-k="ok" style="font-size:14px;font-weight:700">OK</button><button class="tvk" data-k="right">▶</button>
+      <div></div><button class="tvk" data-k="down">▼</button><div></div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+      <button class="tvk wide" data-k="back">↩ Back</button>
+      <button class="tvk wide" data-k="home">⌂ Home</button>
+      <button class="tvk wide" data-k="menu">☰ Menu</button>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+      <button class="tvk wide" data-k="vol_down">🔉 Vol −</button>
+      <button class="tvk wide" data-k="mute">🔇 Mute</button>
+      <button class="tvk wide" data-k="vol_up">🔊 Vol +</button>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+      <button class="tvk wide" data-k="play_pause">⏯ Play</button>
+      <button class="tvk wide" data-k="prev">⏮</button>
+      <button class="tvk wide" data-k="next">⏭</button>
+      <button class="tvk wide" data-k="power">⏻ Power</button>
+    </div>
+    <div class="two" style="width:100%"><label class="field" style="flex:3"><span>Type into the TV (search boxes etc.)</span><input id="tvr-text" placeholder="e.g. YouTube"></label>
+      <div style="display:flex;align-items:flex-end"><button class="btn" id="tvr-send" style="min-height:40px;font-size:12px">SEND</button></div></div>
+  </div>
+  <div class="panel" style="gap:10px"><div style="display:flex;justify-content:space-between;align-items:center"><b>Apps on the TV</b><button class="btn" id="tvr-apps" style="min-height:36px;font-size:12px">LOAD APPS</button></div>
+    <div id="tvr-applist" class="muted" style="font-size:13px">Connect, then load the apps to launch one.</div></div>
+</div>
+
 <div class="view" id="v-sites">
   <h2>Websites</h2>
   <div class="muted">Give me a website. I open it in a browser on the PC, read it page by page, analyse it, and make a presentation, a report or a spreadsheet from it.</div>
@@ -1102,7 +1141,7 @@ const api=async(u,o={})=>{if(o.json!==undefined){o.method=o.method||'POST';o.hea
 const hm=t=>new Date(t*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false});
 let hold=0,S=null,sending=false,speakNext=false,settingsLoaded=false,cwd='';
 
-const LOADERS={apps:()=>loadApps(),sites:()=>{loadSites();loadClones();},bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),workflow:()=>wfLoad(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);loadStorage();},memory:()=>loadNotes(''),videos:()=>loadVideos(),web:()=>{loadWeb();wbKeyState();},dashboard:()=>loadDash(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();loadBackup();kokoroState();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
+const LOADERS={apps:()=>loadApps(),tvremote:()=>loadTvRemote(),sites:()=>{loadSites();loadClones();},bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),workflow:()=>wfLoad(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);loadStorage();},memory:()=>loadNotes(''),videos:()=>loadVideos(),web:()=>{loadWeb();wbKeyState();},dashboard:()=>loadDash(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();loadBackup();kokoroState();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
 let VIEW='control';
 function go(v){
   VIEW=v;try{if(v!=='settings'&&mtTimer)micTestStop();}catch(e){}
@@ -2383,8 +2422,26 @@ function drawCommands(){
   $('cmdlist').innerHTML=CMDS.filter(g=>(g[0]!=='Gumroad store'||(S&&S.store_on))&&(g[0]!=='Bible study'||(S&&S.bible_on))).map(g=>`<div class="panel"><b>${esc(g[0])}</b><div class="cmdg">${g[1].map(c=>`<div class="cmdr"><div><code>${esc(c[0])}</code>${c[1]?`<small>${esc(c[1])}</small>`:''}</div><button class="btn" data-use="${esc(c[0])}" style="min-height:40px;font-size:12px;flex:none">USE</button></div>`).join('')}</div></div>`).join('');
   document.querySelectorAll('[data-use]').forEach(b=>b.onclick=()=>{go('control');$('say').value=b.dataset.use;$('say').focus();});
 }
+function tvrTarget(){return ($('tvr-target').value||'').trim();}
+async function tvrKey(k){const t=tvrTarget();if(!t){tvrNeed();return;}try{const r=await (await api('/api/tv/key',{json:{target:t,key:k}})).json();if(r.error||r.ok===false){$('tvr-msg').className='msg bad';$('tvr-msg').textContent=r.error||r.note||'The TV did not respond. Is ADB on?';}}catch(e){$('tvr-msg').className='msg bad';$('tvr-msg').textContent=e.message;}}
+function tvrNeed(){$('tvr-msg').className='msg bad';$('tvr-msg').textContent='Enter the TV address and press Connect first.';}
+function loadTvRemote(){
+  try{const last=localStorage.getItem('trillion_tvr');if(last&&!$('tvr-target').value)$('tvr-target').value=last;}catch(e){}
+  $('tvr-connect').onclick=async()=>{const t=tvrTarget();if(!t){tvrNeed();return;}try{localStorage.setItem('trillion_tvr',t);}catch(e){}
+    $('tvr-msg').className='msg muted';$('tvr-msg').textContent='Connecting to the TV…';
+    try{const r=await (await api('/api/tv/connect',{json:{target:t}})).json();$('tvr-msg').className='msg '+(r.ok?'ok':'bad');$('tvr-msg').textContent=(r.ok?'Connected — use the buttons below.':(r.note||r.error||'Could not connect.'));}catch(e){$('tvr-msg').className='msg bad';$('tvr-msg').textContent=e.message;}};
+  document.querySelectorAll('.tvk[data-k]').forEach(b=>b.onclick=()=>tvrKey(b.dataset.k));
+  $('tvr-send').onclick=async()=>{const t=tvrTarget(),s=($('tvr-text').value||'').trim();if(!t){tvrNeed();return;}if(!s)return;
+    try{const r=await (await api('/api/tv/text',{json:{target:t,text:s}})).json();if(r.ok!==false&&!r.error){$('tvr-text').value='';$('tvr-msg').className='msg ok';$('tvr-msg').textContent='Sent “'+s+'” to the TV.';}else{$('tvr-msg').className='msg bad';$('tvr-msg').textContent=r.error||r.note||'Could not type.';}}catch(e){$('tvr-msg').className='msg bad';$('tvr-msg').textContent=e.message;}};
+  $('tvr-apps').onclick=async()=>{const t=tvrTarget();if(!t){tvrNeed();return;}$('tvr-applist').textContent='Loading apps…';
+    try{const r=await (await api('/api/tv/apps?target='+encodeURIComponent(t))).json();if(r.error){$('tvr-applist').innerHTML='<span class="bad">'+esc(r.error||r.note)+'</span>';return;}
+      const pks=(r.packages||[]).filter(p=>!/^(android|com\.android|com\.google\.android\.(gsf|gms|tts|packageinstaller))/.test(p));
+      $('tvr-applist').innerHTML=pks.length?pks.map(p=>`<button class="btn" data-launch="${esc(p)}" style="min-height:34px;font-size:11px;margin:3px">${esc(p.split('.').slice(-1)[0])}</button>`).join(''):'No launchable apps found.';
+      $('tvr-applist').querySelectorAll('[data-launch]').forEach(b=>b.onclick=async()=>{try{await api('/api/tv/launch',{json:{target:t,package:b.dataset.launch}});$('tvr-msg').className='msg ok';$('tvr-msg').textContent='Opening '+b.dataset.launch+' on the TV.';}catch(e){}});
+    }catch(e){$('tvr-applist').textContent=e.message;}};
+}
 function drawMore(){
-  const items=[['workflow','Workflow',"What's running now, live"],...(S&&S.bible_on?[['bible','Bible study','Daily verse, reader, notes, helper']]:[]),...(S&&S.store_on?[['store','Store','Gumroad sales, products, codes']]:[]),['videos','Videos','Make and watch videos'],['web','Web Studio','Build a premium site for a business'],['dashboard','Campaign','Lead tracking + email outreach'],['files','Files','Browse your folders'],['sites','Websites','Read a site, make a deck or report'],['apps','Apps','Search rankings and automations'],['memory','Memory','What she remembers'],['routines','Routines','Morning briefing, news, weather'],['skills','Skills','Extra abilities and connectors'],['commands','Commands','Everything you can say'],['settings','Settings','Look, brain, voice, keys']];
+  const items=[['workflow','Workflow',"What's running now, live"],...(S&&S.bible_on?[['bible','Bible study','Daily verse, reader, notes, helper']]:[]),...(S&&S.store_on?[['store','Store','Gumroad sales, products, codes']]:[]),['videos','Videos','Make and watch videos'],['web','Web Studio','Build a premium site for a business'],['dashboard','Campaign','Lead tracking + email outreach'],['files','Files','Browse your folders'],['sites','Websites','Read a site, make a deck or report'],['apps','Apps','Search rankings and automations'],['tvremote','TV Remote','Control an Android TV from your phone'],['memory','Memory','What she remembers'],['routines','Routines','Morning briefing, news, weather'],['skills','Skills','Extra abilities and connectors'],['commands','Commands','Everything you can say'],['settings','Settings','Look, brain, voice, keys']];
   if(S&&S.user.is_admin)items.push(['family','Family','Logins, update, backup']);
   $('moregrid').innerHTML=items.map(i=>`<button class="mbtn" data-go="${i[0]}"><b>${i[1]}</b><span>${i[2]}</span></button>`).join('')+`<button class="mbtn" id="out2"><b>Sign out</b><span>${S?esc(S.user.name):''}</span></button>`;
   $('out2').onclick=()=>$('out').click();

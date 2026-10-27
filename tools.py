@@ -160,6 +160,13 @@ SPECS = [
        {"target": S, "apk": S}, ["target", "apk"]),
     fn("tv_set_launcher", "Set an installed launcher as the Android TV's default home. package e.g. "
        "me.efesser.flauncher.", {"target": S, "package": S}, ["target", "package"]),
+    fn("tv_press", "Press a remote button on the Android TV: up, down, left, right, ok, back, home, menu, vol_up, "
+       "vol_down, mute, power, play_pause, next, prev, search. Use when the user says to navigate or control the TV.",
+       {"target": S, "button": S}, ["target", "button"]),
+    fn("tv_type", "Type text into whatever is focused on the Android TV (e.g. a search box).",
+       {"target": S, "text": S}, ["target", "text"]),
+    fn("tv_open_app", "Open an app on the Android TV by its package name (find it with tv_apps).",
+       {"target": S, "package": S}, ["target", "package"]),
     fn("tv_shell", "Run a raw ADB shell command on an Android TV. Owner only, needs approval.",
        {"target": S, "command": S}, ["target", "command"]),
     fn("search_manual", "Search the user's uploaded vehicle workshop/repair manuals (e.g. the XUV500 manual) for a "
@@ -281,6 +288,7 @@ def describe(name, a):
         "tv_connect": f"Connecting to the TV ({g('target')})", "tv_apps": "Listing the TV's apps",
         "tv_install_launcher": f"Installing {g('which') or 'a launcher'} on the TV", "tv_install_app": "Installing the app on the TV",
         "tv_set_launcher": "Setting the TV's default launcher", "tv_shell": f"Running on the TV: {g('command')}",
+        "tv_press": f"TV: pressing {g('button')}", "tv_type": "TV: typing", "tv_open_app": f"TV: opening {g('package')}",
         "system_status": "Checking the PC", "update_self": "Updating myself from GitHub", "run_command": f"Run command: {g('command')}",
     }.get(name, name)
 
@@ -669,6 +677,30 @@ def t_tv_set_launcher(user, target, package):
         return tvadb.set_launcher(target, package)
     except Exception as e:
         return {"error": f"Could not set the launcher ({type(e).__name__})."}
+
+
+def t_tv_press(user, target, button):
+    import tvadb
+    try:
+        return tvadb.key(target, button)
+    except Exception as e:
+        return {"error": f"Could not press that on the TV ({type(e).__name__})."}
+
+
+def t_tv_type(user, target, text):
+    import tvadb
+    try:
+        return tvadb.text(target, text)
+    except Exception as e:
+        return {"error": f"Could not type on the TV ({type(e).__name__})."}
+
+
+def t_tv_open_app(user, target, package):
+    import tvadb
+    try:
+        return tvadb.launch(target, package)
+    except Exception as e:
+        return {"error": f"Could not open that app on the TV ({type(e).__name__})."}
 
 
 def t_tv_shell(user, target, command):
