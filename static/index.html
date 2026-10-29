@@ -738,6 +738,22 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
   <div id="ap-list" style="display:flex;flex-direction:column;gap:26px"></div>
 </div>
 
+<div class="view" id="v-growth">
+  <h2>How Trillion is growing</h2>
+  <div class="muted">What she's learned, the skills and automations she's gained, and how busy she's been — all from this PC.</div>
+  <div id="gr-tiles" style="display:flex;flex-wrap:wrap;gap:12px"></div>
+  <div class="panel"><b>Activity — last 30 days</b><div class="muted" style="font-size:12px">Green = jobs done · amber = things that needed you</div>
+    <div id="gr-chart" style="display:flex;align-items:flex-end;gap:2px;height:140px;margin-top:16px"></div></div>
+  <div class="two">
+    <div class="panel"><b>Recently learned</b><div id="gr-learned" class="muted" style="font-size:13px;margin-top:8px"></div></div>
+    <div class="panel"><b>Automations switched on</b><div id="gr-autos" class="muted" style="font-size:13px;margin-top:8px"></div></div>
+  </div>
+  <div class="two">
+    <div class="panel"><b>Playbooks she drafted</b><div id="gr-skills" class="muted" style="font-size:13px;margin-top:8px"></div></div>
+    <div class="panel"><b>Self-repairs</b><div id="gr-heals" class="muted" style="font-size:13px;margin-top:8px"></div></div>
+  </div>
+</div>
+
 <div class="view" id="v-tvremote">
   <h2>TV Remote</h2>
   <div class="muted">Control an Android TV over your network — your phone becomes the remote. The TV needs ADB / network debugging switched on; if it isn't, Connect will tell you.</div>
@@ -1145,7 +1161,7 @@ const api=async(u,o={})=>{if(o.json!==undefined){o.method=o.method||'POST';o.hea
 const hm=t=>new Date(t*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false});
 let hold=0,S=null,sending=false,speakNext=false,settingsLoaded=false,cwd='';
 
-const LOADERS={apps:()=>loadApps(),tvremote:()=>loadTvRemote(),sites:()=>{loadSites();loadClones();},bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),workflow:()=>wfLoad(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);loadStorage();},memory:()=>loadNotes(''),videos:()=>loadVideos(),web:()=>{loadWeb();wbKeyState();},dashboard:()=>loadDash(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();loadBackup();kokoroState();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
+const LOADERS={apps:()=>loadApps(),tvremote:()=>loadTvRemote(),growth:()=>loadGrowth(),sites:()=>{loadSites();loadClones();},bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),workflow:()=>wfLoad(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);loadStorage();},memory:()=>loadNotes(''),videos:()=>loadVideos(),web:()=>{loadWeb();wbKeyState();},dashboard:()=>loadDash(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();loadBackup();kokoroState();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
 let VIEW='control';
 function go(v){
   VIEW=v;try{if(v!=='settings'&&mtTimer)micTestStop();}catch(e){}
@@ -2426,6 +2442,24 @@ function drawCommands(){
   $('cmdlist').innerHTML=CMDS.filter(g=>(g[0]!=='Gumroad store'||(S&&S.store_on))&&(g[0]!=='Bible study'||(S&&S.bible_on))).map(g=>`<div class="panel"><b>${esc(g[0])}</b><div class="cmdg">${g[1].map(c=>`<div class="cmdr"><div><code>${esc(c[0])}</code>${c[1]?`<small>${esc(c[1])}</small>`:''}</div><button class="btn" data-use="${esc(c[0])}" style="min-height:40px;font-size:12px;flex:none">USE</button></div>`).join('')}</div></div>`).join('');
   document.querySelectorAll('[data-use]').forEach(b=>b.onclick=()=>{go('control');$('say').value=b.dataset.use;$('say').focus();});
 }
+async function loadGrowth(){let d;try{d=await (await api('/api/growth')).json();}catch(e){return;}
+  if(d.error){$('gr-tiles').innerHTML='<div class="muted">'+esc(d.error)+'</div>';return;}
+  const t=d.tiles||{};
+  const tiles=[['Things learned',t.learned,(t.learned_week||0)+' this week','#7c5cff'],
+    ['Skills',t.skills,(t.skills_draft||0)+' drafts waiting','#2fe6c0'],
+    ['Automations on',t.automations,(t.automations_pending||0)+' suggested','#39b6ff'],
+    ['Documents indexed',t.documents,(t.doc_passages||0)+' passages','#ff7a3d'],
+    ['Jobs done (30d)',t.done_30,(t.waiting_30||0)+' needed you','#22c55e'],
+    ['Memory notes',t.notes,(t.connectors||0)+' connectors','#d94fd0']];
+  $('gr-tiles').innerHTML=tiles.map(x=>`<div class="panel" style="flex:1;min-width:150px;text-align:center;padding:16px 10px"><div style="font-size:30px;font-weight:800;color:${x[3]}">${x[1]||0}</div><div style="font-size:13px;font-weight:600">${x[0]}</div><div class="muted" style="font-size:11px;margin-top:2px">${esc(x[2])}</div></div>`).join('');
+  const days=d.activity||[],mx=Math.max(1,...days.map(a=>(a.done||0)+(a.waiting||0)));
+  $('gr-chart').innerHTML=days.map(a=>{const dh=Math.round((a.done||0)/mx*130),wh=Math.round((a.waiting||0)/mx*130);
+    return `<div title="${esc(a.day)}: ${a.done||0} done, ${a.waiting||0} needed you" style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:1px;min-width:4px"><div style="height:${wh}px;background:#f5a623;border-radius:2px 2px 0 0"></div><div style="height:${dh}px;background:#22c55e;border-radius:${wh?0:'2px 2px 0 0'}"></div></div>`;}).join('');
+  $('gr-learned').innerHTML=(d.learned_recent||[]).map(x=>`<div style="padding:5px 0;border-top:1px solid var(--edge2)"><b style="color:var(--text)">${esc(x.title.replace(/^Learned /,''))}</b><div>${esc(x.body)}</div></div>`).join('')||'Nothing learned yet — she files knowledge nightly.';
+  $('gr-autos').innerHTML=(d.automations_recent||[]).map(x=>`<div style="padding:4px 0">✓ ${esc(x)}</div>`).join('')||'No automations switched on yet.';
+  $('gr-skills').innerHTML=(d.draft_skills||[]).map(x=>`<div style="padding:5px 0;border-top:1px solid var(--edge2)"><b style="color:var(--text)">${esc(x.name)}</b><div>${esc(x.description)}</div></div>`).join('')||'No drafted playbooks yet — she proposes them as she spots patterns.';
+  $('gr-heals').innerHTML=(d.selfheal_recent||[]).map(x=>`<div style="padding:4px 0">${esc(x.text.replace(/^Self-heal: /,'🔧 '))}</div>`).join('')||'No self-repairs needed recently.';
+}
 function tvrTarget(){return ($('tvr-target').value||'').trim();}
 async function tvrKey(k){const t=tvrTarget();if(!t){tvrNeed();return;}try{const r=await (await api('/api/tv/key',{json:{target:t,key:k}})).json();if(r.error||r.ok===false){$('tvr-msg').className='msg bad';$('tvr-msg').textContent=r.error||r.note||'The TV did not respond. Is ADB on?';}}catch(e){$('tvr-msg').className='msg bad';$('tvr-msg').textContent=e.message;}}
 function tvrNeed(){$('tvr-msg').className='msg bad';$('tvr-msg').textContent='Enter the TV address and press Connect first.';}
@@ -2445,7 +2479,7 @@ function loadTvRemote(){
     }catch(e){$('tvr-applist').textContent=e.message;}};
 }
 function drawMore(){
-  const items=[['workflow','Workflow',"What's running now, live"],...(S&&S.bible_on?[['bible','Bible study','Daily verse, reader, notes, helper']]:[]),...(S&&S.store_on?[['store','Store','Gumroad sales, products, codes']]:[]),['videos','Videos','Make and watch videos'],['web','Web Studio','Build a premium site for a business'],['dashboard','Campaign','Lead tracking + email outreach'],['files','Files','Browse your folders'],['sites','Websites','Read a site, make a deck or report'],['apps','Apps','Search rankings and automations'],['tvremote','TV Remote','Control an Android TV from your phone'],['memory','Memory','What she remembers'],['routines','Routines','Morning briefing, news, weather'],['skills','Skills','Extra abilities and connectors'],['commands','Commands','Everything you can say'],['settings','Settings','Look, brain, voice, keys']];
+  const items=[['workflow','Workflow',"What's running now, live"],...(S&&S.bible_on?[['bible','Bible study','Daily verse, reader, notes, helper']]:[]),...(S&&S.store_on?[['store','Store','Gumroad sales, products, codes']]:[]),['videos','Videos','Make and watch videos'],['web','Web Studio','Build a premium site for a business'],['dashboard','Campaign','Lead tracking + email outreach'],['files','Files','Browse your folders'],['sites','Websites','Read a site, make a deck or report'],['apps','Apps','Search rankings and automations'],['tvremote','TV Remote','Control an Android TV from your phone'],...(S&&S.user.is_admin?[['growth','How Trillion is growing','Learning, skills, automations, activity']]:[]),['memory','Memory','What she remembers'],['routines','Routines','Morning briefing, news, weather'],['skills','Skills','Extra abilities and connectors'],['commands','Commands','Everything you can say'],['settings','Settings','Look, brain, voice, keys']];
   if(S&&S.user.is_admin)items.push(['family','Family','Logins, update, backup']);
   $('moregrid').innerHTML=items.map(i=>`<button class="mbtn" data-go="${i[0]}"><b>${i[1]}</b><span>${i[2]}</span></button>`).join('')+`<button class="mbtn" id="out2"><b>Sign out</b><span>${S?esc(S.user.name):''}</span></button>`;
   $('out2').onclick=()=>$('out').click();

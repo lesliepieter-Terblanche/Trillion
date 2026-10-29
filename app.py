@@ -4237,6 +4237,12 @@ def deco_set(p: dict = Body(...), user=Depends(admin)):
     return extend.deco_status(user)
 
 
+@app.get("/api/growth")
+def growth_ep(user=Depends(admin)):
+    import growth
+    return growth.summary(user)
+
+
 @app.post("/api/tv/connect")
 def tv_connect_ep(p: dict = Body(...), user=Depends(admin)):
     import tvadb
