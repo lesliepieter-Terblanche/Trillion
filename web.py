@@ -326,6 +326,106 @@ def _reviews_html(items):
             + "".join(cards) + '</div><div class="tdots"></div></div>')
 
 
+def _value_html(data, info):
+    """The premium 'value' block that makes a generated site read like a considered, high-ticket build:
+    a stats band, a why-us row, a how-it-works process, an FAQ and a guarantee strip. Driven by the brain's
+    copy with solid fallbacks, built from shared classes + CSS vars so it works under every template."""
+    cat = str(info.get("category") or "business").strip()
+    loc = str(info.get("location") or info.get("area") or "").strip()
+    out = []
+
+    # 1) stats band
+    stats = [s for s in (data.get("stats") or []) if isinstance(s, dict) and s.get("n")][:4]
+    if len(stats) < 3:
+        fb = []
+        if info.get("rating"):
+            fb.append({"n": f"★ {info['rating']}", "l": "rated on Google"})
+        fb += [{"n": "100%", "l": "focused on getting it right"},
+               {"n": "Same week", "l": "we get back to you fast"},
+               {"n": loc or "Local", "l": "proudly serving the area"}]
+        stats = (stats + fb)[:4] if stats else fb[:4] if len(fb) >= 4 else fb[:3]
+    cells = "".join(
+        '<div class="reveal" style="flex:1 1 150px;text-align:center">'
+        f'<div style="font-size:clamp(30px,5vw,46px);font-weight:800;line-height:1;letter-spacing:-.02em;'
+        f'background:linear-gradient(100deg,var(--accent),var(--accent2));-webkit-background-clip:text;'
+        f'background-clip:text;-webkit-text-fill-color:transparent;font-variant-numeric:tabular-nums">{_esc(s["n"])}</div>'
+        f'<div class="muted" style="margin-top:8px;font-size:14px">{_esc(s.get("l") or "")}</div></div>'
+        for s in stats)
+    out.append('<section class="pad" style="background:var(--bg);padding-top:clamp(40px,7vw,70px);'
+               'padding-bottom:clamp(40px,7vw,70px)"><div class="wrap">'
+               '<div style="display:flex;flex-wrap:wrap;gap:30px;justify-content:space-between;align-items:flex-start">'
+               + cells + '</div></div></section>')
+
+    # 2) why us
+    why = [w for w in (data.get("why") or []) if isinstance(w, dict) and w.get("t")][:3]
+    if len(why) < 3:
+        why = [{"t": "Done properly, first time", "d": f"No shortcuts. The kind of {cat} work that lasts and that you "
+                "don't have to think about again."},
+               {"t": "Straight with you", "d": "Clear pricing and honest advice up front, so there are no surprises "
+                "and no pressure."},
+               {"t": "Treated like a neighbour", "d": f"You're not a ticket number. {('People across ' + loc) if loc else 'The people here'} "
+                "come back because of how they're looked after."}]
+    cards = "".join(
+        '<div class="reveal" style="padding:28px;border:1px solid var(--border);border-radius:20px;background:var(--card)">'
+        '<div style="width:50px;height:50px;border-radius:14px;display:flex;align-items:center;justify-content:center;'
+        f'background:var(--surface);color:var(--accent);margin-bottom:16px">{_svc_icon(w, i)}</div>'
+        f'<h3 style="margin:0 0 8px;font-size:20px;line-height:1.25">{_esc(w.get("t"))}</h3>'
+        f'<p style="margin:0;color:var(--muted);line-height:1.6">{_esc(w.get("d"))}</p></div>'
+        for i, w in enumerate(why))
+    out.append('<section class="pad" style="background:var(--surface)"><div class="wrap">'
+               f'<div class="sectlabel reveal">{_esc(data.get("why_label") or "Why choose us")}</div>'
+               f'<h2 class="reveal">{_esc(data.get("why_head") or "The difference is in the detail")}</h2>'
+               '<div class="grid g3" style="margin-top:44px;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px">'
+               + cards + '</div></div></section>')
+
+    # 3) how it works
+    proc = [p for p in (data.get("process") or []) if isinstance(p, dict) and p.get("t")][:4]
+    if len(proc) < 3:
+        proc = [{"t": "Get in touch", "d": "Tell us what you need. A quick chat or message is all it takes to start."},
+                {"t": "We sort the details", "d": "We talk you through the options and give you a clear, fair quote."},
+                {"t": "We get it done", "d": "The work happens on time and done right, and we stand behind it."}]
+    steps = "".join(
+        '<div class="reveal" style="flex:1 1 220px;position:relative">'
+        f'<div style="font-size:clamp(26px,4vw,38px);font-weight:800;color:var(--accent);line-height:1;'
+        f'font-variant-numeric:tabular-nums">{i + 1:02d}</div>'
+        f'<h3 style="margin:14px 0 6px;font-size:19px;line-height:1.25">{_esc(p.get("t"))}</h3>'
+        f'<p style="margin:0;color:var(--muted);line-height:1.6">{_esc(p.get("d"))}</p></div>'
+        for i, p in enumerate(proc))
+    out.append('<section class="pad" style="background:var(--bg)"><div class="wrap">'
+               '<div class="sectlabel reveal">How it works</div>'
+               f'<h2 class="reveal">{_esc(data.get("process_head") or "Simple from start to finish")}</h2>'
+               '<div style="display:flex;flex-wrap:wrap;gap:34px;margin-top:44px">'
+               + steps + '</div></div></section>')
+
+    # 4) FAQ
+    faqs = [f for f in (data.get("faqs") or []) if isinstance(f, dict) and f.get("q") and f.get("a")][:5]
+    if len(faqs) >= 3:
+        rows = "".join(
+            '<details class="reveal" style="border:1px solid var(--border);border-radius:14px;background:var(--card);'
+            'padding:2px 20px;margin-bottom:12px">'
+            f'<summary style="cursor:pointer;list-style:none;padding:18px 0;font-weight:650;font-size:17px;'
+            f'display:flex;justify-content:space-between;gap:16px;align-items:center">{_esc(f["q"])}'
+            '<span style="color:var(--accent);font-size:22px;flex:none">+</span></summary>'
+            f'<p style="margin:0 0 18px;color:var(--muted);line-height:1.65">{_esc(f["a"])}</p></details>'
+            for f in faqs)
+        out.append('<section class="pad" style="background:var(--surface)"><div class="wrap" style="max-width:760px">'
+                   '<div class="sectlabel reveal">Good to know</div>'
+                   f'<h2 class="reveal">{_esc(data.get("faq_head") or "Questions, answered")}</h2>'
+                   '<div style="margin-top:34px">' + rows + '</div></div></section>')
+
+    # 5) guarantee strip
+    guar = _esc(data.get("guarantee") or f"If it's not right, we make it right. That's the promise behind every "
+                f"job we do{(' in ' + loc) if loc else ''}.")
+    out.append('<section style="padding:0 clamp(20px,5vw,40px)"><div style="max-width:var(--maxw);margin:0 auto">'
+               '<div class="reveal" style="background:linear-gradient(120deg,var(--accent),var(--accent2));'
+               'border-radius:24px;padding:clamp(32px,5vw,52px);color:#fff;text-align:center">'
+               '<div style="font-size:12px;letter-spacing:.14em;text-transform:uppercase;opacity:.85;font-weight:700">Our promise</div>'
+               f'<div style="font-size:clamp(21px,3.4vw,30px);font-weight:750;line-height:1.3;margin-top:12px;'
+               f'max-width:22ch;margin-left:auto;margin-right:auto">{guar}</div></div></div></section>')
+
+    return "".join(out)
+
+
 def _gallery_section(photos_rel):
     if not photos_rel:
         return ""
@@ -446,7 +546,12 @@ Shape exactly:
 "strip":["4 tiny trust badges e.g. '12 years local','Open 7 days'"],
 "services_label":"1-2 words","services_head":"short section heading","services_sub":"one sentence",
 "services":[{{"t":"a REAL, specific service this {cat or 'business'} offers","d":"one sentence benefit"}} x3],
-"reviews_head":"short heading","cta_head":"short closing headline","cta_sub":"one sentence"}}
+"reviews_head":"short heading","cta_head":"short closing headline","cta_sub":"one sentence",
+"stats":[{{"n":"a short punchy figure e.g. '12+','4.9★','Same day'","l":"3-5 word label"}} x3],
+"why_head":"short heading for a why-choose-us section","why":[{{"t":"a real reason to choose this {cat or 'business'}","d":"one warm sentence"}} x3],
+"process_head":"short heading for a how-it-works section","process":[{{"t":"step name","d":"one sentence"}} x3],
+"faq_head":"short heading","faqs":[{{"q":"a real question a customer of this {cat or 'business'} would ask","a":"one honest, specific sentence"}} x4],
+"guarantee":"one confident sentence promising to stand behind the work"}}
 For "services", name the 3 actual services a {cat or 'business like this'} provides — infer them from the category and the reviews (e.g. a barber: cuts, fades, beard trims; an auto shop: servicing, repairs, diagnostics). Never use vague filler like "quality service". Mention {name} by name in the headline or sub. English, confident, no hashtags, no emojis in text."""
     if info.get("change_note"):
         ask += f"\nAlso apply this change the owner asked for: {info['change_note']}"
@@ -505,6 +610,7 @@ For "services", name the 3 actual services a {cat or 'business like this'} provi
         "CTA_SUB": _esc(g("cta_sub", "Get in touch today and we'll take it from there.")),
         "PHONE": _esc(info.get("phone") or ""), "ADDR": _esc(info.get("location") or info.get("address") or ""),
         "HOURS": _esc(info.get("hours") or "By appointment"),
+        "VALUE": _value_html(data, info),
     }
 
 
