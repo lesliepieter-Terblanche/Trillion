@@ -37,6 +37,11 @@ TEMPLATES = {
     "aurora":    {"file": "threeui-aurora.html", "photo": False, "dark": True},      # horizon aurora bands
     "bells":     {"file": "threeui-bells.html", "photo": False, "dark": True},       # radial standing-wave rings
     "dotgrid":   {"file": "threeui-dotgrid.html", "photo": False, "dark": True},     # pulsing dot matrix
+    "laser":     {"file": "threeui-laser.html", "photo": False, "dark": True},       # sweeping neon beams
+    "pixels":    {"file": "threeui-pixels.html", "photo": False, "dark": True},      # retro pixel field
+    "glass":     {"file": "threeui-glass.html", "photo": False, "dark": True},       # drifting frosted-glass blobs
+    "constellation": {"file": "threeui-constellation.html", "photo": False, "dark": True},  # points network
+    "ember":     {"file": "threeui-ember.html", "photo": False, "dark": True},       # rising embers
 }
 # trades that suit each ThreeUI look (only used when the look is left on Auto)
 THREEUI_WORDS = {
@@ -159,7 +164,7 @@ def _dark_style(category):
 LAYOUT_POOLS = [
     (EDITORIAL_WORDS, ["editorial", "premium", "ribbons", "object3d"]),
     (("restaurant", "cafe", "coffee", "bar", "bistro", "grill", "diner", "eatery", "bakery", "deli", "restaur",
-      "hotel", "guest", "lodge", "pub", "takeaway"), ["cinematic", "premium", "orb", "object3d"]),
+      "hotel", "guest", "lodge", "pub", "takeaway"), ["cinematic", "ember", "premium", "orb"]),
     (("salon", "beauty", "spa", "hair", "barber", "nail", "wellness", "yoga", "pilates", "massage", "aesthetic",
       "skin", "therap"), ["cinematic", "orb", "premium", "resonance", "bells"]),
     (("gym", "fitness", "crossfit", "boxing", "club", "night", "lounge", "gaming", "esport"),
@@ -167,9 +172,9 @@ LAYOUT_POOLS = [
     (("music", "sound", "audio", "recording", "dj", "venue", "event", "wedding", "church", "choir", "piano", "guitar"),
      ["resonance", "bells", "streams", "premium"]),
     (("auto", "detailing", "car ", "motor", "tyre", "spares", "mechanic", "panel", "workshop"),
-     ["liquid", "mercury", "object3d", "premium"]),
+     ["liquid", "object3d", "premium", "streams"]),
     (("jewel", "watch", "luxury", "boutique", "fashion", "interior", "decor", "furniture", "florist"),
-     ["cinematic", "mercury", "liquid", "premium"]),
+     ["cinematic", "liquid", "glass", "premium"]),
     (("property", "estate", "real estate", "letting", "rental", "architect", "construct", "build", "solar",
       "landscap", "garden", "farm", "eco", "green", "travel", "tour", "lodge", "guest", "outdoor"),
      ["aurora", "premium", "editorial", "object3d"]),
@@ -851,7 +856,7 @@ def revise(user, sid, change, progress=None, opts=None):
     elif _re.search(r"\b(laser|beams?)\b", low):
         template = "laser"
     elif _re.search(r"\b(mercury|liquid metal|chrome blob)\b", low):
-        template = "mercury"
+        template = "liquid"
     elif _re.search(r"\b(pixels?|retro pixel|8.?bit)\b", low):
         template = "pixels"
     elif _re.search(r"\b(glass|frosted|particles?)\b", low):
