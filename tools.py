@@ -182,6 +182,10 @@ SPECS = [
        "path is the PDF on the PC. A big manual takes a few minutes; it carries on by itself.", {"path": S, "name": S}, ["path"]),
     fn("split_manual", "Save each section of a manual (Engine, Brakes, Wiring ...) as its own PDF in a folder next to it.",
        {"manual": S}, []),
+    fn("deep_research", "Research a question on the web properly: plan several searches, read the top pages via the "
+       "private SearXNG engine, and write a short sourced brief with [n] citations. Use for 'research …', vendor or "
+       "competitor briefings, QBR prep, 'find out everything about …'. Takes up to a minute; the brief is saved to "
+       "notes.", {"question": S}, ["question"]),
     fn("ask_my_stuff", "Answer a question from the user's OWN documents and notes (their private document brain). "
        "Use whenever they ask about something that would be in their files, reports, contracts, decks or notes — "
        "'what did we agree', 'find in my docs', 'according to my files'. Returns the matching passages and their "
@@ -303,6 +307,7 @@ def describe(name, a):
         "tv_install_launcher": f"Installing {g('which') or 'a launcher'} on the TV", "tv_install_app": "Installing the app on the TV",
         "tv_set_launcher": "Setting the TV's default launcher", "tv_shell": f"Running on the TV: {g('command')}",
         "tv_press": f"TV: pressing {g('button')}", "tv_type": "TV: typing", "tv_open_app": f"TV: opening {g('package')}",
+        "deep_research": f"Researching: {g('question')}",
         "ask_my_stuff": f"Searching your documents for {g('query')}", "index_documents": f"Indexing {g('path')}",
         "list_documents": "Listing your documents", "forget_documents": f"Removing {g('source')} from your documents",
         "system_status": "Checking the PC", "self_heal": "Fixing myself", "update_self": "Updating myself from GitHub", "run_command": f"Run command: {g('command')}",
@@ -890,6 +895,11 @@ def version():
 
 
 RUNNING = None  # the version this running copy was started with (set at start-up)
+
+
+def t_deep_research(user, question):
+    import research
+    return research.research(user, question)
 
 
 def t_ask_my_stuff(user, query):
