@@ -182,6 +182,16 @@ SPECS = [
        "path is the PDF on the PC. A big manual takes a few minutes; it carries on by itself.", {"path": S, "name": S}, ["path"]),
     fn("split_manual", "Save each section of a manual (Engine, Brakes, Wiring ...) as its own PDF in a folder next to it.",
        {"manual": S}, []),
+    fn("vendors", "List the vendors in the user's channel portfolio and their stored context (target, partners, "
+       "QBR date, status, notes).", {}),
+    fn("vendor_add", "Add or update a vendor in the user's channel portfolio. Fields (all optional except name): "
+       "category, target, partners, qbr (next QBR date), status, notes.",
+       {"name": S, "category": S, "target": S, "partners": S, "qbr": S, "status": S, "notes": S}, ["name"]),
+    fn("vendor_brief", "Build a QBR-ready brief for one vendor: pulls the stored context, the user's own documents "
+       "and notes about that vendor, and fresh web news, then writes a brief with suggested next actions. Use for "
+       "QBR prep, 'brief me on <vendor>', vendor updates. Set fresh=false to skip the web news (faster).",
+       {"name": S, "fresh": {"type": "boolean"}}, ["name"]),
+    fn("vendor_remove", "Remove a vendor from the portfolio.", {"name": S}, ["name"]),
     fn("inbox_triage", "Read the user's Gmail inbox (last few days) and sort what needs them from the noise: each "
        "with a one-line summary, priority and whether it needs action, highest first. Use for 'check my inbox', "
        "'what needs my attention', 'any important emails'.", {}),
@@ -313,6 +323,8 @@ def describe(name, a):
         "tv_install_launcher": f"Installing {g('which') or 'a launcher'} on the TV", "tv_install_app": "Installing the app on the TV",
         "tv_set_launcher": "Setting the TV's default launcher", "tv_shell": f"Running on the TV: {g('command')}",
         "tv_press": f"TV: pressing {g('button')}", "tv_type": "TV: typing", "tv_open_app": f"TV: opening {g('package')}",
+        "vendors": "Listing your vendors", "vendor_add": f"Saving {g('name')}", "vendor_brief": f"Briefing on {g('name')}",
+        "vendor_remove": f"Removing {g('name')}",
         "inbox_triage": "Going through your inbox", "draft_email_reply": "Drafting a reply",
         "deep_research": f"Researching: {g('question')}",
         "ask_my_stuff": f"Searching your documents for {g('query')}", "index_documents": f"Indexing {g('path')}",
@@ -902,6 +914,28 @@ def version():
 
 
 RUNNING = None  # the version this running copy was started with (set at start-up)
+
+
+def t_vendors(user):
+    import vendors
+    return {"vendors": vendors.listing(user)}
+
+
+def t_vendor_add(user, name, category="", target="", partners="", qbr="", status="", notes=""):
+    import vendors
+    f = {k: v for k, v in dict(category=category, target=target, partners=partners, qbr=qbr,
+                               status=status, notes=notes).items() if v}
+    return vendors.add(user, name, **f)
+
+
+def t_vendor_brief(user, name, fresh=True):
+    import vendors
+    return vendors.brief(user, name, fresh=bool(fresh))
+
+
+def t_vendor_remove(user, name):
+    import vendors
+    return vendors.remove(user, name)
 
 
 def t_inbox_triage(user):

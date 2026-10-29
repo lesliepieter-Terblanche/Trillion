@@ -4243,6 +4243,34 @@ def growth_ep(user=Depends(admin)):
     return growth.summary(user)
 
 
+@app.get("/api/vendors")
+def vendors_list(user=Depends(auth)):
+    import vendors
+    return {"vendors": vendors.listing(user)}
+
+
+@app.post("/api/vendors")
+def vendors_save(p: dict = Body(...), user=Depends(auth)):
+    import vendors
+    name = (p.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "Give the vendor a name.")
+    f = {k: p.get(k) for k in ("category", "target", "partners", "qbr", "status", "notes") if p.get(k) is not None}
+    return vendors.add(user, name, **f)
+
+
+@app.post("/api/vendors/brief")
+def vendors_brief(p: dict = Body(...), user=Depends(auth)):
+    import vendors
+    return vendors.brief(user, (p.get("name") or "").strip(), fresh=p.get("fresh", True) is not False)
+
+
+@app.delete("/api/vendors/{name}")
+def vendors_del(name: str, user=Depends(auth)):
+    import vendors
+    return vendors.remove(user, name)
+
+
 @app.post("/api/tv/connect")
 def tv_connect_ep(p: dict = Body(...), user=Depends(admin)):
     import tvadb

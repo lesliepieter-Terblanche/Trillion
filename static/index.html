@@ -738,6 +738,26 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
   <div id="ap-list" style="display:flex;flex-direction:column;gap:26px"></div>
 </div>
 
+<div class="view" id="v-vendors">
+  <h2>Vendor intelligence</h2>
+  <div class="muted">Your channel portfolio. Keep each vendor's context, then ask for a QBR-ready brief that pulls in your documents, notes and fresh web news.</div>
+  <div class="panel" style="gap:10px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+      <label class="field"><span>Vendor name</span><input id="vn-name" placeholder="Juniper Networks"></label>
+      <label class="field"><span>Category</span><input id="vn-cat" placeholder="Networking"></label>
+      <label class="field"><span>Target</span><input id="vn-target" placeholder="R… / GP%"></label>
+      <label class="field"><span>Next QBR</span><input id="vn-qbr" placeholder="March 2026"></label>
+      <label class="field"><span>Partners</span><input id="vn-partners" placeholder="key resellers"></label>
+      <label class="field"><span>Status</span><input id="vn-status" placeholder="on track / at risk"></label>
+    </div>
+    <label class="field"><span>Notes</span><textarea id="vn-notes" rows="2" placeholder="deal reg, enablement, asks…"></textarea></label>
+    <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="vn-save" style="min-height:40px;font-size:12px">SAVE VENDOR</button></div>
+    <div class="msg" id="vn-msg"></div>
+  </div>
+  <div id="vn-list" style="display:flex;flex-direction:column;gap:14px"></div>
+  <div class="panel" id="vn-brief" hidden><b id="vn-brief-h"></b><div id="vn-brief-b" style="white-space:pre-wrap;margin-top:10px;font-size:14px;line-height:1.6"></div></div>
+</div>
+
 <div class="view" id="v-growth">
   <h2>How Trillion is growing</h2>
   <div class="muted">What she's learned, the skills and automations she's gained, and how busy she's been — all from this PC.</div>
@@ -1161,7 +1181,7 @@ const api=async(u,o={})=>{if(o.json!==undefined){o.method=o.method||'POST';o.hea
 const hm=t=>new Date(t*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false});
 let hold=0,S=null,sending=false,speakNext=false,settingsLoaded=false,cwd='';
 
-const LOADERS={apps:()=>loadApps(),tvremote:()=>loadTvRemote(),growth:()=>loadGrowth(),sites:()=>{loadSites();loadClones();},bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),workflow:()=>wfLoad(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);loadStorage();},memory:()=>loadNotes(''),videos:()=>loadVideos(),web:()=>{loadWeb();wbKeyState();},dashboard:()=>loadDash(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();loadBackup();kokoroState();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
+const LOADERS={apps:()=>loadApps(),tvremote:()=>loadTvRemote(),growth:()=>loadGrowth(),vendors:()=>loadVendors(),sites:()=>{loadSites();loadClones();},bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),workflow:()=>wfLoad(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);loadStorage();},memory:()=>loadNotes(''),videos:()=>loadVideos(),web:()=>{loadWeb();wbKeyState();},dashboard:()=>loadDash(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();loadBackup();kokoroState();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
 let VIEW='control';
 function go(v){
   VIEW=v;try{if(v!=='settings'&&mtTimer)micTestStop();}catch(e){}
@@ -2442,6 +2462,21 @@ function drawCommands(){
   $('cmdlist').innerHTML=CMDS.filter(g=>(g[0]!=='Gumroad store'||(S&&S.store_on))&&(g[0]!=='Bible study'||(S&&S.bible_on))).map(g=>`<div class="panel"><b>${esc(g[0])}</b><div class="cmdg">${g[1].map(c=>`<div class="cmdr"><div><code>${esc(c[0])}</code>${c[1]?`<small>${esc(c[1])}</small>`:''}</div><button class="btn" data-use="${esc(c[0])}" style="min-height:40px;font-size:12px;flex:none">USE</button></div>`).join('')}</div></div>`).join('');
   document.querySelectorAll('[data-use]').forEach(b=>b.onclick=()=>{go('control');$('say').value=b.dataset.use;$('say').focus();});
 }
+async function loadVendors(){let d;try{d=await (await api('/api/vendors')).json();}catch(e){return;}
+  const vs=d.vendors||[];
+  $('vn-list').innerHTML=vs.length?vs.map(v=>`<div class="panel"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+    <div><b style="font-size:18px">${esc(v.name)}</b><div class="muted" style="font-size:12px">${[v.category,v.status].filter(Boolean).map(esc).join(' · ')}</div></div>
+    <div class="btns" style="margin:0"><button class="btn pri" data-vbrief="${esc(v.name)}" style="min-height:34px;font-size:11px">QBR BRIEF</button><button class="btn" data-vdel="${esc(v.name)}" style="min-height:34px;font-size:11px;opacity:.6">✕</button></div></div>
+    <div class="muted" style="font-size:13px;margin-top:6px">${[v.target&&('Target: '+v.target),v.qbr&&('QBR: '+v.qbr),v.partners&&('Partners: '+v.partners)].filter(Boolean).map(esc).join(' · ')}</div>
+    ${v.notes?`<div style="font-size:13px;margin-top:6px">${esc(v.notes)}</div>`:''}</div>`).join(''):'<div class="muted">No vendors yet. Add your first above.</div>';
+  $('vn-list').querySelectorAll('[data-vdel]').forEach(b=>b.onclick=async()=>{await api('/api/vendors/'+encodeURIComponent(b.dataset.vdel),{method:'DELETE'});loadVendors();});
+  $('vn-list').querySelectorAll('[data-vbrief]').forEach(b=>b.onclick=async()=>{const name=b.dataset.vbrief;b.disabled=true;
+    $('vn-brief').hidden=false;$('vn-brief-h').textContent='Briefing on '+name+'…';$('vn-brief-b').textContent='Pulling your documents, notes and fresh news — about a minute.';$('vn-brief').scrollIntoView({behavior:'smooth'});
+    try{const r=await (await api('/api/vendors/brief',{json:{name:name}})).json();$('vn-brief-h').textContent=r.error?('Brief for '+name):('QBR brief — '+name);$('vn-brief-b').textContent=r.error||(r.brief+(r.sources&&r.sources.length?'\n\nSources:\n'+r.sources.map(s=>'['+s.n+'] '+s.title+' — '+s.url).join('\n'):''));}catch(e){$('vn-brief-b').textContent=e.message;}b.disabled=false;});
+}
+$('vn-save')&&($('vn-save').onclick=async()=>{const name=($('vn-name').value||'').trim();const m=$('vn-msg');if(!name){m.className='msg bad';m.textContent='Vendor name first.';return;}
+  const body={name,category:$('vn-cat').value.trim(),target:$('vn-target').value.trim(),qbr:$('vn-qbr').value.trim(),partners:$('vn-partners').value.trim(),status:$('vn-status').value.trim(),notes:$('vn-notes').value.trim()};
+  try{await api('/api/vendors',{json:body});m.className='msg ok';m.textContent='Saved '+name+'.';['vn-name','vn-cat','vn-target','vn-qbr','vn-partners','vn-status','vn-notes'].forEach(i=>$(i).value='');loadVendors();}catch(e){m.className='msg bad';m.textContent=e.message;}});
 async function loadGrowth(){let d;try{d=await (await api('/api/growth')).json();}catch(e){return;}
   if(d.error){$('gr-tiles').innerHTML='<div class="muted">'+esc(d.error)+'</div>';return;}
   const t=d.tiles||{};
@@ -2479,7 +2514,7 @@ function loadTvRemote(){
     }catch(e){$('tvr-applist').textContent=e.message;}};
 }
 function drawMore(){
-  const items=[['workflow','Workflow',"What's running now, live"],...(S&&S.bible_on?[['bible','Bible study','Daily verse, reader, notes, helper']]:[]),...(S&&S.store_on?[['store','Store','Gumroad sales, products, codes']]:[]),['videos','Videos','Make and watch videos'],['web','Web Studio','Build a premium site for a business'],['dashboard','Campaign','Lead tracking + email outreach'],['files','Files','Browse your folders'],['sites','Websites','Read a site, make a deck or report'],['apps','Apps','Search rankings and automations'],['tvremote','TV Remote','Control an Android TV from your phone'],...(S&&S.user.is_admin?[['growth','How Trillion is growing','Learning, skills, automations, activity']]:[]),['memory','Memory','What she remembers'],['routines','Routines','Morning briefing, news, weather'],['skills','Skills','Extra abilities and connectors'],['commands','Commands','Everything you can say'],['settings','Settings','Look, brain, voice, keys']];
+  const items=[['workflow','Workflow',"What's running now, live"],...(S&&S.bible_on?[['bible','Bible study','Daily verse, reader, notes, helper']]:[]),...(S&&S.store_on?[['store','Store','Gumroad sales, products, codes']]:[]),['videos','Videos','Make and watch videos'],['web','Web Studio','Build a premium site for a business'],['dashboard','Campaign','Lead tracking + email outreach'],['files','Files','Browse your folders'],['sites','Websites','Read a site, make a deck or report'],['apps','Apps','Search rankings and automations'],['tvremote','TV Remote','Control an Android TV from your phone'],['vendors','Vendor intelligence','Your channel portfolio + QBR briefs'],...(S&&S.user.is_admin?[['growth','How Trillion is growing','Learning, skills, automations, activity']]:[]),['memory','Memory','What she remembers'],['routines','Routines','Morning briefing, news, weather'],['skills','Skills','Extra abilities and connectors'],['commands','Commands','Everything you can say'],['settings','Settings','Look, brain, voice, keys']];
   if(S&&S.user.is_admin)items.push(['family','Family','Logins, update, backup']);
   $('moregrid').innerHTML=items.map(i=>`<button class="mbtn" data-go="${i[0]}"><b>${i[1]}</b><span>${i[2]}</span></button>`).join('')+`<button class="mbtn" id="out2"><b>Sign out</b><span>${S?esc(S.user.name):''}</span></button>`;
   $('out2').onclick=()=>$('out').click();
