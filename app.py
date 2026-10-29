@@ -2171,6 +2171,25 @@ def gensites_thumb(sid: int, user=Depends(auth)):
     return FileResponse(row["thumb"], media_type="image/jpeg")
 
 
+@app.api_route("/site/{token}/__api/{action}", methods=["GET", "POST"])
+@app.api_route("/site/site/{token}/__api/{action}", methods=["GET", "POST"])
+async def site_tier2_api(token: str, action: str, request: Request):
+    """Public, token-scoped backend for a generated site's tier-2 add-ons (shop, members, booking, forum).
+    Declared before the file catch-all so '__api/...' isn't served as a file. Reachable over the Funnel
+    (only /site/ is exposed) because the site calls it with a relative URL."""
+    import siteapps
+    data = {}
+    if request.method == "POST":
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+    else:
+        data = dict(request.query_params)
+    out = await run_in_threadpool(siteapps.handle, token, action, data, request.method)
+    return JSONResponse(out)
+
+
 @app.get("/site/{token}/{path:path}")
 @app.get("/site/site/{token}/{path:path}")   # Tailscale Funnel --set-path doesn't strip /site, so it arrives doubled.
 # The doubled route is declared innermost so FastAPI registers it FIRST — otherwise /site/{token} greedily
@@ -2194,6 +2213,18 @@ def clone_preview(token: str, path: str = ""):
     return FileResponse(p, headers={"Content-Security-Policy": "sandbox allow-scripts allow-forms allow-popups",
                                     "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer",
                                     "Cache-Control": "no-store"})
+
+
+@app.get("/api/gensites/{sid}/activity")
+def gensite_activity(sid: int, user=Depends(auth)):
+    import siteapps
+    return siteapps.activity(user, sid)
+
+
+@app.post("/api/gensites/{sid}/activity")
+def gensite_activity_set(sid: int, p: dict = Body(...), user=Depends(auth)):
+    import siteapps
+    return siteapps.set_status(user, sid, (p.get("kind") or "").strip(), p.get("id"), (p.get("status") or "").strip())
 
 
 @app.get("/api/sites")

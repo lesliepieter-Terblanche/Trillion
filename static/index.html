@@ -1016,6 +1016,13 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
         <label style="display:flex;gap:7px;align-items:center"><input type="checkbox" id="wb-book"> Booking form</label>
         <label style="display:flex;gap:7px;align-items:center"><input type="checkbox" id="wb-promo"> Promo / advert banner</label>
         <label style="display:flex;gap:7px;align-items:center"><input type="checkbox" id="wb-pl-chk"> Price list</label>
+      </div>
+      <div class="muted" style="font-size:12px;margin:10px 0 4px">Interactive (takes real orders, sign-ups and bookings on the site — all stored locally):</div>
+      <div style="display:flex;flex-wrap:wrap;gap:16px;font-size:14px">
+        <label style="display:flex;gap:7px;align-items:center"><input type="checkbox" id="wb-shop"> Online shop / cart <span class="muted" style="font-size:11px">(uses the price list)</span></label>
+        <label style="display:flex;gap:7px;align-items:center"><input type="checkbox" id="wb-members"> Member login</label>
+        <label style="display:flex;gap:7px;align-items:center"><input type="checkbox" id="wb-appts"> Appointment booking</label>
+        <label style="display:flex;gap:7px;align-items:center"><input type="checkbox" id="wb-community"> Community forum</label>
       </div></div>
     <div id="wb-pl-wrap" hidden><label class="field"><span>Price list — one item per line: <b>Name | Price | optional note</b></span><textarea id="wb-pl" rows="4" placeholder="Haircut | R120&#10;Beard trim | R60 | includes hot towel&#10;Kids cut | R80&#10;Fade | R150"></textarea></label></div>
     <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="wb-go">GENERATE WEBSITE</button></div>
@@ -1793,6 +1800,17 @@ let webPoll=null;
 async function loadWeb(){
   try{const d=await (await api('/api/gensites')).json();drawWeb(d.sites||[]);}catch(e){}
 }
+async function loadActivity(id,w){let d;try{d=await (await api('/api/gensites/'+id+'/activity')).json();}catch(e){w.innerHTML='<div class="msg bad">Could not load.</div>';return;}
+  if(d.error){w.innerHTML='<div class="msg bad">'+esc(d.error)+'</div>';return;}
+  const c=d.counts||{};const dt=t=>new Date(t*1000).toLocaleDateString();
+  const orders=(d.orders||[]).map(o=>`<div style="border-bottom:1px solid var(--edge2);padding:8px 0;font-size:13px"><b>${esc(o.name)}</b> · ${esc(o.contact)} · <span class="muted">${dt(o.created)}</span> · <i>${esc(o.status)}</i><br>${(o.items||[]).map(it=>esc(it.qty+'x '+it.name)).join(', ')}${o.total?' — <b>'+esc(o.total)+'</b>':''}${o.status!=='done'?` <button class="btn" data-done="order:${o.id}" style="min-height:26px;font-size:11px;padding:2px 8px">Mark done</button>`:''}</div>`).join('')||'<div class="muted" style="font-size:12px">No orders.</div>';
+  const books=(d.bookings||[]).map(o=>`<div style="border-bottom:1px solid var(--edge2);padding:8px 0;font-size:13px"><b>${esc(o.name)}</b> · ${esc(o.contact)} · <b>${esc(o.slot)}</b> · <i>${esc(o.status)}</i>${o.note?'<br>'+esc(o.note):''}${o.status!=='done'?` <button class="btn" data-done="booking:${o.id}" style="min-height:26px;font-size:11px;padding:2px 8px">Mark done</button>`:''}</div>`).join('')||'<div class="muted" style="font-size:12px">No bookings.</div>';
+  const mem=(d.members||[]).map(m=>`<div style="font-size:13px;padding:4px 0">${esc(m.name)} · <span class="muted">${esc(m.email)}</span></div>`).join('')||'<div class="muted" style="font-size:12px">No members.</div>';
+  w.innerHTML=`<div style="border:1px solid var(--edge2);border-radius:12px;padding:16px;background:var(--panel2,rgba(127,127,127,.06))">
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px;font-size:12px;letter-spacing:.05em;color:var(--muted)">
+      <span>ORDERS ${c.orders||0}</span><span>BOOKINGS ${c.bookings||0}</span><span>MEMBERS ${c.members||0}</span><span>FORUM POSTS ${c.posts||0}</span></div>
+    <b style="font-size:13px">Orders</b>${orders}<b style="font-size:13px;display:block;margin-top:12px">Bookings</b>${books}<b style="font-size:13px;display:block;margin-top:12px">Members</b>${mem}</div>`;
+  w.querySelectorAll('[data-done]').forEach(b=>b.onclick=async()=>{const [kind,iid]=b.dataset.done.split(':');await api('/api/gensites/'+id+'/activity',{json:{kind,id:+iid,status:'done'}});loadActivity(id,w);});}
 function drawWeb(sites){
   const host=location.host;
   $('weblist').innerHTML=sites.map(s=>{
@@ -1807,7 +1825,9 @@ function drawWeb(sites){
         <button class="btn" data-wbv="${s.id}" style="min-height:40px;font-size:12px">${s.has_video?'NEW PITCH VIDEO':'PITCH VIDEO'}</button>
         ${s.has_video?`<a class="btn" href="/api/gensites/${s.id}/pitch-video?download=1" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;text-decoration:none;min-height:40px;font-size:12px">▶ WATCH VIDEO</a>`:''}
         <button class="btn" data-wbc="${s.id}" style="min-height:40px;font-size:12px">CHANGE…</button>
+        ${(s.addons||[]).some(a=>['shop','members','appointments','community'].includes(a))?`<button class="btn" data-wba="${s.id}" style="min-height:40px;font-size:12px">ACTIVITY</button>`:''}
         <button class="btn" data-wbd="${s.id}" style="min-height:40px;font-size:12px">DELETE</button></div>
+      <div id="wbact-${s.id}" hidden style="margin-top:14px"></div>
       <div id="wbch-${s.id}" hidden style="margin-top:14px;padding:16px;border:1px solid var(--edge2);border-radius:12px;background:var(--panel2,rgba(127,127,127,.06));display:grid;gap:12px">
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
           <label class="field"><span>Hero / look</span><select data-ch="look">
@@ -1835,13 +1855,14 @@ function drawWeb(sites){
         </div>
         <div><div class="muted" style="font-size:12px;margin-bottom:6px">Features</div>
           <div style="display:flex;flex-wrap:wrap;gap:14px;font-size:13.5px">
-            ${['whatsapp:WhatsApp button','form:Enquiry form','booking:Booking form','promo:Promo banner','pricelist:Price list'].map(x=>{const k=x.split(':')[0];return `<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-ch-addon="${k}" ${(s.addons||[]).includes(k)?'checked':''}> ${x.split(':')[1]}</label>`;}).join('')}
+            ${['whatsapp:WhatsApp button','form:Enquiry form','booking:Booking form','promo:Promo banner','pricelist:Price list','shop:Online shop','members:Member login','appointments:Appointment booking','community:Community forum'].map(x=>{const k=x.split(':')[0];return `<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-ch-addon="${k}" ${(s.addons||[]).includes(k)?'checked':''}> ${x.split(':')[1]}</label>`;}).join('')}
           </div></div>
         <label class="field"><span>Full prompt — anything else (reword copy, specific tweaks)</span><textarea data-ch="note" rows="2" placeholder='e.g. "make the headline punchier", "warmer tone", "mention we are open Sundays"'></textarea></label>
         <div class="btns" style="justify-content:flex-start"><button class="btn pri" data-wbapply="${s.id}" style="min-height:38px;font-size:12px">APPLY CHANGES</button><button class="btn" data-wbcancel="${s.id}" style="min-height:38px;font-size:12px">CANCEL</button></div>
       </div>
     </div>`;}).join('')||'<div class="muted">No sites yet. Fill in a business above and press Generate.</div>';
   document.querySelectorAll('[data-wbd]').forEach(b=>b.onclick=async()=>{await api('/api/gensites/'+b.dataset.wbd,{method:'DELETE'});loadWeb();});
+  document.querySelectorAll('[data-wba]').forEach(b=>b.onclick=async()=>{const id=b.dataset.wba,w=$('wbact-'+id);if(!w.hidden){w.hidden=true;return;}w.hidden=false;w.innerHTML='<div class="muted" style="font-size:13px">Loading…</div>';loadActivity(id,w);});
   document.querySelectorAll('[data-wbv]').forEach(b=>b.onclick=async()=>{const id=b.dataset.wbv,m=$('wb-msg');b.disabled=true;
     m.className='msg muted';m.textContent='Making a 30-second pitch video (about 2-4 minutes)…';
     try{await api('/api/gensites/'+id+'/pitch-video',{json:{}});}catch(e){m.className='msg bad';m.textContent=e.message;b.disabled=false;return;}
@@ -1893,7 +1914,7 @@ $('wb-go')&&($('wb-go').onclick=async()=>{
   const name=$('wb-name').value.trim();const link=$('wb-link').value.trim();
   if(!name&&!link){$('wb-msg').className='msg bad';$('wb-msg').textContent='Enter a business name or paste a Google Maps link.';return;}
   const photos=$('wb-photos').value.split('\n').map(x=>x.trim()).filter(x=>x);
-  const addons=[];if($('wb-wa').checked)addons.push('whatsapp');if($('wb-form').checked)addons.push('form');if($('wb-book').checked)addons.push('booking');if($('wb-promo').checked)addons.push('promo');if($('wb-pl-chk').checked)addons.push('pricelist');
+  const addons=[];if($('wb-wa').checked)addons.push('whatsapp');if($('wb-form').checked)addons.push('form');if($('wb-book').checked)addons.push('booking');if($('wb-promo').checked)addons.push('promo');if($('wb-pl-chk').checked)addons.push('pricelist');if($('wb-shop')&&$('wb-shop').checked)addons.push('shop');if($('wb-members')&&$('wb-members').checked)addons.push('members');if($('wb-appts')&&$('wb-appts').checked)addons.push('appointments');if($('wb-community')&&$('wb-community').checked)addons.push('community');
   const body={business:name,link,category:$('wb-cat').value.trim(),location:$('wb-loc').value.trim(),phone:$('wb-phone').value.trim(),
     services:$('wb-svc').value.trim(),hours:$('wb-hours').value.trim(),pricelist:$('wb-pl').value.trim(),style:$('wb-style').value,look:$('wb-look').value,addons,photos};
   $('wb-msg').className='msg muted';$('wb-msg').textContent='Building the website — a minute or two. You can watch the steps in the Control Room.';

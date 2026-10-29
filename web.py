@@ -687,7 +687,7 @@ def _addons(info, palette):
     num = _wa_number(phone)
     email = info.get("email") or ""
     booking = "booking" in addons
-    out = {"PROMO": "", "CONTACT": "", "FLOAT": "", "PRICELIST": ""}
+    out = {"PROMO": "", "CONTACT": "", "FLOAT": "", "PRICELIST": "", "APPS": ""}
     if "pricelist" in addons:
         out["PRICELIST"] = _pricelist_html(info)
     # floating WhatsApp button
@@ -731,7 +731,194 @@ def _addons(info, palette):
             f'<button class="btn primary" type="button" onclick="var n=document.getElementById(\'f_n\').value,'
             f'c=document.getElementById(\'f_c\').value,m=document.getElementById(\'f_m\').value;{action}">{label}</button>'
             '</div></div></section>')
+    # tier-2 interactive add-ons (shop, members, appointments, community) — need a site token for their backend
+    apps_html, cart_float = _tier2(info, palette, addons)
+    out["APPS"] = apps_html
+    if cart_float:
+        out["FLOAT"] = cart_float + out["FLOAT"]
     return out
+
+
+# ---- tier-2 interactive add-ons ------------------------------------------------------------------
+_T2_HELPER = (
+    "<script>window.__T2=(function(){var B=location.pathname.replace(/[^/]*$/,'');"   # dir of this page
+    "function api(a,m,d){return fetch(B+'__api/'+a,{method:m||'POST',headers:{'Content-Type':'application/json'},"
+    "body:d?JSON.stringify(d):null}).then(function(r){return r.json();});}"
+    "return{api:api,base:B};})();</script>")
+
+
+def _tier2(info, palette, addons):
+    """Build the ticked tier-2 sections. They talk to /site/<token>/__api/<action> via a relative URL, so they
+    work on the LAN preview, the shared link and the public Funnel alike. Returns (apps_html, cart_float_html)."""
+    want = [a for a in ("shop", "members", "appointments", "community") if a in addons]
+    if not want:
+        return "", ""
+    st = _inp(palette)
+    sections = [_T2_HELPER]
+    cart_float = ""
+
+    if "shop" in addons:
+        items = info.get("pricelist_items")
+        if items is None:
+            items = _parse_pricelist(info.get("pricelist"))
+        cards = []
+        for i, it in enumerate(items[:24]):
+            pr = _esc(it.get("price") or "")
+            desc = f'<div class="muted" style="font-size:13px;margin-top:4px">{_esc(it.get("desc"))}</div>' if it.get("desc") else ""
+            cards.append(
+                '<div class="reveal" style="border:1px solid var(--border);border-radius:16px;background:var(--card);'
+                'padding:20px;display:flex;flex-direction:column;gap:6px">'
+                f'<div style="font-weight:650;font-size:17px">{_esc(it.get("name"))}</div>{desc}'
+                f'<div style="color:var(--accent);font-weight:700;margin-top:4px">{pr or "Enquire"}</div>'
+                f'<button class="btn primary" type="button" style="margin-top:10px" '
+                f"onclick=\"T2cart.add({json.dumps(it.get('name') or '')},{json.dumps(it.get('price') or '')})\">Add to cart</button></div>")
+        if cards:
+            sections.append(
+                '<section class="pad" id="shop" style="background:var(--bg)"><div class="wrap">'
+                f'<div class="sectlabel reveal">{_esc(info.get("shop_head") or "Shop")}</div>'
+                '<h2 class="reveal">Order online</h2>'
+                '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px;margin-top:40px">'
+                + "".join(cards) + '</div></div></section>')
+            cart_float = _SHOP_JS(st)
+
+    if "members" in addons:
+        note = _esc(info.get("members_note") or "Welcome back. This is your members area — look out for exclusive "
+                    "updates and offers here.")
+        sections.append(
+            '<section class="pad" id="members" style="background:var(--surface)"><div class="wrap" style="max-width:520px">'
+            '<div class="sectlabel reveal">Members</div><h2 class="reveal" id="m_head">Member login</h2>'
+            '<div class="reveal" id="m_area" style="margin-top:26px">'
+            '<div id="m_forms" style="display:grid;gap:12px">'
+            f'<input id="m_name" placeholder="Your name (sign up only)" style="{st}">'
+            f'<input id="m_email" placeholder="Email" style="{st}">'
+            f'<input id="m_pw" type="password" placeholder="Password" style="{st}">'
+            '<div style="display:flex;gap:10px">'
+            '<button class="btn primary" type="button" style="flex:1" onclick="T2mem.login()">Log in</button>'
+            '<button class="btn ghost" type="button" style="flex:1" onclick="T2mem.signup()">Sign up</button></div>'
+            '<div id="m_msg" style="font-size:13px;color:var(--muted);min-height:18px"></div></div>'
+            f'<div id="m_in" style="display:none"><p style="font-size:17px;line-height:1.6">{note}</p>'
+            '<button class="btn ghost" type="button" onclick="T2mem.logout()" style="margin-top:10px">Log out</button></div>'
+            '</div></div></section>' + _MEM_JS)
+
+    if "appointments" in addons:
+        sections.append(
+            '<section class="pad" id="book" style="background:var(--bg)"><div class="wrap" style="max-width:560px">'
+            '<div class="sectlabel reveal">Appointments</div>'
+            f'<h2 class="reveal">{_esc(info.get("appt_head") or "Book a time")}</h2>'
+            '<div class="reveal" style="margin-top:26px;display:grid;gap:14px">'
+            f'<input id="b_n" placeholder="Your name" style="{st}">'
+            f'<input id="b_c" placeholder="Phone or email" style="{st}">'
+            f'<input id="b_d" type="date" style="{st}">'
+            f'<select id="b_t" style="{st}"><option value="">Preferred time…</option>'
+            + "".join(f'<option>{h}</option>' for h in
+                      ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00"])
+            + '</select>'
+            f'<textarea id="b_m" rows="2" placeholder="Anything we should know? (optional)" style="{st}"></textarea>'
+            '<button class="btn primary" type="button" onclick="T2book()">Request booking</button>'
+            '<div id="b_msg" style="font-size:13px;color:var(--muted);min-height:18px"></div>'
+            '</div></div></section>' + _BOOK_JS)
+
+    if "community" in addons:
+        sections.append(
+            '<section class="pad" id="community" style="background:var(--surface)"><div class="wrap" style="max-width:720px">'
+            '<div class="sectlabel reveal">Community</div>'
+            f'<h2 class="reveal">{_esc(info.get("forum_head") or "Join the conversation")}</h2>'
+            '<div class="reveal" style="margin-top:24px;display:grid;gap:10px;'
+            'border:1px solid var(--border);border-radius:16px;background:var(--card);padding:18px">'
+            f'<input id="c_name" placeholder="Your name" style="{st}">'
+            f'<textarea id="c_body" rows="3" placeholder="Start a discussion…" style="{st}"></textarea>'
+            '<button class="btn primary" type="button" onclick="T2forum.post(0)">Post</button></div>'
+            '<div id="c_list" style="margin-top:26px;display:grid;gap:16px"></div>'
+            '</div></section>' + _FORUM_JS(st))
+
+    return "".join(sections), cart_float
+
+
+def _SHOP_JS(st):
+    return (
+        '<div id="cartbtn" onclick="T2cart.open()" style="position:fixed;left:20px;bottom:20px;z-index:60;'
+        'background:var(--accent);color:#fff;border-radius:999px;padding:12px 18px;font-weight:700;cursor:pointer;'
+        'box-shadow:0 12px 30px rgba(0,0,0,.35);display:none">Cart <span id="cartn">0</span></div>'
+        '<div id="cartbg" onclick="T2cart.close()" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:70;display:none"></div>'
+        '<div id="cartdr" style="position:fixed;top:0;right:0;bottom:0;width:min(400px,90vw);background:var(--bg);'
+        'z-index:71;transform:translateX(100%);transition:transform .3s;padding:24px;overflow:auto;'
+        'box-shadow:-20px 0 50px rgba(0,0,0,.4)">'
+        '<div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">Your cart</h3>'
+        '<button onclick="T2cart.close()" style="background:none;border:0;font-size:26px;color:var(--text);cursor:pointer">×</button></div>'
+        '<div id="cartitems" style="margin-top:18px;display:grid;gap:10px"></div>'
+        '<div id="carttot" style="font-weight:700;margin:16px 0;text-align:right"></div>'
+        '<div id="cartco" style="display:grid;gap:10px">'
+        f'<input id="o_n" placeholder="Your name" style="{st}">'
+        f'<input id="o_c" placeholder="Phone or email" style="{st}">'
+        f'<textarea id="o_m" rows="2" placeholder="Note (optional)" style="{st}"></textarea>'
+        '<button class="btn primary" type="button" onclick="T2cart.checkout()">Place order</button></div>'
+        '<div id="cartmsg" style="margin-top:12px;font-size:14px;line-height:1.5"></div></div>'
+        "<script>window.T2cart=(function(){var K='cart_'+location.pathname,C=[];"
+        "try{C=JSON.parse(localStorage.getItem(K)||'[]')}catch(e){}"
+        "function save(){try{localStorage.setItem(K,JSON.stringify(C))}catch(e){}draw();}"
+        "function draw(){var n=C.reduce(function(a,b){return a+b.qty},0);"
+        "var b=document.getElementById('cartbtn');if(b){b.style.display=n?'block':'none';document.getElementById('cartn').textContent=n;}"
+        "var w=document.getElementById('cartitems');if(!w)return;var tot=0;"
+        "w.innerHTML=C.map(function(it,i){var m=(it.price||'').match(/[\\d][\\d\\s.,]*/);if(m)tot+=parseFloat(m[0].replace(/[\\s,]/g,''))*it.qty;"
+        "return '<div style=\"display:flex;justify-content:space-between;gap:10px;align-items:center;border-bottom:1px solid var(--border);padding-bottom:8px\">'"
+        "+'<div><div style=\"font-weight:600\">'+it.name+'</div><div style=\"color:var(--muted);font-size:13px\">'+(it.price||'')+'</div></div>'"
+        "+'<div style=\"display:flex;gap:6px;align-items:center\"><button onclick=\"T2cart.q('+i+',-1)\" style=\"width:26px;height:26px;border-radius:7px;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer\">-</button>'"
+        "+'<span>'+it.qty+'</span><button onclick=\"T2cart.q('+i+',1)\" style=\"width:26px;height:26px;border-radius:7px;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer\">+</button></div></div>';}).join('')"
+        "||'<div style=\"color:var(--muted)\">Your cart is empty.</div>';"
+        "document.getElementById('carttot').textContent=tot?('Total: R'+tot.toFixed(2)):'';}"
+        "return{add:function(n,p){var e=C.find(function(x){return x.name===n});if(e)e.qty++;else C.push({name:n,price:p,qty:1});save();this.open();},"
+        "q:function(i,d){C[i].qty+=d;if(C[i].qty<1)C.splice(i,1);save();},"
+        "open:function(){draw();document.getElementById('cartbg').style.display='block';document.getElementById('cartdr').style.transform='translateX(0)';},"
+        "close:function(){document.getElementById('cartbg').style.display='none';document.getElementById('cartdr').style.transform='translateX(100%)';},"
+        "checkout:function(){var n=document.getElementById('o_n').value,c=document.getElementById('o_c').value,m=document.getElementById('cartmsg');"
+        "if(!C.length){m.textContent='Your cart is empty.';return;}if(!n||!c){m.textContent='Please add your name and contact.';return;}"
+        "m.textContent='Sending…';__T2.api('order','POST',{name:n,contact:c,note:document.getElementById('o_m').value,items:C}).then(function(r){"
+        "if(r.ok){C=[];save();m.innerHTML=r.message+(r.wa?(' <a href=\"'+r.wa+'\" target=\"_blank\" style=\"color:var(--accent)\">Confirm on WhatsApp</a>'):'');}"
+        "else m.textContent=r.error||'Could not place the order.';});}};})();setTimeout(function(){try{T2cart.open&&document.getElementById('cartbtn')&&(function(){var e=JSON.parse(localStorage.getItem('cart_'+location.pathname)||'[]');var n=e.reduce(function(a,b){return a+b.qty},0);var b=document.getElementById('cartbtn');if(n){b.style.display='block';document.getElementById('cartn').textContent=n;}})()}catch(e){}},50);</script>")
+
+
+_MEM_JS = (
+    "<script>window.T2mem=(function(){var K='mem_'+location.pathname;"
+    "function show(nm){document.getElementById('m_forms').style.display=nm?'none':'grid';"
+    "document.getElementById('m_in').style.display=nm?'block':'none';"
+    "document.getElementById('m_head').textContent=nm?('Hi, '+nm):'Member login';}"
+    "function tok(){try{return localStorage.getItem(K)||''}catch(e){return''}}"
+    "function set(t){try{t?localStorage.setItem(K,t):localStorage.removeItem(K)}catch(e){}}"
+    "if(tok())__T2.api('me','POST',{session:tok()}).then(function(r){if(r.ok)show(r.name);else set('');});"
+    "function msg(t){document.getElementById('m_msg').textContent=t;}"
+    "return{signup:function(){msg('Creating your account…');__T2.api('signup','POST',{name:document.getElementById('m_name').value,"
+    "email:document.getElementById('m_email').value,password:document.getElementById('m_pw').value}).then(function(r){"
+    "if(r.ok){set(r.session);show(r.name);}else msg(r.error||'Could not sign up.');});},"
+    "login:function(){msg('Signing in…');__T2.api('login','POST',{email:document.getElementById('m_email').value,"
+    "password:document.getElementById('m_pw').value}).then(function(r){if(r.ok){set(r.session);show(r.name);}else msg(r.error||'Could not log in.');});},"
+    "logout:function(){set('');show('');}};})();</script>")
+
+
+_BOOK_JS = (
+    "<script>window.T2book=function(){var n=document.getElementById('b_n').value,c=document.getElementById('b_c').value,"
+    "d=document.getElementById('b_d').value,t=document.getElementById('b_t').value,m=document.getElementById('b_msg');"
+    "if(!n||!c||!d||!t){m.textContent='Please fill in your name, contact, date and time.';return;}m.textContent='Sending…';"
+    "__T2.api('book','POST',{name:n,contact:c,slot:d+' '+t,note:document.getElementById('b_m').value}).then(function(r){"
+    "if(r.ok)m.innerHTML=r.message+(r.wa?(' <a href=\"'+r.wa+'\" target=\"_blank\" style=\"color:var(--accent)\">Confirm on WhatsApp</a>'):'');"
+    "else m.textContent=r.error||'Could not book.';});};</script>")
+
+
+def _FORUM_JS(st):
+    return (
+        "<script>window.T2forum=(function(){function esc(s){return(s||'').replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}"
+        "function render(th){var w=document.getElementById('c_list');if(!w)return;"
+        "w.innerHTML=th.length?th.map(function(t){return '<div style=\"border:1px solid var(--border);border-radius:14px;background:var(--card);padding:16px\">'"
+        "+'<div style=\"font-weight:650\">'+esc(t.name)+'</div><div style=\"margin:4px 0 8px;line-height:1.6\">'+esc(t.body)+'</div>'"
+        "+(t.replies||[]).map(function(r){return '<div style=\"border-left:2px solid var(--accent);padding:6px 0 6px 12px;margin:8px 0;color:var(--muted)\"><b>'+esc(r.name)+'</b> '+esc(r.body)+'</div>';}).join('')"
+        "+'<details style=\"margin-top:6px\"><summary style=\"cursor:pointer;color:var(--accent);font-size:13px\">Reply</summary>"
+        "<input id=\"r_n_'+t.id+'\" placeholder=\"Name\" style=\"" + st.replace('"', "'") + ";margin-top:8px\">"
+        "<textarea id=\"r_b_'+t.id+'\" rows=\"2\" placeholder=\"Your reply\" style=\"" + st.replace('"', "'") + ";margin-top:8px\"></textarea>"
+        "<button class=\"btn primary\" type=\"button\" style=\"margin-top:8px\" onclick=\"T2forum.post('+t.id+')\">Reply</button></details></div>';}).join('')"
+        ":'<div style=\"color:var(--muted)\">No posts yet. Be the first.</div>';}"
+        "function load(){__T2.api('forum','GET').then(function(r){if(r.ok)render(r.threads);});}"
+        "load();return{post:function(parent){var nid=parent?'r_n_'+parent:'c_name',bid=parent?'r_b_'+parent:'c_body';"
+        "var n=document.getElementById(nid).value,b=document.getElementById(bid).value;if(!b)return;"
+        "__T2.api('forum','POST',{name:n,body:b,parent:parent}).then(function(r){if(r.ok){if(!parent){document.getElementById('c_body').value='';}load();}});}};})();</script>")
 
 
 def render(content, palette, photos_rel, template="premium", font=None):
@@ -1043,8 +1230,18 @@ def revise(user, sid, change, progress=None, opts=None):
         addons.add("promo")
     if _re.search(r"price list|pricelist|\bprices\b|\bmenu\b", low):
         addons.add("pricelist")
+    if _re.search(r"\bshop\b|\bcart\b|\bcheckout\b|sell online|online store|e-?commerce|add to cart", low):
+        addons.add("shop")
+    if _re.search(r"member login|members? area|sign ?up|log ?in|account|membership", low):
+        addons.add("members")
+    if _re.search(r"appointment|book a time|schedul|time slot|calendar booking", low):
+        addons.add("appointments")
+    if _re.search(r"forum|community|discussion|message board|comments? section", low):
+        addons.add("community")
     for w, a in (("whatsapp", "whatsapp"), ("form", "form"), ("booking", "booking"), ("promo", "promo"),
-                 ("banner", "promo"), ("advert", "promo")):
+                 ("banner", "promo"), ("advert", "promo"), ("shop", "shop"), ("cart", "shop"),
+                 ("member", "members"), ("login", "members"), ("appointment", "appointments"),
+                 ("forum", "community"), ("community", "community")):
         if _re.search(r"(remove|no|without|drop)\s[\w\s]*" + w, low):
             addons.discard(a)
     if isinstance(opts.get("addons"), list):        # the panel sends the exact set of ticked add-ons
