@@ -182,6 +182,12 @@ SPECS = [
        "path is the PDF on the PC. A big manual takes a few minutes; it carries on by itself.", {"path": S, "name": S}, ["path"]),
     fn("split_manual", "Save each section of a manual (Engine, Brakes, Wiring ...) as its own PDF in a folder next to it.",
        {"manual": S}, []),
+    fn("inbox_triage", "Read the user's Gmail inbox (last few days) and sort what needs them from the noise: each "
+       "with a one-line summary, priority and whether it needs action, highest first. Use for 'check my inbox', "
+       "'what needs my attention', 'any important emails'.", {}),
+    fn("draft_email_reply", "Draft a reply to an inbox email in the user's voice (nothing is sent — a draft for them "
+       "to review and send). uid is the email's id from inbox_triage. instruction is optional guidance on what to "
+       "say.", {"uid": S, "instruction": S}, ["uid"]),
     fn("deep_research", "Research a question on the web properly: plan several searches, read the top pages via the "
        "private SearXNG engine, and write a short sourced brief with [n] citations. Use for 'research …', vendor or "
        "competitor briefings, QBR prep, 'find out everything about …'. Takes up to a minute; the brief is saved to "
@@ -307,6 +313,7 @@ def describe(name, a):
         "tv_install_launcher": f"Installing {g('which') or 'a launcher'} on the TV", "tv_install_app": "Installing the app on the TV",
         "tv_set_launcher": "Setting the TV's default launcher", "tv_shell": f"Running on the TV: {g('command')}",
         "tv_press": f"TV: pressing {g('button')}", "tv_type": "TV: typing", "tv_open_app": f"TV: opening {g('package')}",
+        "inbox_triage": "Going through your inbox", "draft_email_reply": "Drafting a reply",
         "deep_research": f"Researching: {g('question')}",
         "ask_my_stuff": f"Searching your documents for {g('query')}", "index_documents": f"Indexing {g('path')}",
         "list_documents": "Listing your documents", "forget_documents": f"Removing {g('source')} from your documents",
@@ -895,6 +902,16 @@ def version():
 
 
 RUNNING = None  # the version this running copy was started with (set at start-up)
+
+
+def t_inbox_triage(user):
+    import inbox
+    return inbox.triage(user)
+
+
+def t_draft_email_reply(user, uid, instruction=""):
+    import inbox
+    return inbox.draft_reply(user, uid, instruction)
 
 
 def t_deep_research(user, question):
