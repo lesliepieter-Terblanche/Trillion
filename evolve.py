@@ -21,7 +21,7 @@ core.x("""CREATE TABLE IF NOT EXISTS suggestions(id INTEGER PRIMARY KEY, user_id
           detail TEXT DEFAULT '', action TEXT DEFAULT '', status TEXT DEFAULT 'pending', ts REAL)""")
 
 SAFE = {"morning_on", "nudge_on"}        # reversible + notify-only: fine to switch on by itself
-KNOWN = SAFE | {"tip"}                    # 'tip' = advice only; "applying" it just means acknowledged
+KNOWN = SAFE | {"tip", "skill"}          # 'tip' = advice only; 'skill' = a drafted playbook awaiting approval
 
 
 def auto_on(user):
@@ -51,6 +51,9 @@ def suggest(user, llm_chat):
            "action is exactly one of: "
            '{"kind":"morning_on","time":"HH:MM"} to switch on a daily morning briefing; '
            '{"kind":"nudge_on"} to switch on check-ins; '
+           '{"kind":"skill","name":"short-name","description":"one line: when to use this","instructions":"the '
+           'numbered steps"} to save a MULTI-STEP task the user has done by hand more than once as a reusable '
+           'playbook (it is saved as a draft for the owner to approve, never auto-run); '
            'or {"kind":"tip","say":"<the exact phrase the user can say to make it happen>"} for anything else. '
            "Only propose something that genuinely recurs. Never propose anything that sends messages, spends "
            "money, or deletes things as automatic. Reply [] if nothing is worth automating.")
@@ -76,6 +79,8 @@ def suggest(user, llm_chat):
         action = it.get("action") if isinstance(it.get("action"), dict) else {}
         if action.get("kind") not in KNOWN:
             action = {"kind": "tip", "say": ""}        # anything unknown degrades to safe advice only
+        if action.get("kind") == "skill" and not str(action.get("instructions") or "").strip():
+            action = {"kind": "tip", "say": ""}        # a skill with no steps is just advice
         sid = core.x("INSERT INTO suggestions(user_id,title,detail,action,status,ts) VALUES(?,?,?,?,?,?)",
                      (uid, title, str(it.get("detail", ""))[:200], json.dumps(action), "pending", now))
         made += 1
@@ -109,6 +114,19 @@ def apply(user, sid):
     elif kind == "nudge_on":
         import nudge
         nudge.save_prefs(user, {"on": True})
+    elif kind == "skill":
+        import extend
+        name = (action.get("name") or row["title"])[:70]
+        if core.q("SELECT 1 FROM skills WHERE slug=?", (extend.slugify(name),), one=True):
+            name = f"{name} (draft {time.strftime('%d %b %H%M')})"
+        extend.save_skill(name, (action.get("description") or row["detail"])[:400],
+                          (action.get("instructions") or "")[:20000], "self-authored by Trillion", status="draft")
+        core.x("UPDATE suggestions SET status='applied' WHERE id=?", (int(sid),))
+        try:
+            core.log(uid, f"New playbook drafted: '{name[:60]}' — approve it on the Skills page", "waiting")
+        except Exception:
+            pass
+        return {"ok": True, "applied": "skill", "note": "Saved as a draft skill; enable it on the Skills page."}
     core.x("UPDATE suggestions SET status='applied' WHERE id=?", (int(sid),))
     try:
         core.log(uid, f"Automation set up: {row['title']}", "done")
