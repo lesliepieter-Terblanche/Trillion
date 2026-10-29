@@ -42,6 +42,9 @@ TEMPLATES = {
     "glass":     {"file": "threeui-glass.html", "photo": False, "dark": True},       # drifting frosted-glass blobs
     "constellation": {"file": "threeui-constellation.html", "photo": False, "dark": True},  # points network
     "ember":     {"file": "threeui-ember.html", "photo": False, "dark": True},       # rising embers
+    "globe":     {"file": "threeui-globe.html", "photo": False, "dark": True},        # rotating dotted globe
+    "topo":      {"file": "threeui-topo.html", "photo": False, "dark": True},         # topographic contour lines
+    "portal":    {"file": "threeui-portal.html", "photo": False, "dark": True},       # swirling portal vortex
 }
 # trades that suit each ThreeUI look (only used when the look is left on Auto)
 THREEUI_WORDS = {
@@ -168,25 +171,26 @@ LAYOUT_POOLS = [
     (("salon", "beauty", "spa", "hair", "barber", "nail", "wellness", "yoga", "pilates", "massage", "aesthetic",
       "skin", "therap"), ["cinematic", "orb", "premium", "resonance", "bells"]),
     (("gym", "fitness", "crossfit", "boxing", "club", "night", "lounge", "gaming", "esport"),
-     ["streams", "premium", "object3d", "laser", "dotgrid"]),
+     ["streams", "premium", "portal", "laser", "dotgrid"]),
     (("music", "sound", "audio", "recording", "dj", "venue", "event", "wedding", "church", "choir", "piano", "guitar"),
-     ["resonance", "bells", "streams", "premium"]),
+     ["resonance", "bells", "portal", "streams", "premium"]),
     (("auto", "detailing", "car ", "motor", "tyre", "spares", "mechanic", "panel", "workshop"),
      ["liquid", "object3d", "premium", "streams"]),
     (("jewel", "watch", "luxury", "boutique", "fashion", "interior", "decor", "furniture", "florist"),
      ["cinematic", "liquid", "glass", "premium"]),
     (("property", "estate", "real estate", "letting", "rental", "architect", "construct", "build", "solar",
-      "landscap", "garden", "farm", "eco", "green", "travel", "tour", "lodge", "guest", "outdoor"),
-     ["aurora", "premium", "editorial", "object3d"]),
+      "landscap", "garden", "farm", "eco-", "eco ", "green", "travel", "tour", "lodge", "guest", "outdoor", "survey", "mining"),
+     ["aurora", "topo", "premium", "editorial", "object3d"]),
     (("tech", "software", "it service", "it support", "digital", "agency", "data", "cloud", "cyber", "network",
       "startup", "security", "print", "signage", "telecom", "fibre", "isp"),
-     ["dotgrid", "constellation", "ribbons", "object3d"]),
-    (("gaming", "arcade", "retro", "creative", "design studio", "media", "vfx", "animation"),
-     ["pixels", "dotgrid", "streams", "premium"]),
+     ["dotgrid", "constellation", "globe", "ribbons", "object3d"]),
+    (("gaming", "arcade", "retro", "creative", "design studio", "media", "vfx", "animation", "nightlife", "festival"),
+     ["pixels", "portal", "dotgrid", "streams", "premium"]),
     (("consult", "finance", "account", "advis", "corporate", "legal", "insurance", "broker"),
      ["glass", "editorial", "premium", "constellation"]),
-    (("retail", "product", "supplier", "wholesale", "hardware", "electronic", "fabricat", "logistics"),
-     ["object3d", "dotgrid", "premium", "constellation"]),
+    (("retail", "product", "supplier", "wholesale", "hardware", "electronic", "fabricat", "logistics",
+      "courier", "freight", "shipping", "trading", "import", "export", "distribut"),
+     ["object3d", "globe", "dotgrid", "premium", "constellation"]),
 ]
 DEFAULT_POOL = ["premium", "object3d", "orb", "ribbons", "editorial"]
 
@@ -863,6 +867,12 @@ def revise(user, sid, change, progress=None, opts=None):
         template = "glass"
     elif _re.search(r"\b(constellation|network|nodes?|points?)\b", low):
         template = "constellation"
+    elif _re.search(r"\b(globe|planet|world|sphere map|dotted globe)\b", low):
+        template = "globe"
+    elif _re.search(r"\b(topo|topographic|contours?|terrain|elevation)\b", low):
+        template = "topo"
+    elif _re.search(r"\b(portal|vortex|swirl|spiral|wormhole)\b", low):
+        template = "portal"
     elif _re.search(r"\b(3d|object|crystal)\b", low):
         template = "object3d"
     elif _re.search(r"cinematic|photo hero|photo", low):
