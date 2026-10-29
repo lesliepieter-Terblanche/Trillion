@@ -182,6 +182,9 @@ SPECS = [
        "path is the PDF on the PC. A big manual takes a few minutes; it carries on by itself.", {"path": S, "name": S}, ["path"]),
     fn("split_manual", "Save each section of a manual (Engine, Brakes, Wiring ...) as its own PDF in a folder next to it.",
        {"manual": S}, []),
+    fn("self_heal", "Fix Trillion's own common breakages and report what was done: start Docker if it's asleep, "
+       "restart a business app that fell over, reconnect a dropped connector. Safe and reversible; heavier fixes are "
+       "reported for approval. Owner only. Use when the user says fix yourself, self-heal, or something's broken.", {}),
     fn("update_self", "Update Trillion herself to the newest version from GitHub, then restart. Owner only. "
        "Use when the user says update yourself, get the latest version, or pull the update.", {}),
     fn("run_command", "Run a Windows command. Owner only, and always needs approval on the dashboard.",
@@ -290,7 +293,7 @@ def describe(name, a):
         "tv_install_launcher": f"Installing {g('which') or 'a launcher'} on the TV", "tv_install_app": "Installing the app on the TV",
         "tv_set_launcher": "Setting the TV's default launcher", "tv_shell": f"Running on the TV: {g('command')}",
         "tv_press": f"TV: pressing {g('button')}", "tv_type": "TV: typing", "tv_open_app": f"TV: opening {g('package')}",
-        "system_status": "Checking the PC", "update_self": "Updating myself from GitHub", "run_command": f"Run command: {g('command')}",
+        "system_status": "Checking the PC", "self_heal": "Fixing myself", "update_self": "Updating myself from GitHub", "run_command": f"Run command: {g('command')}",
     }.get(name, name)
 
 
@@ -875,6 +878,11 @@ def version():
 
 
 RUNNING = None  # the version this running copy was started with (set at start-up)
+
+
+def t_self_heal(user):
+    import selfheal
+    return selfheal.heal(user)
 
 
 def t_update_self(user):
