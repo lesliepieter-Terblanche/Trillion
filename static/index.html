@@ -758,6 +758,24 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
   <div class="panel" id="vn-brief" hidden><b id="vn-brief-h"></b><div id="vn-brief-b" style="white-space:pre-wrap;margin-top:10px;font-size:14px;line-height:1.6"></div></div>
 </div>
 
+<div class="view" id="v-boardroom">
+  <h2>The Boardroom</h2>
+  <div class="muted">Bring a hard call. A council of AI advisors — Bezos, Buffett, Hormozi, Paul Graham, Gary V, Naval and more — argues it out on this PC's own brain and hands back a scored verdict. Nothing leaves the machine.</div>
+  <div class="panel" style="gap:10px">
+    <label class="field"><span>The decision — and your numbers</span><textarea id="br-dec" rows="4" placeholder="e.g. Should I push Nokia harder for the R27m number, keep the weight on Juniper, or split 50/50? Pipeline is R18m across both, 4 months to year-end, 2 enablement days I can spend."></textarea></label>
+    <label class="field"><span>Options (one per line — leave blank for a yes/no)</span><textarea id="br-opts" rows="3" placeholder="Push Nokia&#10;Keep weight on Juniper&#10;Split 50/50"></textarea></label>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+      <label class="field" style="max-width:220px"><span>Depth</span><select id="br-mode"><option value="full">Full council (7 seats, debate)</option><option value="quick">Quick (4 seats, one round)</option></select></label>
+      <button class="btn pri" id="br-run" style="min-height:40px;font-size:12px">CONVENE THE BOARD</button>
+    </div>
+    <div class="muted" style="font-size:11px">Runs locally, so a full council takes a minute or two. The verdict is saved to your notes.</div>
+    <div class="msg" id="br-msg"></div>
+  </div>
+  <div class="panel" id="br-out" hidden></div>
+  <h3 style="margin:18px 0 8px;font-size:13px;letter-spacing:.08em;color:var(--muted)">PAST VERDICTS</h3>
+  <div id="br-hist" style="display:flex;flex-direction:column;gap:8px"></div>
+</div>
+
 <div class="view" id="v-growth">
   <h2>How Trillion is growing</h2>
   <div class="muted">What she's learned, the skills and automations she's gained, and how busy she's been — all from this PC.</div>
@@ -1181,7 +1199,7 @@ const api=async(u,o={})=>{if(o.json!==undefined){o.method=o.method||'POST';o.hea
 const hm=t=>new Date(t*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false});
 let hold=0,S=null,sending=false,speakNext=false,settingsLoaded=false,cwd='';
 
-const LOADERS={apps:()=>loadApps(),tvremote:()=>loadTvRemote(),growth:()=>loadGrowth(),vendors:()=>loadVendors(),sites:()=>{loadSites();loadClones();},bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),workflow:()=>wfLoad(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);loadStorage();},memory:()=>loadNotes(''),videos:()=>loadVideos(),web:()=>{loadWeb();wbKeyState();},dashboard:()=>loadDash(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();loadBackup();kokoroState();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
+const LOADERS={apps:()=>loadApps(),tvremote:()=>loadTvRemote(),growth:()=>loadGrowth(),vendors:()=>loadVendors(),boardroom:()=>loadBoardroom(),sites:()=>{loadSites();loadClones();},bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),workflow:()=>wfLoad(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);loadStorage();},memory:()=>loadNotes(''),videos:()=>loadVideos(),web:()=>{loadWeb();wbKeyState();},dashboard:()=>loadDash(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();loadBackup();kokoroState();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
 let VIEW='control';
 function go(v){
   VIEW=v;try{if(v!=='settings'&&mtTimer)micTestStop();}catch(e){}
@@ -2482,6 +2500,31 @@ async function loadVendors(){let d;try{d=await (await api('/api/vendors')).json(
 $('vn-save')&&($('vn-save').onclick=async()=>{const name=($('vn-name').value||'').trim();const m=$('vn-msg');if(!name){m.className='msg bad';m.textContent='Vendor name first.';return;}
   const body={name,category:$('vn-cat').value.trim(),target:$('vn-target').value.trim(),qbr:$('vn-qbr').value.trim(),partners:$('vn-partners').value.trim(),status:$('vn-status').value.trim(),notes:$('vn-notes').value.trim()};
   try{await api('/api/vendors',{json:body});m.className='msg ok';m.textContent='Saved '+name+'.';['vn-name','vn-cat','vn-target','vn-qbr','vn-partners','vn-status','vn-notes'].forEach(i=>$(i).value='');loadVendors();}catch(e){m.className='msg bad';m.textContent=e.message;}});
+const BR_COLORS={'GO':'#1fa67a','GO WITH CONDITIONS':'#e8a33d','RESHAPE':'#f06b3f','WAIT':'#3d8bfd',"DON'T DO IT":'#d94a6a'};
+function brVerdict(r){
+  const c=BR_COLORS[r.verdict]||'#9b5de5';const ok=Object.keys(r.options||{});
+  const scores=ok.map(k=>`<b>${k})</b> ${esc(r.options[k])} · <span style="color:${c}">${r.option_scores[k]}</span>`).join(' &nbsp; ');
+  const rows=(r.scorecard||[]).map(s=>`<tr><td style="padding:4px 8px">${esc(s.seat)}</td><td style="padding:4px 8px;color:var(--muted);font-size:11px">${esc(s.pillar)}</td><td style="text-align:center">${s.weight}</td>${ok.map(k=>`<td style="text-align:center">${s.scores[k]??'-'}</td>`).join('')}<td style="text-align:center">${s.pillar_score??'-'}</td><td style="text-align:center;font-size:11px">${esc(s.stance||'-')}</td></tr>`).join('');
+  const ovr=(r.overrides||[]).map(o=>`<div class="muted" style="font-size:11px;margin-top:4px">⚠ ${esc(o)}</div>`).join('');
+  return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="background:${c};color:#fff;padding:4px 12px;border-radius:999px;font-weight:700;font-size:13px">${esc(r.verdict)}</span><b style="font-size:14px">lean ${esc(r.recommended)}) ${esc(r.recommended_option||'')}</b></div>
+  <div style="margin-top:8px;font-size:13px">${scores}</div>
+  <div class="muted" style="font-size:11px;margin-top:4px">Confidence ${r.confidence}/10 · Spread ${r.spread}</div>${ovr}
+  <div style="overflow-x:auto;margin-top:12px"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--muted);text-align:left"><th style="padding:4px 8px">Seat</th><th style="padding:4px 8px">Pillar</th><th>Wt</th>${ok.map(k=>`<th style="text-align:center">${k}</th>`).join('')}<th style="text-align:center">Pillar</th><th style="text-align:center">Stance</th></tr></thead><tbody>${rows}</tbody></table></div>
+  <div style="white-space:pre-wrap;margin-top:14px;font-size:14px;line-height:1.6">${esc(r.verdict_text||'')}</div>
+  <div class="muted" style="font-size:10px;margin-top:12px">Simulated advisors built from each person's public work. They are not the people and do not speak for them.</div>`;
+}
+async function loadBoardroom(){let d;try{d=await (await api('/api/boardroom')).json();}catch(e){return;}
+  const h=$('br-hist');h.innerHTML=(d.verdicts||[]).length?'':'<div class="muted" style="font-size:12px">No verdicts yet.</div>';
+  (d.verdicts||[]).forEach(v=>{const el=document.createElement('div');el.className='panel';el.style.cursor='pointer';const c=BR_COLORS[v.verdict]||'#9b5de5';
+    el.innerHTML=`<div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><div style="font-size:13px;flex:1">${esc(v.decision.slice(0,90))}</div><span style="background:${c};color:#fff;padding:2px 10px;border-radius:999px;font-size:11px;white-space:nowrap">${esc(v.verdict)}</span></div>`;
+    el.onclick=async()=>{const r=await (await api('/api/boardroom/'+v.id)).json();if(r&&!r.error){$('br-out').hidden=false;$('br-out').innerHTML=brVerdict(r);$('br-out').scrollIntoView({behavior:'smooth'});}};
+    h.appendChild(el);});}
+$('br-run')&&($('br-run').onclick=async()=>{const dec=($('br-dec').value||'').trim();const m=$('br-msg');if(!dec){m.className='msg bad';m.textContent='Give me the decision first.';return;}
+  const options=($('br-opts').value||'').split('\n').map(s=>s.trim()).filter(Boolean);
+  const btn=$('br-run');btn.disabled=true;const was=btn.textContent;btn.textContent='THE BOARD IS DEBATING…';m.className='msg';m.textContent='Convening the council on the local brain — this takes a minute or two.';
+  try{const r=await (await api('/api/boardroom',{json:{decision:dec,options,mode:$('br-mode').value}})).json();
+    if(r.error){m.className='msg bad';m.textContent=r.error;}else{m.textContent='';$('br-out').hidden=false;$('br-out').innerHTML=brVerdict(r);$('br-out').scrollIntoView({behavior:'smooth'});loadBoardroom();}
+  }catch(e){m.className='msg bad';m.textContent=e.message;}finally{btn.disabled=false;btn.textContent=was;}});
 async function loadGrowth(){let d;try{d=await (await api('/api/growth')).json();}catch(e){return;}
   if(d.error){$('gr-tiles').innerHTML='<div class="muted">'+esc(d.error)+'</div>';return;}
   const t=d.tiles||{};
@@ -2519,7 +2562,7 @@ function loadTvRemote(){
     }catch(e){$('tvr-applist').textContent=e.message;}};
 }
 function drawMore(){
-  const items=[['workflow','Workflow',"What's running now, live"],...(S&&S.bible_on?[['bible','Bible study','Daily verse, reader, notes, helper']]:[]),...(S&&S.store_on?[['store','Store','Gumroad sales, products, codes']]:[]),['videos','Videos','Make and watch videos'],['web','Web Studio','Build a premium site for a business'],['dashboard','Campaign','Lead tracking + email outreach'],['files','Files','Browse your folders'],['sites','Websites','Read a site, make a deck or report'],['apps','Apps','Search rankings and automations'],['tvremote','TV Remote','Control an Android TV from your phone'],['vendors','Vendor intelligence','Your channel portfolio + QBR briefs'],...(S&&S.user.is_admin?[['growth','How Trillion is growing','Learning, skills, automations, activity']]:[]),['memory','Memory','What she remembers'],['routines','Routines','Morning briefing, news, weather'],['skills','Skills','Extra abilities and connectors'],['commands','Commands','Everything you can say'],['settings','Settings','Look, brain, voice, keys']];
+  const items=[['workflow','Workflow',"What's running now, live"],...(S&&S.bible_on?[['bible','Bible study','Daily verse, reader, notes, helper']]:[]),...(S&&S.store_on?[['store','Store','Gumroad sales, products, codes']]:[]),['videos','Videos','Make and watch videos'],['web','Web Studio','Build a premium site for a business'],['dashboard','Campaign','Lead tracking + email outreach'],['files','Files','Browse your folders'],['sites','Websites','Read a site, make a deck or report'],['apps','Apps','Search rankings and automations'],['tvremote','TV Remote','Control an Android TV from your phone'],['vendors','Vendor intelligence','Your channel portfolio + QBR briefs'],['boardroom','Boardroom','Run a decision past an AI advisor council'],...(S&&S.user.is_admin?[['growth','How Trillion is growing','Learning, skills, automations, activity']]:[]),['memory','Memory','What she remembers'],['routines','Routines','Morning briefing, news, weather'],['skills','Skills','Extra abilities and connectors'],['commands','Commands','Everything you can say'],['settings','Settings','Look, brain, voice, keys']];
   if(S&&S.user.is_admin)items.push(['family','Family','Logins, update, backup']);
   $('moregrid').innerHTML=items.map(i=>`<button class="mbtn" data-go="${i[0]}"><b>${i[1]}</b><span>${i[2]}</span></button>`).join('')+`<button class="mbtn" id="out2"><b>Sign out</b><span>${S?esc(S.user.name):''}</span></button>`;
   $('out2').onclick=()=>$('out').click();

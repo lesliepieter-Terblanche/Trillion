@@ -192,6 +192,15 @@ SPECS = [
        "QBR prep, 'brief me on <vendor>', vendor updates. Set fresh=false to skip the web news (faster).",
        {"name": S, "fresh": {"type": "boolean"}}, ["name"]),
     fn("vendor_remove", "Remove a vendor from the portfolio.", {"name": S}, ["name"]),
+    fn("boardroom", "Convene the Boardroom: a council of AI advisors (Bezos, Buffett, Hormozi, Paul Graham, "
+       "Gary V, Naval and more) argues out a hard business decision on the local brain, then hands back a scored "
+       "verdict (GO / GO WITH CONDITIONS / RESHAPE / DON'T DO IT) with a scorecard and next steps, saved to "
+       "notes. Use for 'should I...', pricing calls, vendor bets, hiring, big roadmap choices, 'run this past "
+       "the board'. decision = the call plus the user's numbers and constraints. options = the 2-4 choices (if "
+       "omitted it's a yes/no). mode 'quick' seats 4 for one round (lighter), 'full' seats ~7 for a debate. "
+       "seats = optional explicit list of advisor keys to seat.",
+       {"decision": S, "options": ARR, "mode": S, "seats": ARR}, ["decision"]),
+    fn("boardroom_history", "List the user's past Boardroom verdicts (decision, verdict, date).", {}),
     fn("inbox_triage", "Read the user's Gmail inbox (last few days) and sort what needs them from the noise: each "
        "with a one-line summary, priority and whether it needs action, highest first. Use for 'check my inbox', "
        "'what needs my attention', 'any important emails'.", {}),
@@ -325,6 +334,7 @@ def describe(name, a):
         "tv_press": f"TV: pressing {g('button')}", "tv_type": "TV: typing", "tv_open_app": f"TV: opening {g('package')}",
         "vendors": "Listing your vendors", "vendor_add": f"Saving {g('name')}", "vendor_brief": f"Briefing on {g('name')}",
         "vendor_remove": f"Removing {g('name')}",
+        "boardroom": "Convening the Boardroom", "boardroom_history": "Your past Boardroom verdicts",
         "inbox_triage": "Going through your inbox", "draft_email_reply": "Drafting a reply",
         "deep_research": f"Researching: {g('question')}",
         "ask_my_stuff": f"Searching your documents for {g('query')}", "index_documents": f"Indexing {g('path')}",
@@ -398,7 +408,7 @@ def execute(user, name, args, task_id=None, approved=False, direct=False):
             watch.alert(user, "approval", "Trillion needs your OK", summary)
             return {"status": "waiting_for_approval",
                     "note": "Not done yet. The user must approve this on the dashboard."}
-        if name in ("create_video", "revise_video", "create_ai_clip", "create_ebook"):
+        if name in ("create_video", "revise_video", "create_ai_clip", "create_ebook", "boardroom"):
             args = dict(args, _task=task_id)
         out = globals()["t_" + name](user, **args)
         core.log(uid, describe(name, args), "done")
@@ -936,6 +946,19 @@ def t_vendor_brief(user, name, fresh=True):
 def t_vendor_remove(user, name):
     import vendors
     return vendors.remove(user, name)
+
+
+def t_boardroom(user, decision, options=None, mode="full", seats=None, _task=None):
+    import boardroom
+    say = (lambda text: core.set_task(_task, detail=text)) if _task else None
+    m = str(mode or "full").lower()
+    m = "quick" if m.startswith("q") else "full"
+    return boardroom.run(user, decision, options=options, mode=m, seats=seats, progress=say)
+
+
+def t_boardroom_history(user):
+    import boardroom
+    return {"verdicts": boardroom.history(user)}
 
 
 def t_inbox_triage(user):

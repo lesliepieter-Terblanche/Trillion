@@ -4271,6 +4271,30 @@ def vendors_del(name: str, user=Depends(auth)):
     return vendors.remove(user, name)
 
 
+@app.get("/api/boardroom")
+def boardroom_list(user=Depends(auth)):
+    import boardroom
+    return {"verdicts": boardroom.history(user), "seats": boardroom.seats_list()}
+
+
+@app.get("/api/boardroom/{bid}")
+def boardroom_get(bid: int, user=Depends(auth)):
+    import boardroom
+    return boardroom.get(user, bid)
+
+
+@app.post("/api/boardroom")
+def boardroom_run(p: dict = Body(...), user=Depends(auth)):
+    import boardroom
+    decision = (p.get("decision") or "").strip()
+    if not decision:
+        raise HTTPException(400, "What's the decision?")
+    options = [o for o in (p.get("options") or []) if str(o).strip()]
+    mode = "quick" if str(p.get("mode") or "full").lower().startswith("q") else "full"
+    seats = p.get("seats") or None
+    return boardroom.run(user, decision, options=options, mode=mode, seats=seats)
+
+
 @app.post("/api/tv/connect")
 def tv_connect_ep(p: dict = Body(...), user=Depends(admin)):
     import tvadb
