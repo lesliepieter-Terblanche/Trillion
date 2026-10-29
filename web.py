@@ -34,6 +34,9 @@ TEMPLATES = {
     "liquid":    {"file": "threeui-liquid.html", "photo": False, "dark": True},     # raymarched chrome blob, text left
     "resonance": {"file": "threeui-resonance.html", "photo": False, "dark": True},  # cymatic rings, centred text
     "streams":   {"file": "threeui-streams.html", "photo": False, "dark": True},    # neon wave lines, centred text
+    "aurora":    {"file": "threeui-aurora.html", "photo": False, "dark": True},      # horizon aurora bands
+    "bells":     {"file": "threeui-bells.html", "photo": False, "dark": True},       # radial standing-wave rings
+    "dotgrid":   {"file": "threeui-dotgrid.html", "photo": False, "dark": True},     # pulsing dot matrix
 }
 # trades that suit each ThreeUI look (only used when the look is left on Auto)
 THREEUI_WORDS = {
@@ -158,19 +161,27 @@ LAYOUT_POOLS = [
     (("restaurant", "cafe", "coffee", "bar", "bistro", "grill", "diner", "eatery", "bakery", "deli", "restaur",
       "hotel", "guest", "lodge", "pub", "takeaway"), ["cinematic", "premium", "orb", "object3d"]),
     (("salon", "beauty", "spa", "hair", "barber", "nail", "wellness", "yoga", "pilates", "massage", "aesthetic",
-      "skin", "therap"), ["cinematic", "orb", "premium", "resonance"]),
+      "skin", "therap"), ["cinematic", "orb", "premium", "resonance", "bells"]),
     (("gym", "fitness", "crossfit", "boxing", "club", "night", "lounge", "gaming", "esport"),
-     ["streams", "premium", "object3d", "liquid"]),
+     ["streams", "premium", "object3d", "laser", "dotgrid"]),
     (("music", "sound", "audio", "recording", "dj", "venue", "event", "wedding", "church", "choir", "piano", "guitar"),
-     ["resonance", "premium", "streams", "orb"]),
+     ["resonance", "bells", "streams", "premium"]),
     (("auto", "detailing", "car ", "motor", "tyre", "spares", "mechanic", "panel", "workshop"),
-     ["liquid", "object3d", "premium", "streams"]),
+     ["liquid", "mercury", "object3d", "premium"]),
     (("jewel", "watch", "luxury", "boutique", "fashion", "interior", "decor", "furniture", "florist"),
-     ["cinematic", "liquid", "premium", "object3d"]),
+     ["cinematic", "mercury", "liquid", "premium"]),
+    (("property", "estate", "real estate", "letting", "rental", "architect", "construct", "build", "solar",
+      "landscap", "garden", "farm", "eco", "green", "travel", "tour", "lodge", "guest", "outdoor"),
+     ["aurora", "premium", "editorial", "object3d"]),
     (("tech", "software", "it service", "it support", "digital", "agency", "data", "cloud", "cyber", "network",
-      "startup", "security", "print", "signage"), ["ribbons", "object3d", "premium", "streams"]),
-    (("retail", "product", "supplier", "wholesale", "hardware", "electronic", "solar", "fabricat"),
-     ["object3d", "liquid", "premium", "ribbons"]),
+      "startup", "security", "print", "signage", "telecom", "fibre", "isp"),
+     ["dotgrid", "constellation", "ribbons", "object3d"]),
+    (("gaming", "arcade", "retro", "creative", "design studio", "media", "vfx", "animation"),
+     ["pixels", "dotgrid", "streams", "premium"]),
+    (("consult", "finance", "account", "advis", "corporate", "legal", "insurance", "broker"),
+     ["glass", "editorial", "premium", "constellation"]),
+    (("retail", "product", "supplier", "wholesale", "hardware", "electronic", "fabricat", "logistics"),
+     ["object3d", "dotgrid", "premium", "constellation"]),
 ]
 DEFAULT_POOL = ["premium", "object3d", "orb", "ribbons", "editorial"]
 
@@ -831,6 +842,22 @@ def revise(user, sid, change, progress=None, opts=None):
         template = "resonance"
     elif _re.search(r"\b(streams?|neon|waves?)\b", low):
         template = "streams"
+    elif _re.search(r"\b(aurora|horizon|northern lights?)\b", low):
+        template = "aurora"
+    elif _re.search(r"\b(bells?|resonant rings?)\b", low):
+        template = "bells"
+    elif _re.search(r"\b(dot ?grid|dot ?matrix|dots)\b", low):
+        template = "dotgrid"
+    elif _re.search(r"\b(laser|beams?)\b", low):
+        template = "laser"
+    elif _re.search(r"\b(mercury|liquid metal|chrome blob)\b", low):
+        template = "mercury"
+    elif _re.search(r"\b(pixels?|retro pixel|8.?bit)\b", low):
+        template = "pixels"
+    elif _re.search(r"\b(glass|frosted|particles?)\b", low):
+        template = "glass"
+    elif _re.search(r"\b(constellation|network|nodes?|points?)\b", low):
+        template = "constellation"
     elif _re.search(r"\b(3d|object|crystal)\b", low):
         template = "object3d"
     elif _re.search(r"cinematic|photo hero|photo", low):
