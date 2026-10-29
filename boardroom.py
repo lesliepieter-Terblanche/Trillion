@@ -116,6 +116,91 @@ def init():
     core.x("""CREATE TABLE IF NOT EXISTS boardroom(
         id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, decision TEXT, options TEXT,
         verdict TEXT, score REAL, detail TEXT, note_id INTEGER, created REAL)""")
+    core.x("""CREATE TABLE IF NOT EXISTS boardroom_seats(
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, key TEXT, name TEXT, short TEXT,
+        pillar TEXT, dimension TEXT, persona TEXT, created REAL)""")
+
+
+def _slug(name):
+    import re as _r
+    s = _r.sub(r"[^a-z0-9]+", "", str(name or "").lower())[:24]
+    return s or "advisor"
+
+
+def custom_seats(user):
+    """This login's own advisors, as a {key: seat} map (keys never clash with the built-ins)."""
+    init()
+    out = {}
+    for r in core.q("SELECT * FROM boardroom_seats WHERE user_id=? ORDER BY id", (user["id"],)):
+        out[r["key"]] = {"name": r["name"], "short": r["short"], "pillar": r["pillar"],
+                         "dimension": r["dimension"], "persona": r["persona"], "custom": True}
+    return out
+
+
+def _all_seats(user):
+    m = dict(SEATS)
+    m.update(custom_seats(user))
+    return m
+
+
+def add_advisor(user, name, pillar="", focus="", progress=None):
+    """Build a new advisor the way the built-ins were built: a condensed persona in that person's lens,
+    written by the local brain, and seat it on this login's board. Returns the new seat."""
+    init()
+    say = progress or (lambda t: None)
+    name = str(name or "").strip()
+    if not name:
+        return {"error": "Who should sit on the board? Give me a name."}
+    key = _slug(name)
+    if key in SEATS:
+        key = key + "x"
+    base = key
+    i = 2
+    existing = custom_seats(user)
+    while key in existing:
+        key = f"{base}{i}"
+        i += 1
+    parts = name.split()
+    short = parts[-1] if len(parts) > 1 and len(parts[-1]) > 2 else name
+    say(f"Building the {name} seat")
+    pil = pillar.strip() or _llm(user,
+        "You name the single business pillar an advisor owns. Reply with 2-4 words only, no punctuation.",
+        f"What one business pillar is {name} best known for advising on?{(' Context: ' + focus) if focus else ''}",
+        fast=True) or "Business judgment"
+    pil = pil.splitlines()[0][:40].strip()
+    dim = _llm(user,
+        "You name the scoring dimension an advisor judges a decision on. Reply with 2-5 words only.",
+        f"Advisor {name}, pillar '{pil}'. Name the dimension they'd score a business decision on.",
+        fast=True) or pil
+    dim = dim.splitlines()[0][:50].strip()
+    persona = _llm(user,
+        "Write a tight advisor persona for a boardroom simulation, in the second person ('You are the X "
+        "seat'). 110-170 words. Capture how this real person actually thinks and decides: their worldview, "
+        "the handful of principles and frameworks they're known for, and the questions they ask. Plain, "
+        "specific, grounded in their public work. No hype, no quotes, no markdown. One paragraph.",
+        f"Person: {name}\nThe pillar they own: {pil}\n{('What they focus on: ' + focus) if focus else ''}\n"
+        f"Write the persona for the '{short}' seat.", fast=False)
+    persona = (persona or "").strip()
+    if len(persona) < 60:   # brain unavailable or thin — a safe generic fallback
+        persona = (f"You are the {short} seat: {pil}. Judge this decision the way {name} is known to think "
+                   f"about {pil.lower()}, from first principles and their own public track record. Bring that "
+                   f"lens at full strength, use the real numbers in the brief, and ask the hard question others "
+                   f"are avoiding.")
+    core.x("INSERT INTO boardroom_seats(user_id,key,name,short,pillar,dimension,persona,created) "
+           "VALUES(?,?,?,?,?,?,?,?)",
+           (user["id"], key, name, short, pil, dim, persona, time.time()))
+    return {"ok": True, "added": name, "key": key, "pillar": pil, "dimension": dim,
+            "note": f"{name} is now on the board. Seat them with --seats {key}, or let the Chair call them "
+                    "when the decision fits their lane."}
+
+
+def remove_advisor(user, key):
+    init()
+    key = str(key or "").strip()
+    if key in SEATS:
+        return {"error": "That's a built-in advisor and can't be removed."}
+    core.x("DELETE FROM boardroom_seats WHERE user_id=? AND key=?", (user["id"], key))
+    return {"ok": True, "removed": key}
 
 
 def _llm(user, system, prompt, fast=True):
@@ -177,13 +262,14 @@ def _num(v):
 
 
 # ---- the chair: pick the board + weights ---------------------------------------------------------
-def _pick_board(user, decision, mode, named, say):
+def _pick_board(user, decision, mode, named, say, smap=None):
+    smap = smap or SEATS
     if named:
-        board = [k for k in named if k in SEATS]
+        board = [k for k in named if k in smap]
         return [(k, 3 if i < 2 else 2, "you named this seat") for i, k in enumerate(board)] or \
             [(k, 2, "default") for k in DEFAULT_BOARD]
     say("The Chair is choosing the council")
-    roster = "\n".join(f"- {k}: {v['short']} — {v['pillar']}" for k, v in SEATS.items())
+    roster = "\n".join(f"- {k}: {v['short']} — {v['pillar']}" for k, v in smap.items())
     n = 4 if mode == "quick" else 7
     raw = _llm(user,
                "You are the Chair of an advisory board. Choose the advisors whose expertise this decision most "
@@ -195,7 +281,7 @@ def _pick_board(user, decision, mode, named, say):
     board = []
     for ln in raw.splitlines():
         parts = [p.strip() for p in ln.split("|")]
-        if len(parts) >= 2 and parts[0].lower() in SEATS:
+        if len(parts) >= 2 and parts[0].lower() in smap:
             w = _num(parts[1]) or 2
             board.append((parts[0].lower(), int(max(1, min(3, round(w)))),
                           parts[2] if len(parts) > 2 else ""))
@@ -213,8 +299,7 @@ def _pick_board(user, decision, mode, named, say):
 
 
 # ---- one seat, one round -------------------------------------------------------------------------
-def _round1(user, key, weight, decision, options, opt_lines):
-    seat = SEATS[key]
+def _round1(user, key, weight, decision, options, opt_lines, seat):
     sysp = seat["persona"] + (" Argue from your pillar at full strength; do not hedge to sound balanced. "
                               "Use the real numbers in the brief; state any you assume.")
     prompt = (f"DECISION BRIEF:\n{decision}\n\nOPTIONS:\n{opt_lines}\n\n"
@@ -230,8 +315,7 @@ def _round1(user, key, weight, decision, options, opt_lines):
     return text, _parse_card(text, options)
 
 
-def _round2(user, key, decision, options, opt_lines, digest):
-    seat = SEATS[key]
+def _round2(user, key, decision, options, opt_lines, digest, seat):
     prompt = (f"DECISION:\n{decision}\n\nOPTIONS:\n{opt_lines}\n\nWHAT THE ROOM SAID IN ROUND 1:\n{digest}\n\n"
               "Debate, in your voice, under 150 words: who you most DISAGREE with and your rebuttal, what you "
               "CONCEDE, and whether you MOVED. Engage the real arguments; move only for a better one.\n"
@@ -289,26 +373,27 @@ def run(user, decision, options=None, mode="full", seats=None, rounds=2, progres
     if mode == "quick":
         rounds = 1
 
-    board = _pick_board(user, decision, mode, seats, say)
-    names = ", ".join(SEATS[k]["short"] for k, _, _ in board)
+    smap = _all_seats(user)
+    board = _pick_board(user, decision, mode, seats, say, smap)
+    names = ", ".join(smap[k]["short"] for k, _, _ in board)
     say(f"Seating the council: {names}")
 
     # Round 1
     cards = []          # (key, weight, parsed)
     texts = {1: {}, 2: {}}
     for k, w, reason in board:
-        say(f"{SEATS[k]['short']} is taking a position")
-        text, parsed = _round1(user, k, w, decision, options, opt_lines)
+        say(f"{smap[k]['short']} is taking a position")
+        text, parsed = _round1(user, k, w, decision, options, opt_lines, smap[k])
         texts[1][k] = text
         cards.append((k, w, parsed))
 
     # Round 2 (debate)
     if rounds >= 2:
-        digest = "\n".join(f"{SEATS[k]['short']}: {_one_line(texts[1][k])}" for k, _, _ in board)
+        digest = "\n".join(f"{smap[k]['short']}: {_one_line(texts[1][k])}" for k, _, _ in board)
         new_cards = []
         for k, w, reason in board:
-            say(f"{SEATS[k]['short']} is debating")
-            text, parsed = _round2(user, k, decision, options, opt_lines, digest)
+            say(f"{smap[k]['short']} is debating")
+            text, parsed = _round2(user, k, decision, options, opt_lines, digest, smap[k])
             texts[2][k] = text
             new_cards.append((k, w, parsed))
         cards = new_cards
@@ -320,7 +405,7 @@ def run(user, decision, options=None, mode="full", seats=None, rounds=2, progres
     say("The Chair is writing the verdict")
     scoreline = " · ".join(f"{k}) {options[okeys.index(k)]}: {opt_scores[k]}" for k in okeys)
     board_digest = "\n\n".join(
-        f"{SEATS[k]['short']} ({SEATS[k]['pillar']}), weight {w}:\n{texts[rounds].get(k, texts[1].get(k, ''))}"
+        f"{smap[k]['short']} ({smap[k]['pillar']}), weight {w}:\n{texts[rounds].get(k, texts[1].get(k, ''))}"
         for k, w, _ in board)
     verdict_text = _llm(user,
                         "You are the Chair of the board. Write a crisp, plain-English verdict the founder can "
@@ -335,7 +420,7 @@ def run(user, decision, options=None, mode="full", seats=None, rounds=2, progres
                         "CRITERIA.", fast=False)
     verdict_text = verdict_text or f"{band}: lean {rec_option}."
 
-    scorecard = [{"seat": SEATS[k]["short"], "pillar": SEATS[k]["pillar"], "dimension": SEATS[k]["dimension"],
+    scorecard = [{"seat": smap[k]["short"], "pillar": smap[k]["pillar"], "dimension": smap[k]["dimension"],
                   "weight": w, "stance": p["stance"], "pillar_score": p["pillar"], "ruin": p["ruin"],
                   "door": p["door"], "scores": {ok: p["scores"].get(ok) for ok in okeys}}
                  for (k, w, p) in cards]
@@ -415,6 +500,10 @@ def get(user, bid):
         return {"error": "Could not read that verdict."}
 
 
-def seats_list():
-    return [{"key": k, "name": v["name"], "short": v["short"], "pillar": v["pillar"],
-             "default": k in DEFAULT_BOARD} for k, v in SEATS.items()]
+def seats_list(user=None):
+    out = [{"key": k, "name": v["name"], "short": v["short"], "pillar": v["pillar"],
+            "default": k in DEFAULT_BOARD, "custom": False} for k, v in SEATS.items()]
+    if user:
+        out += [{"key": k, "name": v["name"], "short": v["short"], "pillar": v["pillar"],
+                 "default": False, "custom": True} for k, v in custom_seats(user).items()]
+    return out

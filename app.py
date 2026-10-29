@@ -4274,7 +4274,20 @@ def vendors_del(name: str, user=Depends(auth)):
 @app.get("/api/boardroom")
 def boardroom_list(user=Depends(auth)):
     import boardroom
-    return {"verdicts": boardroom.history(user), "seats": boardroom.seats_list()}
+    return {"verdicts": boardroom.history(user), "seats": boardroom.seats_list(user)}
+
+
+@app.post("/api/boardroom/advisor")
+def boardroom_add_advisor(p: dict = Body(...), user=Depends(auth)):
+    import boardroom
+    return boardroom.add_advisor(user, (p.get("name") or "").strip(),
+                                 pillar=(p.get("pillar") or "").strip(), focus=(p.get("focus") or "").strip())
+
+
+@app.delete("/api/boardroom/advisor/{key}")
+def boardroom_del_advisor(key: str, user=Depends(auth)):
+    import boardroom
+    return boardroom.remove_advisor(user, key)
 
 
 @app.get("/api/boardroom/{bid}")

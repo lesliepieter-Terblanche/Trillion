@@ -772,6 +772,17 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <div class="msg" id="br-msg"></div>
   </div>
   <div class="panel" id="br-out" hidden></div>
+  <h3 style="margin:18px 0 8px;font-size:13px;letter-spacing:.08em;color:var(--muted)">THE BOARD</h3>
+  <div class="panel" style="gap:10px">
+    <div class="muted" style="font-size:12px">Add your own advisor, built from how that person actually thinks. The Chair will seat them when a decision fits their lane.</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+      <label class="field" style="flex:1;min-width:160px"><span>Name</span><input id="br-adv-name" placeholder="Morgan Housel"></label>
+      <label class="field" style="flex:1;min-width:160px"><span>Pillar (optional)</span><input id="br-adv-pillar" placeholder="money psychology & risk"></label>
+      <button class="btn pri" id="br-adv-add" style="min-height:40px;font-size:12px">ADD ADVISOR</button>
+    </div>
+    <div class="msg" id="br-adv-msg"></div>
+    <div id="br-seats" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+  </div>
   <h3 style="margin:18px 0 8px;font-size:13px;letter-spacing:.08em;color:var(--muted)">PAST VERDICTS</h3>
   <div id="br-hist" style="display:flex;flex-direction:column;gap:8px"></div>
 </div>
@@ -2514,6 +2525,8 @@ function brVerdict(r){
   <div class="muted" style="font-size:10px;margin-top:12px">Simulated advisors built from each person's public work. They are not the people and do not speak for them.</div>`;
 }
 async function loadBoardroom(){let d;try{d=await (await api('/api/boardroom')).json();}catch(e){return;}
+  const se=$('br-seats');if(se){se.innerHTML=(d.seats||[]).map(s=>{const c=s.custom?'#9b5de5':'#2a2f3a';return `<span style="background:${c};color:#fff;padding:4px 10px;border-radius:999px;font-size:11px;display:inline-flex;align-items:center;gap:6px" title="${esc(s.pillar)}">${esc(s.short)}${s.custom?` <b data-seatdel="${esc(s.key)}" style="cursor:pointer;opacity:.8">✕</b>`:''}</span>`;}).join('');
+    se.querySelectorAll('[data-seatdel]').forEach(b=>b.onclick=async()=>{await api('/api/boardroom/advisor/'+encodeURIComponent(b.dataset.seatdel),{method:'DELETE'});loadBoardroom();});}
   const h=$('br-hist');h.innerHTML=(d.verdicts||[]).length?'':'<div class="muted" style="font-size:12px">No verdicts yet.</div>';
   (d.verdicts||[]).forEach(v=>{const el=document.createElement('div');el.className='panel';el.style.cursor='pointer';const c=BR_COLORS[v.verdict]||'#9b5de5';
     el.innerHTML=`<div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><div style="font-size:13px;flex:1">${esc(v.decision.slice(0,90))}</div><span style="background:${c};color:#fff;padding:2px 10px;border-radius:999px;font-size:11px;white-space:nowrap">${esc(v.verdict)}</span></div>`;
@@ -2524,6 +2537,11 @@ $('br-run')&&($('br-run').onclick=async()=>{const dec=($('br-dec').value||'').tr
   const btn=$('br-run');btn.disabled=true;const was=btn.textContent;btn.textContent='THE BOARD IS DEBATING…';m.className='msg';m.textContent='Convening the council on the local brain — this takes a minute or two.';
   try{const r=await (await api('/api/boardroom',{json:{decision:dec,options,mode:$('br-mode').value}})).json();
     if(r.error){m.className='msg bad';m.textContent=r.error;}else{m.textContent='';$('br-out').hidden=false;$('br-out').innerHTML=brVerdict(r);$('br-out').scrollIntoView({behavior:'smooth'});loadBoardroom();}
+  }catch(e){m.className='msg bad';m.textContent=e.message;}finally{btn.disabled=false;btn.textContent=was;}});
+$('br-adv-add')&&($('br-adv-add').onclick=async()=>{const name=($('br-adv-name').value||'').trim();const m=$('br-adv-msg');if(!name){m.className='msg bad';m.textContent='Name first.';return;}
+  const btn=$('br-adv-add');btn.disabled=true;const was=btn.textContent;btn.textContent='BUILDING…';m.className='msg';m.textContent='Building the '+name+' seat on the local brain…';
+  try{const r=await (await api('/api/boardroom/advisor',{json:{name,pillar:($('br-adv-pillar').value||'').trim()}})).json();
+    if(r.error){m.className='msg bad';m.textContent=r.error;}else{m.className='msg ok';m.textContent=r.added+' added — '+r.pillar+'.';$('br-adv-name').value='';$('br-adv-pillar').value='';loadBoardroom();}
   }catch(e){m.className='msg bad';m.textContent=e.message;}finally{btn.disabled=false;btn.textContent=was;}});
 async function loadGrowth(){let d;try{d=await (await api('/api/growth')).json();}catch(e){return;}
   if(d.error){$('gr-tiles').innerHTML='<div class="muted">'+esc(d.error)+'</div>';return;}

@@ -201,6 +201,11 @@ SPECS = [
        "seats = optional explicit list of advisor keys to seat.",
        {"decision": S, "options": ARR, "mode": S, "seats": ARR}, ["decision"]),
     fn("boardroom_history", "List the user's past Boardroom verdicts (decision, verdict, date).", {}),
+    fn("boardroom_add_advisor", "Add a new advisor to the user's Boardroom, built from how that real person "
+       "thinks (like the built-in Bezos/Buffett/Hormozi seats). name is the person. pillar (optional) is the "
+       "business area they own, e.g. 'brand and storytelling'; focus (optional) is extra context. Use for 'add "
+       "<name> to the board', 'put <name> on my board'.", {"name": S, "pillar": S, "focus": S}, ["name"]),
+    fn("boardroom_advisors", "List the advisors on the user's Boardroom (built-in and their own added ones).", {}),
     fn("inbox_triage", "Read the user's Gmail inbox (last few days) and sort what needs them from the noise: each "
        "with a one-line summary, priority and whether it needs action, highest first. Use for 'check my inbox', "
        "'what needs my attention', 'any important emails'.", {}),
@@ -335,6 +340,7 @@ def describe(name, a):
         "vendors": "Listing your vendors", "vendor_add": f"Saving {g('name')}", "vendor_brief": f"Briefing on {g('name')}",
         "vendor_remove": f"Removing {g('name')}",
         "boardroom": "Convening the Boardroom", "boardroom_history": "Your past Boardroom verdicts",
+        "boardroom_add_advisor": f"Building the {g('name')} seat", "boardroom_advisors": "Your board of advisors",
         "inbox_triage": "Going through your inbox", "draft_email_reply": "Drafting a reply",
         "deep_research": f"Researching: {g('question')}",
         "ask_my_stuff": f"Searching your documents for {g('query')}", "index_documents": f"Indexing {g('path')}",
@@ -959,6 +965,16 @@ def t_boardroom(user, decision, options=None, mode="full", seats=None, _task=Non
 def t_boardroom_history(user):
     import boardroom
     return {"verdicts": boardroom.history(user)}
+
+
+def t_boardroom_add_advisor(user, name, pillar="", focus=""):
+    import boardroom
+    return boardroom.add_advisor(user, name, pillar=pillar, focus=focus)
+
+
+def t_boardroom_advisors(user):
+    import boardroom
+    return {"advisors": boardroom.seats_list(user)}
 
 
 def t_inbox_triage(user):
