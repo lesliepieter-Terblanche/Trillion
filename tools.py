@@ -206,6 +206,9 @@ SPECS = [
        "business area they own, e.g. 'brand and storytelling'; focus (optional) is extra context. Use for 'add "
        "<name> to the board', 'put <name> on my board'.", {"name": S, "pillar": S, "focus": S}, ["name"]),
     fn("boardroom_advisors", "List the advisors on the user's Boardroom (built-in and their own added ones).", {}),
+    fn("boardroom_ask", "Ask ONE advisor a question and get their answer in depth (lighter than convening the "
+       "whole board). seat is the advisor (e.g. 'buffett', 'hormozi', or a name). Use for 'ask Hormozi …', "
+       "'what would Buffett say about …', a quick single opinion.", {"seat": S, "question": S}, ["seat", "question"]),
     fn("inbox_triage", "Read the user's Gmail inbox (last few days) and sort what needs them from the noise: each "
        "with a one-line summary, priority and whether it needs action, highest first. Use for 'check my inbox', "
        "'what needs my attention', 'any important emails'.", {}),
@@ -341,6 +344,7 @@ def describe(name, a):
         "vendor_remove": f"Removing {g('name')}",
         "boardroom": "Convening the Boardroom", "boardroom_history": "Your past Boardroom verdicts",
         "boardroom_add_advisor": f"Building the {g('name')} seat", "boardroom_advisors": "Your board of advisors",
+        "boardroom_ask": f"Asking {g('seat')}",
         "inbox_triage": "Going through your inbox", "draft_email_reply": "Drafting a reply",
         "deep_research": f"Researching: {g('question')}",
         "ask_my_stuff": f"Searching your documents for {g('query')}", "index_documents": f"Indexing {g('path')}",
@@ -414,7 +418,8 @@ def execute(user, name, args, task_id=None, approved=False, direct=False):
             watch.alert(user, "approval", "Trillion needs your OK", summary)
             return {"status": "waiting_for_approval",
                     "note": "Not done yet. The user must approve this on the dashboard."}
-        if name in ("create_video", "revise_video", "create_ai_clip", "create_ebook", "boardroom"):
+        if name in ("create_video", "revise_video", "create_ai_clip", "create_ebook", "boardroom",
+                    "boardroom_ask"):
             args = dict(args, _task=task_id)
         out = globals()["t_" + name](user, **args)
         core.log(uid, describe(name, args), "done")
@@ -975,6 +980,12 @@ def t_boardroom_add_advisor(user, name, pillar="", focus=""):
 def t_boardroom_advisors(user):
     import boardroom
     return {"advisors": boardroom.seats_list(user)}
+
+
+def t_boardroom_ask(user, seat, question, _task=None):
+    import boardroom
+    say = (lambda text: core.set_task(_task, detail=text)) if _task else None
+    return boardroom.consult(user, seat, question, progress=say)
 
 
 def t_inbox_triage(user):

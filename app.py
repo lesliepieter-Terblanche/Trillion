@@ -4308,6 +4308,12 @@ def boardroom_list(user=Depends(auth)):
     return {"verdicts": boardroom.history(user), "seats": boardroom.seats_list(user)}
 
 
+@app.post("/api/boardroom/ask")
+def boardroom_ask(p: dict = Body(...), user=Depends(auth)):
+    import boardroom
+    return boardroom.consult(user, (p.get("seat") or "").strip(), (p.get("question") or "").strip())
+
+
 @app.post("/api/boardroom/advisor")
 def boardroom_add_advisor(p: dict = Body(...), user=Depends(auth)):
     import boardroom
