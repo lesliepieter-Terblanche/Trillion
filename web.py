@@ -45,6 +45,10 @@ TEMPLATES = {
     "globe":     {"file": "threeui-globe.html", "photo": False, "dark": True},        # rotating dotted globe
     "topo":      {"file": "threeui-topo.html", "photo": False, "dark": True},         # topographic contour lines
     "portal":    {"file": "threeui-portal.html", "photo": False, "dark": True},       # swirling portal vortex
+    # premium animated WebGL2 shaders adapted from paper-design/shaders (Apache-2.0), recoloured to the palette
+    "mesh":      {"file": "paper-mesh.html", "photo": False, "dark": True},            # soft animated mesh gradient
+    "swirl":     {"file": "paper-swirl.html", "photo": False},                          # bold cinematic spiral, light/dark
+    "neuro":     {"file": "paper-neuro.html", "photo": False},                          # organic neuro-plasma flow
 }
 # trades that suit each ThreeUI look (only used when the look is left on Auto)
 THREEUI_WORDS = {
@@ -169,11 +173,11 @@ LAYOUT_POOLS = [
     (("restaurant", "cafe", "coffee", "bar", "bistro", "grill", "diner", "eatery", "bakery", "deli", "restaur",
       "hotel", "guest", "lodge", "pub", "takeaway"), ["cinematic", "ember", "premium", "orb"]),
     (("salon", "beauty", "spa", "hair", "barber", "nail", "wellness", "yoga", "pilates", "massage", "aesthetic",
-      "skin", "therap"), ["cinematic", "orb", "premium", "resonance", "bells"]),
+      "skin", "therap"), ["cinematic", "orb", "neuro", "premium", "resonance", "bells"]),
     (("gym", "fitness", "crossfit", "boxing", "club", "night", "lounge", "gaming", "esport"),
      ["streams", "premium", "portal", "laser", "dotgrid"]),
     (("music", "sound", "audio", "recording", "dj", "venue", "event", "wedding", "church", "choir", "piano", "guitar"),
-     ["resonance", "bells", "portal", "streams", "premium"]),
+     ["resonance", "bells", "swirl", "portal", "streams", "premium"]),
     (("auto", "detailing", "car ", "motor", "tyre", "spares", "mechanic", "panel", "workshop"),
      ["liquid", "object3d", "premium", "streams"]),
     (("jewel", "watch", "luxury", "boutique", "fashion", "interior", "decor", "furniture", "florist"),
@@ -183,16 +187,16 @@ LAYOUT_POOLS = [
      ["aurora", "topo", "premium", "editorial", "object3d"]),
     (("tech", "software", "it service", "it support", "digital", "agency", "data", "cloud", "cyber", "network",
       "startup", "security", "print", "signage", "telecom", "fibre", "isp"),
-     ["dotgrid", "constellation", "globe", "ribbons", "object3d"]),
+     ["mesh", "dotgrid", "constellation", "neuro", "globe", "ribbons", "object3d"]),
     (("gaming", "arcade", "retro", "creative", "design studio", "media", "vfx", "animation", "nightlife", "festival"),
-     ["pixels", "portal", "dotgrid", "streams", "premium"]),
+     ["pixels", "swirl", "portal", "mesh", "dotgrid", "streams", "premium"]),
     (("consult", "finance", "account", "advis", "corporate", "legal", "insurance", "broker"),
-     ["glass", "editorial", "premium", "constellation"]),
+     ["glass", "mesh", "editorial", "premium", "constellation"]),
     (("retail", "product", "supplier", "wholesale", "hardware", "electronic", "fabricat", "logistics",
       "courier", "freight", "shipping", "trading", "import", "export", "distribut"),
      ["object3d", "globe", "dotgrid", "premium", "constellation"]),
 ]
-DEFAULT_POOL = ["premium", "object3d", "orb", "ribbons", "editorial"]
+DEFAULT_POOL = ["premium", "mesh", "object3d", "orb", "ribbons", "editorial"]
 
 
 def _layout_pool(category, photos):
@@ -1209,7 +1213,13 @@ def revise(user, sid, change, progress=None, opts=None):
         template = "globe"
     elif _re.search(r"\b(topo|topographic|contours?|terrain|elevation)\b", low):
         template = "topo"
-    elif _re.search(r"\b(portal|vortex|swirl|spiral|wormhole)\b", low):
+    elif _re.search(r"\b(mesh|mesh gradient|flowing gradient|stripe-like|apple-like)\b", low):
+        template = "mesh"
+    elif _re.search(r"\b(swirl|spiral|hypnotic|vortex spiral)\b", low):
+        template = "swirl"
+    elif _re.search(r"\b(neuro|plasma|neural|organic flow|liquid light)\b", low):
+        template = "neuro"
+    elif _re.search(r"\b(portal|vortex|wormhole)\b", low):
         template = "portal"
     elif _re.search(r"\b(3d|object|crystal)\b", low):
         template = "object3d"
