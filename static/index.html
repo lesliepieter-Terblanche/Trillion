@@ -1856,6 +1856,11 @@ function drawWeb(sites){
         ${(s.addons||[]).some(a=>['shop','members','appointments','community'].includes(a))?`<button class="btn" data-wba="${s.id}" style="min-height:40px;font-size:12px">ACTIVITY</button>`:''}
         <button class="btn" data-wbd="${s.id}" style="min-height:40px;font-size:12px">DELETE</button></div>
       <div id="wbact-${s.id}" hidden style="margin-top:14px"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:4px">
+        <input data-lemail="${s.id}" placeholder="owner@email" style="flex:1;min-width:150px;padding:8px 11px;border:1px solid var(--edge2);border-radius:8px;background:var(--panel2,transparent);color:var(--text);font-size:13px">
+        <button class="btn pri" data-lpitch="${s.id}" style="min-height:38px;font-size:12px">EMAIL PITCH</button>
+      </div>
+      <div class="muted" data-lpmsg="${s.id}" style="font-size:12px;min-height:16px"></div>
       <div id="wbch-${s.id}" hidden style="margin-top:14px;padding:16px;border:1px solid var(--edge2);border-radius:12px;background:var(--panel2,rgba(127,127,127,.06));display:grid;gap:12px">
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
           <label class="field"><span>Hero / look</span><select data-ch="look">
@@ -1892,6 +1897,12 @@ function drawWeb(sites){
     </div>`;}).join('')||'<div class="muted">No sites yet. Fill in a business above and press Generate.</div>';
   document.querySelectorAll('[data-wbd]').forEach(b=>b.onclick=async()=>{await api('/api/gensites/'+b.dataset.wbd,{method:'DELETE'});loadWeb();});
   document.querySelectorAll('[data-wba]').forEach(b=>b.onclick=async()=>{const id=b.dataset.wba,w=$('wbact-'+id);if(!w.hidden){w.hidden=true;return;}w.hidden=false;w.innerHTML='<div class="muted" style="font-size:13px">Loading…</div>';loadActivity(id,w);});
+  document.querySelectorAll('[data-lpitch]').forEach(b=>b.onclick=async()=>{const id=b.dataset.lpitch;
+    const inp=document.querySelector('[data-lemail="'+id+'"]'),msg=document.querySelector('[data-lpmsg="'+id+'"]');
+    const email=(inp.value||'').trim();b.disabled=true;msg.className='muted';msg.style.color='';msg.textContent='Sending the pitch email…';
+    try{const r=await (await api('/api/gensites/'+id+'/email-pitch',{json:{email}})).json();
+      if(r.error){msg.style.color='#d94a6a';msg.textContent=r.error;}else{msg.style.color='#1fa67a';msg.textContent='Pitch emailed to '+r.emailed+'. Tracked on the Campaign page.';}
+    }catch(e){msg.style.color='#d94a6a';msg.textContent=e.message;}finally{b.disabled=false;}});
   document.querySelectorAll('[data-wbba]').forEach(b=>b.onclick=async()=>{const id=b.dataset.wbba,m=$('wb-msg');
     const old=prompt("The prospect's CURRENT website address (for the BEFORE shot):");if(!old)return;b.disabled=true;
     m.className='msg muted';m.textContent='Making the before/after card (shots of both sites)…';

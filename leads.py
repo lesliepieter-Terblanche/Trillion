@@ -125,6 +125,49 @@ def set_status(user, lid, status):
     return {"ok": True, "status": status}
 
 
+def record_reply(token, answer):
+    """A prospect clicked Yes/No in the pitch email or deck. Public (keyed by the site token). Marks the lead
+    accepted or declined and timestamps it, so it shows on the owner's dashboard. Returns the business name."""
+    init()
+    token = str(token or "").strip()
+    yes = str(answer or "").lower() in ("yes", "y", "1", "accept", "accepted")
+    row = core.q("SELECT id, business, user_id FROM leads WHERE token=?", (token,), one=True)
+    biz = (row["business"] if row else "") or "your business"
+    if row:
+        status = "accepted" if yes else "declined"
+        core.x("UPDATE leads SET status=?, last_reply_at=?, note=?, updated=? WHERE id=?",
+               (status, _now(), "Replied via website: " + ("YES — interested" if yes else "not right now"),
+                _now(), row["id"]))
+        try:
+            import watch
+            watch.alert({"id": row["user_id"]}, "lead",
+                        ("A prospect said YES" if yes else "A prospect replied"),
+                        f"{biz} {'wants the website — follow up!' if yes else 'said not right now.'}")
+        except Exception:
+            pass
+    return {"ok": True, "yes": yes, "business": biz, "known": bool(row)}
+
+
+def reply_page(answer, business):
+    """A styled thank-you page shown after the prospect clicks Yes/No (served under /site/)."""
+    yes = str(answer or "").lower() in ("yes", "y", "1", "accept", "accepted")
+    biz = business or "your business"
+    head = "Brilliant — thank you!" if yes else "Thanks for letting me know"
+    body = (f"I've noted that you'd like to go ahead with the website for {biz}. I'll be in touch very shortly to "
+            "sort out the details and get it live.") if yes else \
+           (f"No problem at all. The sample for {biz} will stay ready if you change your mind — just reply to the "
+            "email any time.")
+    acc = "#7c5cff"
+    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Thank you</title>
+<style>body{{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+background:#0b0b12;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;padding:24px}}
+.c{{max-width:440px;text-align:center}}.i{{width:76px;height:76px;border-radius:50%;margin:0 auto 22px;
+background:linear-gradient(100deg,{acc},#d94fd0);display:flex;align-items:center;justify-content:center;font-size:38px}}
+h1{{font-size:28px;margin:0 0 12px;letter-spacing:-.01em}}p{{color:#aeb3c2;line-height:1.65;font-size:16px}}</style></head>
+<body><div class="c"><div class="i">{'&#10003;' if yes else '&#128075;'}</div><h1>{head}</h1><p>{body}</p></div></body></html>"""
+
+
 def listing(user):
     init()
     out = []
@@ -150,25 +193,39 @@ def preview_url(host, token, scheme="https"):
     return f"{scheme}://{host}/site/{token}/"
 
 
-def _email_html(user, lead, link, stage):
+def _email_html(user, lead, base, stage, has_video=False):
     biz = lead["business"]
     me = core.q("SELECT name FROM users WHERE id=?", (user["id"],), one=True)
     who = (me["name"] if me and me["name"] else "").split(" ")[0] or "me"
+    base = base if base.endswith("/") else base + "/"
+    deck, site, video = base + "pitch.html", base, base + "pitch.mp4"
+    yes, no = base + "reply?a=yes", base + "reply?a=no"
     if stage == 0:
-        intro = (f"I came across {biz} on Google and noticed you don't have a website yet, so I built a free "
-                 f"example of what one could look like for you.")
-        close = "Have a look — no obligation at all. If you like it, just reply and we can make it yours."
+        intro = (f"I came across {biz} on Google and built a free sample website to show what one could look like "
+                 "for you — real content, works on a phone, ready to go.")
+        close = "Take a look below. No obligation, nothing to pay to look."
     elif stage == 1:
         intro = f"Just checking you saw the sample website I put together for {biz}."
         close = "Happy to tweak the colours, text or photos — tell me what you'd change."
     else:
         intro = f"Last note from me about the {biz} website — I don't want to be a pest."
-        close = "If now isn't the time, no problem at all. Reply any time and the sample's ready to go live."
-    return f"""<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.6;color:#222">
+        close = "If now isn't the time, no problem at all. The sample's ready whenever you are."
+    vid = (f'<a href="{video}" style="display:inline-block;background:#f3f4f6;color:#111;text-decoration:none;'
+           'padding:12px 22px;border-radius:40px;font-weight:600;margin:4px 6px">&#9654; Watch the 30-sec video</a>'
+           ) if has_video else ""
+    return f"""<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.6;color:#222;max-width:560px">
 <p>Hi there,</p>
 <p>{intro}</p>
-<p><a href="{link}" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;padding:12px 22px;border-radius:40px;font-weight:600">View your sample website</a></p>
+<p style="margin:22px 0">
+<a href="{deck}" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;padding:13px 24px;border-radius:40px;font-weight:700;margin:4px 6px">See your website &amp; the details</a>
+{vid}</p>
 <p>{close}</p>
+<p style="margin:26px 0 10px;font-weight:600">Want it? One tap:</p>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr>
+<td style="padding-right:10px"><a href="{yes}" style="display:inline-block;background:#16a34a;color:#fff;text-decoration:none;padding:13px 26px;border-radius:40px;font-weight:700">Yes, let's do it</a></td>
+<td><a href="{no}" style="display:inline-block;background:#f3f4f6;color:#555;text-decoration:none;padding:13px 26px;border-radius:40px;font-weight:600">Not right now</a></td>
+</tr></table>
+<p style="font-size:13px;color:#888;margin-top:20px">Note: the website itself is covered — a domain name and hosting are arranged on your side (about R100&ndash;R250 a year for a domain, plus a low-cost hosting plan). I'll guide you through connecting it. Full details are on the page above.</p>
 <p>Thanks,<br>{who}</p>
 <p style="font-size:12px;color:#999">If you'd rather not hear from me, just reply "stop" and I won't follow up.</p>
 </div>"""
@@ -193,8 +250,15 @@ def send_pitch(user, lid, host, scheme="https"):
         return {"error": "This lead has no generated site yet."}
     link = preview_url(host, lead["token"], scheme)
     stage = int(lead["followups"] or 0) if lead["status"] in ("emailed", "followed_up") else 0
+    has_video = False
     try:
-        mail.send(user, lead["email"], _subject(lead, stage), _email_html(user, lead, link, stage))
+        import os
+        site = core.q("SELECT folder FROM gensites WHERE token=?", (lead["token"],), one=True)
+        has_video = bool(site and os.path.exists(os.path.join(site["folder"], "pitch.mp4")))
+    except Exception:
+        pass
+    try:
+        mail.send(user, lead["email"], _subject(lead, stage), _email_html(user, lead, link, stage, has_video))
     except Exception as e:
         return {"error": f"Could not send: {type(e).__name__}. Check your Gmail connection."}
     if stage == 0:
@@ -204,6 +268,18 @@ def send_pitch(user, lid, host, scheme="https"):
         core.x("UPDATE leads SET status='followed_up', followups=followups+1, next_action=?, updated=? WHERE id=?",
                (_now() + 2 * DAY, _now(), lid))
     return {"ok": True, "emailed": lead["email"]}
+
+
+def send_for_site(user, sid, email, host, scheme="https"):
+    """Pitch the lead behind a generated site straight from Web Studio: set its email, then send the pitch."""
+    init()
+    row = core.q("SELECT id FROM leads WHERE user_id=? AND site_id=?", (user["id"], sid), one=True)
+    if not row:
+        return {"error": "No lead for this site yet — generate the site first."}
+    email = (email or "").strip()
+    if email:
+        core.x("UPDATE leads SET email=?, updated=? WHERE id=?", (email, _now(), row["id"]))
+    return send_pitch(user, row["id"], host, scheme)
 
 
 def send_whatsapp(user, lid, host, scheme="https"):

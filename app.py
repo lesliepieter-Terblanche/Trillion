@@ -2149,6 +2149,13 @@ def gensite_pitch_video_status(sid: int, download: int = 0, user=Depends(auth)):
     return {k: v for k, v in st.items() if k != "file"} | {"ready": st.get("status") == "done"}
 
 
+@app.post("/api/gensites/{sid}/email-pitch")
+def gensite_email_pitch(sid: int, request: Request, p: dict = Body(default={}), user=Depends(auth)):
+    import leads
+    dns = (TAILSCALE.get("v") or {}).get("dns") or app_host(request)
+    return leads.send_for_site(user, sid, (p.get("email") or "").strip(), dns, "https")
+
+
 @app.post("/api/gensites/{sid}/before-after")
 def gensite_before_after(sid: int, p: dict = Body(default={}), user=Depends(auth)):
     import beforeafter
@@ -2195,6 +2202,16 @@ def gensites_thumb(sid: int, user=Depends(auth)):
     if not row or not row["thumb"] or not os.path.exists(row["thumb"]):
         raise HTTPException(404, "No preview")
     return FileResponse(row["thumb"], media_type="image/jpeg")
+
+
+@app.get("/site/{token}/reply")
+@app.get("/site/site/{token}/reply")
+def gensite_reply(token: str, a: str = "", user=None):
+    """Public accept/decline from the pitch email or deck. Declared before the file catch-all. Records the
+    reply against the lead (so it shows on the owner's dashboard) and returns a thank-you page."""
+    import leads
+    r = leads.record_reply(token, a)
+    return HTMLResponse(leads.reply_page(a, r.get("business")))
 
 
 @app.api_route("/site/{token}/__api/{action}", methods=["GET", "POST"])

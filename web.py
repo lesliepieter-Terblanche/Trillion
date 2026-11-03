@@ -992,6 +992,93 @@ def render(content, palette, photos_rel, template="premium", font=None):
     return html
 
 
+_DECK_FEATURES = {
+    "whatsapp": "One-tap WhatsApp button on every page",
+    "form": "Enquiry form that emails you straight away",
+    "booking": "Online booking request form",
+    "pricelist": "A price list customers read on their phone",
+    "promo": "A promotions banner you can change any time",
+    "shop": "An online shop with a cart and checkout",
+    "members": "A member login and members-only area",
+    "appointments": "Appointment booking with date and time",
+    "community": "A community forum for your customers",
+}
+
+
+def pitch_deck(folder, info, palette, addons, has_video=False):
+    """Write pitch.html into the site folder: a one-page offer deck the prospect reads — what they get, how
+    installation works, and a clear note that domain and hosting are not included. Self-contained, palette-matched,
+    with relative links (so it works on the LAN, the shared link and the public Funnel), plus accept/decline
+    buttons that Trillion tracks. Content only — invents no price."""
+    name = str(info.get("business") or info.get("name") or "your business").strip()
+    cat = str(info.get("category") or "business").strip()
+    p = palette
+    feats = [v for k, v in _DECK_FEATURES.items() if k in [str(a).lower() for a in (addons or [])]]
+    base = ["A fast, modern website built around " + _esc(name),
+            "Looks right on a phone, tablet and computer",
+            "Your real services, hours and contact details",
+            "Found on Google with your business name"]
+    feat_items = base + [_esc(f) for f in feats]
+    feat_html = "".join(
+        f'<li style="padding:11px 0;border-bottom:1px solid {p["C_BORDER"]};display:flex;gap:12px;align-items:flex-start">'
+        f'<span style="color:{p["C_ACCENT"]};font-weight:800">&#10003;</span><span>{f}</span></li>'
+        for f in feat_items)
+    steps = [("1", "You take a look", "Open the sample site" + (" and the 30-second video" if has_video else "") +
+              ". Everything you see is real and ready."),
+             ("2", "You say the word", "Tap <b>Yes, let's do it</b> below. Tell me any changes — colours, wording, "
+              "photos — and I make them."),
+             ("3", "We put it live", "You arrange a domain and hosting (see below); I connect your site to it and "
+              "it goes live for your customers.")]
+    step_html = "".join(
+        f'<div style="display:flex;gap:18px;align-items:flex-start;padding:16px 0">'
+        f'<div style="flex:none;width:44px;height:44px;border-radius:12px;background:{p["C_ACCENT"]};color:#fff;'
+        f'display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px">{n}</div>'
+        f'<div><div style="font-weight:700;font-size:18px">{t}</div>'
+        f'<div style="color:{p["C_MUTED"]};line-height:1.6;margin-top:3px">{d}</div></div></div>'
+        for n, t, d in steps)
+    video_btn = ('<a href="pitch.mp4" style="display:inline-block;padding:13px 24px;border-radius:40px;border:1px solid '
+                 f'{p["C_BORDER"]};color:{p["C_TEXT"]};text-decoration:none;font-weight:600">&#9654; Watch the 30-sec video</a>'
+                 ) if has_video else ""
+    accent_grad = f"linear-gradient(100deg,{p['C_ACCENT']},{p['C_ACCENT2']})"
+    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Your new website — {_esc(name)}</title>
+<style>:root{{color-scheme:{p['mode']}}}*{{box-sizing:border-box}}body{{margin:0;background:{p['C_BG']};color:{p['C_TEXT']};
+font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;line-height:1.6;overflow-x:clip}}
+.wrap{{max-width:760px;margin:0 auto;padding:0 22px}}h1{{font-size:clamp(28px,6vw,44px);line-height:1.1;letter-spacing:-.02em;margin:0 0 10px}}
+h2{{font-size:clamp(20px,4vw,26px);margin:38px 0 8px}}.sub{{color:{p['C_MUTED']};font-size:17px}}
+.card{{background:{p['C_CARD']};border:1px solid {p['C_BORDER']};border-radius:18px;padding:24px;margin-top:16px}}
+.btn{{display:inline-block;padding:15px 30px;border-radius:40px;text-decoration:none;font-weight:700;font-size:16px}}
+ul{{list-style:none;padding:0;margin:0}}a{{color:{p['C_ACCENT']}}}</style></head>
+<body><div style="height:8px;background:{accent_grad}"></div>
+<div class="wrap" style="padding-top:46px;padding-bottom:60px">
+<div style="font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:{p['C_ACCENT']};font-weight:700">A new website, made for you</div>
+<h1>{_esc(name)}, online — properly</h1>
+<p class="sub">I built a complete sample website for {_esc(name)} so you can see exactly what it looks like before deciding anything. No obligation, nothing to pay to look.</p>
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:22px">
+<a class="btn" href="./" style="background:{accent_grad};color:#fff">View your website</a>{video_btn}</div>
+
+<h2>What you get</h2><div class="card"><ul>{feat_html}</ul></div>
+
+<h2>How it works</h2><div class="card">{step_html}</div>
+
+<h2>Domain &amp; hosting</h2>
+<div class="card" style="border-color:{p['C_ACCENT']}">
+<p style="margin:0 0 10px"><b>Domain and hosting are not included.</b> Those are the two things you own and pay for directly, so they stay in your name and under your control.</p>
+<ul style="color:{p['C_MUTED']}">
+<li style="padding:5px 0">&bull; A <b>domain</b> is your web address (for example {_esc(name.lower().replace(' ', '') or 'yourbusiness')}.co.za). About R100&ndash;R250 a year from a registrar.</li>
+<li style="padding:5px 0">&bull; <b>Hosting</b> is where the site lives online. Low-cost plans are widely available.</li>
+<li style="padding:5px 0">&bull; Once you've sorted those, I connect your site to them and it goes live. I'll guide you through it.</li>
+</ul></div>
+
+<h2>Ready?</h2>
+<p class="sub">Let me know and we'll make it yours.</p>
+<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px">
+<a class="btn" href="reply?a=yes" style="background:{accent_grad};color:#fff">Yes, let's do it</a>
+<a class="btn" href="reply?a=no" style="background:transparent;border:1px solid {p['C_BORDER']};color:{p['C_MUTED']}">Not right now</a></div>
+<p style="font-size:12px;color:{p['C_MUTED']};margin-top:40px">Simulated preview built for {_esc(name)}. Your reply just lets me know how to follow up.</p>
+</div></body></html>"""
+
+
 # ---------- build ----------
 def build(user, info, progress=None):
     init()
@@ -1042,6 +1129,12 @@ def build(user, info, progress=None):
         font_idx = random.randrange(len(FONT_PAIRS))     # a different typeface pairing each build
     html = render(content, palette, photos_rel, template, font=font_idx)
     (folder / "index.html").write_text(html, encoding="utf-8")
+    try:
+        (folder / "pitch.html").write_text(
+            pitch_deck(folder, info, palette, info.get("addons") or [],
+                       has_video=(folder / "pitch.mp4").exists()), encoding="utf-8")
+    except Exception:
+        pass
     thumb = ""
     try:
         say("Taking a preview shot")
@@ -1313,6 +1406,12 @@ def revise(user, sid, change, progress=None, opts=None):
     folder = Path(row["folder"])
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "index.html").write_text(html, encoding="utf-8")
+    try:
+        (folder / "pitch.html").write_text(
+            pitch_deck(folder, info, palette, info.get("addons") or [],
+                       has_video=(folder / "pitch.mp4").exists()), encoding="utf-8")
+    except Exception:
+        pass
     thumb = row["thumb"]
     try:
         say("Taking a preview shot")
