@@ -1969,13 +1969,16 @@ function drawWeb(sites){
     const done=(ok,txt)=>{msg.style.color=ok?'#1fa67a':'#d94a6a';msg.style.fontWeight='';msg.textContent=txt;b.disabled=false;};
     try{
       const r=await (await api('/api/gensites/'+id+'/whatsapp-pitch',{json:{phone}})).json();
+      const pcReady=to=>{msg.style.color='#c98a1a';msg.style.fontWeight='';msg.textContent='Your phone wasn’t available, so I opened WhatsApp on this PC with the pitch ready for '+(to||phone)+' — press Send there.';b.disabled=false;};
       if(r.status==='error'||r.error){done(false,r.error||'Could not start.');return;}
       if(r.status==='done'){done(true,'Pitch sent on WhatsApp to '+(r.to||phone)+'. Tracked on the Campaign page.');return;}
+      if(r.status==='pc_ready'){pcReady(r.to);return;}
       msg.textContent=r.detail||'Opening WhatsApp on your phone…';
       const poll=setInterval(async()=>{try{const d=await (await api('/api/gensites/'+id+'/whatsapp-pitch')).json();
         if(d.status==='sending'){if(d.detail)msg.textContent=d.detail;return;}
         clearInterval(poll);
         if(d.status==='done')done(true,'Pitch sent on WhatsApp to '+(d.to||phone)+'. Tracked on the Campaign page.');
+        else if(d.status==='pc_ready')pcReady(d.to);
         else if(d.status==='error')done(false,d.error||'WhatsApp did not send.');
         else done(false,'WhatsApp did not send — check that your phone is linked and unlocked on the Phone page.');
       }catch(e){clearInterval(poll);done(false,e.message);}},3000);

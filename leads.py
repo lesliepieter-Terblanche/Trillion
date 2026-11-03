@@ -354,6 +354,61 @@ def send_for_site(user, sid, email, host, scheme="https"):
     return send_pitch(user, row["id"], host, scheme)
 
 
+def _wa_message(user, lead, host, scheme="https"):
+    """The pitch text for WhatsApp (deck link + what-you-get bullets + price + more-features link). Shared by
+    the phone send and the PC-desktop fallback; also refreshes the deck so it's current."""
+    base = preview_url(host, lead["token"], scheme)
+    deck = (base if base.endswith("/") else base + "/") + "pitch.html"
+    biz = lead["business"]
+    me = core.q("SELECT name FROM users WHERE id=?", (user["id"],), one=True)
+    who = (me["name"] if me and me["name"] else "").split(" ")[0] or ""
+    pline, bullets = "", ""
+    try:
+        import json as _json, web
+        site = core.q("SELECT folder, detail FROM gensites WHERE token=?", (lead["token"],), one=True)
+        if site:
+            detail = _json.loads(site["detail"] or "{}") or {}
+            addons = detail.get("addons") or []
+            pline = web.price_line(addons)
+            bullets = "\n".join("✓ " + f for f in web.feature_list(biz, addons))
+            web.refresh_pitch(site["folder"], detail)      # ensure the deck has the latest (incl. the more-features form)
+    except Exception:
+        pass
+    return (f"Hi, I came across {biz} on Google and built a free sample website to show what one could look like "
+            f"for you. Have a look here (there's a Yes/No button at the bottom to let me know):\n{deck}\n\n"
+            + (f"What you get:\n{bullets}\n\n" if bullets else "")
+            + (f"Price: {pline}\n(Domain & hosting are arranged on your side.)\n\n" if pline else "")
+            + f"Want more features? Ask for a price here:\n{deck}#more\n\n"
+            + "No obligation at all." + (f"\n\n{who}" if who else ""))
+
+
+def pc_whatsapp_open(user, number, text):
+    """Fallback for when the phone isn't available: open WhatsApp Desktop on THIS PC at a chat with `number`,
+    with the pitch message pre-typed, for the owner to press Send. Uses the whatsapp: protocol WhatsApp
+    Desktop registers. Returns True if it launched. Best-effort and cross-platform-guarded."""
+    import os as _os, re as _re, sys as _sys, subprocess as _sp
+    from urllib.parse import quote as _quote
+    try:
+        import phone
+        country = str(core.settings(user).get("phone_country_code", "27"))
+        num = _re.sub(r"\D", "", phone.normalise(number, country) or "")
+    except Exception:
+        num = _re.sub(r"\D", "", str(number or ""))
+    if not num:
+        return False
+    uri = f"whatsapp://send?phone={num}&text={_quote(text or '')}"
+    try:
+        if _sys.platform.startswith("win"):
+            _os.startfile(uri)                       # launches WhatsApp Desktop and opens the chat
+        elif _sys.platform == "darwin":
+            _sp.Popen(["open", uri])
+        else:
+            _sp.Popen(["xdg-open", uri])
+        return True
+    except Exception:
+        return False
+
+
 def send_whatsapp_for_site(user, sid, phone_no, host, scheme="https"):
     """WhatsApp the pitch deck for a generated site straight from Web Studio — for when there's no email.
     Sets the lead's phone if one is supplied, then sends over WhatsApp."""
@@ -394,10 +449,26 @@ def start_whatsapp_for_site(user, sid, phone_no, host, scheme="https"):
     def go():
         try:
             r = send_whatsapp_for_site(user, sid, phone_no, host, scheme)
-            if r.get("error"):
-                out = {"status": "error", "error": r["error"]}
-            else:
+            if not r.get("error"):
                 out = {"status": "done", "to": r.get("to") or phone_no, "note": r.get("note", "")}
+            else:
+                # the phone wasn't available (asleep, locked, not linked, ADB missing) — fall back to WhatsApp
+                # Desktop on this PC: open the chat with the pitch pre-typed for the owner to press Send.
+                lead = core.q("SELECT * FROM leads WHERE user_id=? AND site_id=?", (uid, sid), one=True)
+                num = (phone_no or (lead["phone"] if lead else "") or "").strip()
+                opened = False
+                if lead and lead["token"] and num:
+                    try:
+                        opened = pc_whatsapp_open(user, num, _wa_message(user, lead, host, scheme))
+                    except Exception:
+                        opened = False
+                if opened:
+                    core.x("UPDATE leads SET status=CASE WHEN status='site_created' THEN 'emailed' ELSE status END, "
+                           "emailed_at=COALESCE(emailed_at,?), note='WhatsApp opened on PC (press Send)', updated=? WHERE id=?",
+                           (_now(), _now(), lead["id"]))
+                    out = {"status": "pc_ready", "to": num, "phone_error": r["error"]}
+                else:
+                    out = {"status": "error", "error": r["error"]}
         except Exception as e:
             out = {"status": "error", "error": f"{type(e).__name__}: {str(e)[:160]}"}
         with _WA_LOCK:
@@ -422,29 +493,7 @@ def send_whatsapp(user, lid, host, scheme="https"):
         return {"error": "This lead has no phone number."}
     if not lead["token"]:
         return {"error": "This lead has no generated site yet."}
-    base = preview_url(host, lead["token"], scheme)
-    deck = (base if base.endswith("/") else base + "/") + "pitch.html"
-    biz = lead["business"]
-    me = core.q("SELECT name FROM users WHERE id=?", (user["id"],), one=True)
-    who = (me["name"] if me and me["name"] else "").split(" ")[0] or ""
-    pline, bullets = "", ""
-    try:
-        import json as _json, web
-        site = core.q("SELECT folder, detail FROM gensites WHERE token=?", (lead["token"],), one=True)
-        if site:
-            detail = _json.loads(site["detail"] or "{}") or {}
-            addons = detail.get("addons") or []
-            pline = web.price_line(addons)
-            bullets = "\n".join("✓ " + f for f in web.feature_list(biz, addons))
-            web.refresh_pitch(site["folder"], detail)      # ensure the deck has the latest (incl. the more-features form)
-    except Exception:
-        pass
-    msg = (f"Hi, I came across {biz} on Google and built a free sample website to show what one could look like "
-           f"for you. Have a look here (there's a Yes/No button at the bottom to let me know):\n{deck}\n\n"
-           + (f"What you get:\n{bullets}\n\n" if bullets else "")
-           + (f"Price: {pline}\n(Domain & hosting are arranged on your side.)\n\n" if pline else "")
-           + f"Want more features? Ask for a price here:\n{deck}#more\n\n"
-           + "No obligation at all." + (f"\n\n{who}" if who else ""))
+    msg = _wa_message(user, lead, host, scheme)
     try:
         from pathlib import Path as _P
         site = core.q("SELECT folder FROM gensites WHERE id=? AND user_id=?", (lead["site_id"], user["id"]), one=True) \
