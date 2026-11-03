@@ -316,6 +316,47 @@ SLIDER_ASSETS = (
     "if(document.readyState!='loading')all();else document.addEventListener('DOMContentLoaded',all);})();</script>")
 
 
+# Cinematic motion layer — subtle, premium polish applied to the content Trillion already builds. All vanilla
+# (no CDN), so it also animates in the in-container preview. Adapted from the MIT cinematic-site-components by
+# Jay/RoboLabs (github.com/robonuggets/cinematic-site-components): a stat count-up, mouse-follow spotlight on
+# cards, and magnetic primary buttons. Respects prefers-reduced-motion and never hides content.
+MOTION_ASSETS = (
+    "<style>"
+    ".mspot{position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity .35s;"
+    "background:radial-gradient(circle 200px at var(--mx,50%) var(--my,50%),color-mix(in srgb,var(--accent) 22%,transparent),transparent 60%);z-index:0}"
+    ".card:hover .mspot{opacity:1}.card>*:not(.mspot){position:relative;z-index:1}"
+    "@media(prefers-reduced-motion:reduce){.mspot{display:none}}"
+    "</style>"
+    "<script>(function(){var RM=matchMedia&&matchMedia('(prefers-reduced-motion:reduce)').matches;"
+    # stat count-up
+    "function countup(el){var raw=el.textContent.trim();var m=raw.match(/-?\\d[\\d\\s,]*\\.?\\d*/);if(!m)return;"
+    "var numStr=m[0].replace(/[\\s,]/g,'');var dec=(numStr.split('.')[1]||'').length;var target=parseFloat(numStr);"
+    "if(!isFinite(target))return;var pre=raw.slice(0,m.index),post=raw.slice(m.index+m[0].length);"
+    "var grp=/,/.test(m[0]);function fmt(v){var s=dec?v.toFixed(dec):Math.round(v).toString();"
+    "if(grp)s=s.replace(/\\B(?=(\\d{3})+(?!\\d))/g,',');return pre+s+post;}"
+    "if(RM){el.textContent=fmt(target);return;}var st=null,D=1100;"
+    "function step(t){if(!st)st=t;var p=Math.min((t-st)/D,1);var e=1-Math.pow(1-p,3);el.textContent=fmt(target*e);"
+    "if(p<1)requestAnimationFrame(step);else el.textContent=fmt(target);}requestAnimationFrame(step);}"
+    "var seen=new WeakSet();if('IntersectionObserver'in window){var io=new IntersectionObserver(function(es){"
+    "es.forEach(function(en){if(en.isIntersecting&&!seen.has(en.target)){seen.add(en.target);countup(en.target);io.unobserve(en.target);}});},{threshold:.4});"
+    "function initStats(){document.querySelectorAll('.brstat').forEach(function(el){io.observe(el);});}}"
+    "else{function initStats(){document.querySelectorAll('.brstat').forEach(countup);}}"
+    # card spotlight
+    "function initCards(){if(RM)return;document.querySelectorAll('.card').forEach(function(c){"
+    "if(c.__m)return;c.__m=1;if(getComputedStyle(c).position==='static')c.style.position='relative';"
+    "var s=document.createElement('div');s.className='mspot';c.insertBefore(s,c.firstChild);"
+    "c.addEventListener('mousemove',function(e){var r=c.getBoundingClientRect();"
+    "c.style.setProperty('--mx',(e.clientX-r.left)+'px');c.style.setProperty('--my',(e.clientY-r.top)+'px');});});}"
+    # magnetic primary buttons
+    "function initMag(){if(RM)return;document.querySelectorAll('.btn.primary,.btn.pri,a.btn.dark').forEach(function(b){"
+    "if(b.__g)return;b.__g=1;b.style.transition='transform .2s ease-out';var R=60;"
+    "b.addEventListener('mousemove',function(e){var r=b.getBoundingClientRect();var x=e.clientX-(r.left+r.width/2),"
+    "y=e.clientY-(r.top+r.height/2);b.style.transform='translate('+x*.25+'px,'+y*.35+'px)';});"
+    "b.addEventListener('mouseleave',function(){b.style.transform='';});});}"
+    "function go(){initStats();initCards();initMag();}"
+    "if(document.readyState!='loading')go();else document.addEventListener('DOMContentLoaded',go);})();</script>")
+
+
 def _reviews_html(items):
     cards = []
     for it in items:
@@ -346,7 +387,7 @@ def _value_html(data, info):
         stats = (stats + fb)[:4] if stats else fb[:4] if len(fb) >= 4 else fb[:3]
     cells = "".join(
         '<div class="reveal" style="flex:1 1 150px;text-align:center">'
-        f'<div style="font-size:clamp(30px,5vw,46px);font-weight:800;line-height:1;letter-spacing:-.02em;'
+        f'<div class="brstat" style="font-size:clamp(30px,5vw,46px);font-weight:800;line-height:1;letter-spacing:-.02em;'
         f'background:linear-gradient(100deg,var(--accent),var(--accent2));-webkit-background-clip:text;'
         f'background-clip:text;-webkit-text-fill-color:transparent;font-variant-numeric:tabular-nums">{_esc(s["n"])}</div>'
         f'<div class="muted" style="margin-top:8px;font-size:14px">{_esc(s.get("l") or "")}</div></div>'
@@ -928,7 +969,7 @@ def render(content, palette, photos_rel, template="premium", font=None):
     body_fam, fontdef = _font_tokens(font)
     content["FONT"] = body_fam
     content["FONTDEF"] = fontdef
-    content["SLIDERJS"] = SLIDER_ASSETS
+    content["SLIDERJS"] = SLIDER_ASSETS + MOTION_ASSETS
     content["GALLERY_SECTION"] = _gallery_section(photos_rel[1:] if tpl.get("photo") else photos_rel)
     if tpl.get("photo"):
         content["HERO_PHOTO"] = photos_rel[0] if photos_rel else ""
