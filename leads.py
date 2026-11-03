@@ -282,8 +282,21 @@ def send_for_site(user, sid, email, host, scheme="https"):
     return send_pitch(user, row["id"], host, scheme)
 
 
+def send_whatsapp_for_site(user, sid, phone_no, host, scheme="https"):
+    """WhatsApp the pitch deck for a generated site straight from Web Studio — for when there's no email.
+    Sets the lead's phone if one is supplied, then sends over WhatsApp."""
+    init()
+    row = core.q("SELECT id FROM leads WHERE user_id=? AND site_id=?", (user["id"], sid), one=True)
+    if not row:
+        return {"error": "No lead for this site yet — generate the site first."}
+    phone_no = (phone_no or "").strip()
+    if phone_no:
+        core.x("UPDATE leads SET phone=?, updated=? WHERE id=?", (phone_no, _now(), row["id"]))
+    return send_whatsapp(user, row["id"], host, scheme)
+
+
 def send_whatsapp(user, lid, host, scheme="https"):
-    """Send the pitch + live preview link to a lead over WhatsApp (their phone), using Trillion's phone link.
+    """Send the pitch deck + live preview link to a lead over WhatsApp (their phone), using Trillion's phone link.
     Best for no-website leads, who have a mobile but rarely an email."""
     import phone
     lead = _row(user, lid)
@@ -293,13 +306,14 @@ def send_whatsapp(user, lid, host, scheme="https"):
         return {"error": "This lead has no phone number."}
     if not lead["token"]:
         return {"error": "This lead has no generated site yet."}
-    link = preview_url(host, lead["token"], scheme)
+    base = preview_url(host, lead["token"], scheme)
+    deck = (base if base.endswith("/") else base + "/") + "pitch.html"
     biz = lead["business"]
     me = core.q("SELECT name FROM users WHERE id=?", (user["id"],), one=True)
     who = (me["name"] if me and me["name"] else "").split(" ")[0] or ""
-    msg = (f"Hi, I came across {biz} on Google and noticed you don't have a website yet, so I built a free "
-           f"sample of what one could look like for you:\n{link}\n\nHave a look - no obligation at all. If you "
-           f"like it, just reply and we can make it yours." + (f"\n\n{who}" if who else ""))
+    msg = (f"Hi, I came across {biz} on Google and built a free sample website to show what one could look like "
+           f"for you. Have a look here (there's a Yes/No button at the bottom to let me know):\n{deck}\n\n"
+           f"No obligation at all." + (f"\n\n{who}" if who else ""))
     try:
         from pathlib import Path as _P
         site = core.q("SELECT folder FROM gensites WHERE id=? AND user_id=?", (lead["site_id"], user["id"]), one=True) \

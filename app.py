@@ -2156,6 +2156,13 @@ def gensite_email_pitch(sid: int, request: Request, p: dict = Body(default={}), 
     return leads.send_for_site(user, sid, (p.get("email") or "").strip(), dns, "https")
 
 
+@app.post("/api/gensites/{sid}/whatsapp-pitch")
+def gensite_whatsapp_pitch(sid: int, request: Request, p: dict = Body(default={}), user=Depends(auth)):
+    import leads
+    dns = (TAILSCALE.get("v") or {}).get("dns") or app_host(request)
+    return leads.send_whatsapp_for_site(user, sid, (p.get("phone") or "").strip(), dns, "https")
+
+
 @app.post("/api/gensites/{sid}/before-after")
 def gensite_before_after(sid: int, p: dict = Body(default={}), user=Depends(auth)):
     import beforeafter

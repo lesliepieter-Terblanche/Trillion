@@ -1840,6 +1840,8 @@ async function loadActivity(id,w){let d;try{d=await (await api('/api/gensites/'+
   w.querySelectorAll('[data-done]').forEach(b=>b.onclick=async()=>{const [kind,iid]=b.dataset.done.split(':');await api('/api/gensites/'+id+'/activity',{json:{kind,id:+iid,status:'done'}});loadActivity(id,w);});}
 function drawWeb(sites){
   const host=location.host;
+  // remember which CHANGE/ACTIVITY panels are open, so the background refresh doesn't snap them shut
+  const _open=[...document.querySelectorAll('#weblist [id^="wbch-"]:not([hidden]),#weblist [id^="wbact-"]:not([hidden])')].map(e=>e.id);
   $('weblist').innerHTML=sites.map(s=>{
     const link=`${location.protocol}//${host}/site/${s.token}/`;
     return `<div class="panel" style="gap:10px">
@@ -1860,6 +1862,11 @@ function drawWeb(sites){
         <input data-lemail="${s.id}" placeholder="owner@email" style="flex:1;min-width:150px;padding:8px 11px;border:1px solid var(--edge2);border-radius:8px;background:var(--panel2,transparent);color:var(--text);font-size:13px">
         <button class="btn pri" data-lpitch="${s.id}" style="min-height:38px;font-size:12px">EMAIL PITCH</button>
       </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
+        <input data-lphone="${s.id}" placeholder="owner's WhatsApp number" style="flex:1;min-width:150px;padding:8px 11px;border:1px solid var(--edge2);border-radius:8px;background:var(--panel2,transparent);color:var(--text);font-size:13px">
+        <button class="btn" data-lwapitch="${s.id}" style="min-height:38px;font-size:12px;background:#25D366;color:#fff;border-color:#25D366">WHATSAPP PITCH</button>
+      </div>
+      <div class="muted" style="font-size:11px;margin-top:2px">No email? WhatsApp the pitch deck instead — it has the same Yes/No reply buttons.</div>
       <div class="muted" data-lpmsg="${s.id}" style="font-size:12px;min-height:16px"></div>
       <div id="wbch-${s.id}" hidden style="margin-top:14px;padding:16px;border:1px solid var(--edge2);border-radius:12px;background:var(--panel2,rgba(127,127,127,.06));display:grid;gap:12px">
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
@@ -1903,6 +1910,12 @@ function drawWeb(sites){
     try{const r=await (await api('/api/gensites/'+id+'/email-pitch',{json:{email}})).json();
       if(r.error){msg.style.color='#d94a6a';msg.textContent=r.error;}else{msg.style.color='#1fa67a';msg.textContent='Pitch emailed to '+r.emailed+'. Tracked on the Campaign page.';}
     }catch(e){msg.style.color='#d94a6a';msg.textContent=e.message;}finally{b.disabled=false;}});
+  document.querySelectorAll('[data-lwapitch]').forEach(b=>b.onclick=async()=>{const id=b.dataset.lwapitch;
+    const inp=document.querySelector('[data-lphone="'+id+'"]'),msg=document.querySelector('[data-lpmsg="'+id+'"]');
+    const phone=(inp.value||'').trim();b.disabled=true;msg.className='muted';msg.style.color='';msg.textContent='Sending the pitch deck over WhatsApp…';
+    try{const r=await (await api('/api/gensites/'+id+'/whatsapp-pitch',{json:{phone}})).json();
+      if(r.error){msg.style.color='#d94a6a';msg.textContent=r.error;}else{msg.style.color='#1fa67a';msg.textContent='Pitch deck sent on WhatsApp to '+r.to+'. Tracked on the Campaign page.';}
+    }catch(e){msg.style.color='#d94a6a';msg.textContent=e.message;}finally{b.disabled=false;}});
   document.querySelectorAll('[data-wbba]').forEach(b=>b.onclick=async()=>{const id=b.dataset.wbba,m=$('wb-msg');
     const old=prompt("The prospect's CURRENT website address (for the BEFORE shot):");if(!old)return;b.disabled=true;
     m.className='msg muted';m.textContent='Making the before/after card (shots of both sites)…';
@@ -1920,8 +1933,7 @@ function drawWeb(sites){
       if(d.status==='running'){m.textContent='Pitch video: '+(d.step||'working')+'…';return;}
       clearInterval(poll);b.disabled=false;if(d.ready){m.className='msg ok';m.textContent='Pitch video ready. It goes out with the WhatsApp pitch for this lead.';loadWeb();}
       else{m.className='msg bad';m.textContent='Pitch video failed: '+(d.error||'unknown');}}catch(e){}},4000);});
-  document.querySelectorAll('[data-wbc]').forEach(b=>b.onclick=()=>{const p=$('wbch-'+b.dataset.wbc);if(p)p.hidden=!p.hidden;});
-  document.querySelectorAll('[data-wbcancel]').forEach(b=>b.onclick=()=>{const p=$('wbch-'+b.dataset.wbcancel);if(p)p.hidden=true;});
+  // CHANGE / CANCEL toggles are handled by one delegated listener (see below) so they survive re-renders.
   document.querySelectorAll('[data-wbapply]').forEach(b=>b.onclick=async()=>{const id=b.dataset.wbapply,p=$('wbch-'+id);
     const opts={};p.querySelectorAll('[data-ch]').forEach(el=>{const k=el.dataset.ch,v=(el.value||'').trim();if(v)opts[k]=v;});
     const note=opts.note||'';delete opts.note;
@@ -1931,7 +1943,13 @@ function drawWeb(sites){
     p.hidden=true;$('wb-msg').className='msg muted';$('wb-msg').textContent='Updating the site — the preview link stays the same. Watch the Control Room.';
     try{await api('/api/gensites/'+id+'/revise',{json:{change:note,opts:opts}});}catch(e){$('wb-msg').className='msg bad';$('wb-msg').textContent=e.message;return;}
     clearInterval(webPoll);let n=0;webPoll=setInterval(async()=>{n++;try{const d=await (await api('/api/gensites')).json();drawWeb(d.sites||[]);if(n>18){clearInterval(webPoll);$('wb-msg').className='msg ok';$('wb-msg').textContent='Updated — refresh the preview to see the change.';}}catch(e){}},4000);});
+  _open.forEach(id=>{const e=$(id);if(e){e.hidden=false;if(id.startsWith('wbact-'))loadActivity(id.slice(6),e);}});
 }
+// one delegated listener for the CHANGE / CANCEL toggles — bound once, works for every card and survives re-renders
+$('weblist')&&$('weblist').addEventListener('click',e=>{
+  const c=e.target.closest('[data-wbc]');if(c){const p=$('wbch-'+c.dataset.wbc);if(p)p.hidden=!p.hidden;return;}
+  const x=e.target.closest('[data-wbcancel]');if(x){const p=$('wbch-'+x.dataset.wbcancel);if(p)p.hidden=true;}
+});
 async function wbKeyState(){try{const ks=await (await api('/api/secrets')).json();const k=(ks||[]).find(x=>x.name==='google_places');const m=$('wb-gkey-msg'),i=$('wb-gkey');if(!m||!i)return;
   if(k&&k.set){i.placeholder='Key saved ('+k.hint+') — paste a new one only to replace it';$('wb-gkey-save').textContent='REPLACE KEY';if(!m.dataset.busy){m.className='msg ok';m.textContent='Google Places key saved ('+k.hint+'). It stays saved through updates.';}}
   else{i.placeholder='saved securely, used only for Maps lookups';$('wb-gkey-save').textContent='SAVE KEY';if(!m.dataset.busy){m.className='msg muted';m.textContent='No Google Places key saved on this login yet.';}}}catch(e){}}
