@@ -193,7 +193,7 @@ def preview_url(host, token, scheme="https"):
     return f"{scheme}://{host}/site/{token}/"
 
 
-def _email_html(user, lead, base, stage, has_video=False):
+def _email_html(user, lead, base, stage, has_video=False, pline=""):
     biz = lead["business"]
     me = core.q("SELECT name FROM users WHERE id=?", (user["id"],), one=True)
     who = (me["name"] if me and me["name"] else "").split(" ")[0] or "me"
@@ -225,7 +225,8 @@ def _email_html(user, lead, base, stage, has_video=False):
 <td style="padding-right:10px"><a href="{yes}" style="display:inline-block;background:#16a34a;color:#fff;text-decoration:none;padding:13px 26px;border-radius:40px;font-weight:700">Yes, let's do it</a></td>
 <td><a href="{no}" style="display:inline-block;background:#f3f4f6;color:#555;text-decoration:none;padding:13px 26px;border-radius:40px;font-weight:600">Not right now</a></td>
 </tr></table>
-<p style="font-size:13px;color:#888;margin-top:20px">Note: the website itself is covered — a domain name and hosting are arranged on your side (about R100&ndash;R250 a year for a domain, plus a low-cost hosting plan). I'll guide you through connecting it. Full details are on the page above.</p>
+{('<p style="margin:22px 0 4px;font-weight:600">Price</p><p style="margin:0">' + pline + '</p>') if pline else ''}
+<p style="font-size:13px;color:#888;margin-top:20px">The price above is the once-off cost for the website. A domain name and hosting are arranged on your side (about R100&ndash;R250 a year for a domain, plus a low-cost hosting plan); I'll guide you through connecting it. Full details are on the page above.</p>
 <p>Thanks,<br>{who}</p>
 <p style="font-size:12px;color:#999">If you'd rather not hear from me, just reply "stop" and I won't follow up.</p>
 </div>"""
@@ -251,14 +252,18 @@ def send_pitch(user, lid, host, scheme="https"):
     link = preview_url(host, lead["token"], scheme)
     stage = int(lead["followups"] or 0) if lead["status"] in ("emailed", "followed_up") else 0
     has_video = False
+    pline = ""
     try:
-        import os
-        site = core.q("SELECT folder FROM gensites WHERE token=?", (lead["token"],), one=True)
-        has_video = bool(site and os.path.exists(os.path.join(site["folder"], "pitch.mp4")))
+        import os, json as _json, web
+        site = core.q("SELECT folder, detail FROM gensites WHERE token=?", (lead["token"],), one=True)
+        if site:
+            has_video = bool(os.path.exists(os.path.join(site["folder"], "pitch.mp4")))
+            addons = (_json.loads(site["detail"] or "{}") or {}).get("addons") or []
+            pline = web.price_line(addons)
     except Exception:
         pass
     try:
-        mail.send(user, lead["email"], _subject(lead, stage), _email_html(user, lead, link, stage, has_video))
+        mail.send(user, lead["email"], _subject(lead, stage), _email_html(user, lead, link, stage, has_video, pline))
     except Exception as e:
         return {"error": f"Could not send: {type(e).__name__}. Check your Gmail connection."}
     if stage == 0:
@@ -311,9 +316,18 @@ def send_whatsapp(user, lid, host, scheme="https"):
     biz = lead["business"]
     me = core.q("SELECT name FROM users WHERE id=?", (user["id"],), one=True)
     who = (me["name"] if me and me["name"] else "").split(" ")[0] or ""
+    pline = ""
+    try:
+        import json as _json, web
+        site = core.q("SELECT detail FROM gensites WHERE token=?", (lead["token"],), one=True)
+        if site:
+            pline = web.price_line((_json.loads(site["detail"] or "{}") or {}).get("addons") or [])
+    except Exception:
+        pass
     msg = (f"Hi, I came across {biz} on Google and built a free sample website to show what one could look like "
            f"for you. Have a look here (there's a Yes/No button at the bottom to let me know):\n{deck}\n\n"
-           f"No obligation at all." + (f"\n\n{who}" if who else ""))
+           + (f"Price: {pline}\n(Domain & hosting are arranged on your side.)\n\n" if pline else "")
+           + "No obligation at all." + (f"\n\n{who}" if who else ""))
     try:
         from pathlib import Path as _P
         site = core.q("SELECT folder FROM gensites WHERE id=? AND user_id=?", (lead["site_id"], user["id"]), one=True) \

@@ -1046,6 +1046,32 @@ def render(content, palette, photos_rel, template="premium", font=None):
     return html
 
 
+PRICE_BASE = 750        # a website on its own, once-off (ZAR)
+PRICE_PER_ADDON = 300   # each extra selected option
+
+
+def _rand(n):
+    return f"R{n:,.0f}".replace(",", " ")
+
+
+def price(addons):
+    """Once-off price for a generated site: R750 base + R300 per selected add-on."""
+    opts = [str(a).lower() for a in (addons or []) if str(a).strip()]
+    count = len(opts)
+    total = PRICE_BASE + PRICE_PER_ADDON * count
+    return {"base": PRICE_BASE, "per": PRICE_PER_ADDON, "count": count, "total": total,
+            "total_str": _rand(total), "base_str": _rand(PRICE_BASE), "per_str": _rand(PRICE_PER_ADDON)}
+
+
+def price_line(addons):
+    """A one-line price summary for a message."""
+    p = price(addons)
+    if p["count"]:
+        return (f"{p['total_str']} once-off — {p['base_str']} for the website plus {p['count']} "
+                f"add-on{'s' if p['count'] != 1 else ''} at {p['per_str']} each.")
+    return f"{p['total_str']} once-off for the website."
+
+
 _DECK_FEATURES = {
     "whatsapp": "One-tap WhatsApp button on every page",
     "form": "Enquiry form that emails you straight away",
@@ -1068,6 +1094,7 @@ def pitch_deck(folder, info, palette, addons, has_video=False):
     cat = str(info.get("category") or "business").strip()
     p = palette
     feats = [v for k, v in _DECK_FEATURES.items() if k in [str(a).lower() for a in (addons or [])]]
+    _pr = price(addons)
     base = ["A fast, modern website built around " + _esc(name),
             "Looks right on a phone, tablet and computer",
             "Your real services, hours and contact details",
@@ -1114,6 +1141,18 @@ ul{{list-style:none;padding:0;margin:0}}a{{color:{p['C_ACCENT']}}}</style></head
 <h2>What you get</h2><div class="card"><ul>{feat_html}</ul></div>
 
 <h2>How it works</h2><div class="card">{step_html}</div>
+
+<h2>Your investment</h2>
+<div class="card">
+<div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+<div style="font-size:clamp(30px,6vw,44px);font-weight:800;letter-spacing:-.02em;color:{p['C_ACCENT']}">{_pr['total_str']}</div>
+<div class="muted">once-off{(' · includes ' + str(_pr['count']) + ' add-on' + ('s' if _pr['count'] != 1 else '')) if _pr['count'] else ''}</div></div>
+<ul style="margin-top:14px">
+<li style="padding:8px 0;border-bottom:1px solid {p['C_BORDER']};display:flex;justify-content:space-between;gap:12px"><span>Website (design &amp; build)</span><span class="muted">{_pr['base_str']}</span></li>
+{''.join(f'<li style="padding:8px 0;border-bottom:1px solid ' + p['C_BORDER'] + ';display:flex;justify-content:space-between;gap:12px"><span>' + _esc(f) + '</span><span class="muted">' + _pr['per_str'] + '</span></li>' for f in feats)}
+</ul>
+<div style="margin-top:8px;color:{p['C_MUTED']};font-size:13px">A website on its own is {_pr['base_str']}; each extra option is {_pr['per_str']}. One payment, no monthly fee from me (domain &amp; hosting below are separate).</div>
+</div>
 
 <h2>Domain &amp; hosting</h2>
 <div class="card" style="border-color:{p['C_ACCENT']}">
