@@ -192,6 +192,15 @@ SPECS = [
        "QBR prep, 'brief me on <vendor>', vendor updates. Set fresh=false to skip the web news (faster).",
        {"name": S, "fresh": {"type": "boolean"}}, ["name"]),
     fn("vendor_remove", "Remove a vendor from the portfolio.", {"name": S}, ["name"]),
+    fn("score_websites", "Rate how outdated one or more existing business websites look — to find rebuild "
+       "prospects. Give URLs; returns each with a score (higher = more dated), the tells (no mobile viewport, "
+       "table layout, old copyright, no HTTPS, Flash/marquee, site builder) and whether it has a contact form. "
+       "Use for 'is this site outdated', 'score these sites', finding businesses worth pitching a rebuild.",
+       {"urls": ARR}, ["urls"]),
+    fn("before_after_card", "Make a BEFORE/AFTER pitch image for a site Trillion built: the prospect's current "
+       "site next to the new one, on desktop and phone, as one image for outreach. site_id is the generated "
+       "site; old_url is the prospect's current website. Takes up to a minute; saved next to the site.",
+       {"site_id": {"type": "integer"}, "old_url": S}, ["site_id", "old_url"]),
     fn("boardroom", "Convene the Boardroom: a council of AI advisors (Bezos, Buffett, Hormozi, Paul Graham, "
        "Gary V, Naval and more) argues out a hard business decision on the local brain, then hands back a scored "
        "verdict (GO / GO WITH CONDITIONS / RESHAPE / DON'T DO IT) with a scorecard and next steps, saved to "
@@ -342,6 +351,7 @@ def describe(name, a):
         "tv_press": f"TV: pressing {g('button')}", "tv_type": "TV: typing", "tv_open_app": f"TV: opening {g('package')}",
         "vendors": "Listing your vendors", "vendor_add": f"Saving {g('name')}", "vendor_brief": f"Briefing on {g('name')}",
         "vendor_remove": f"Removing {g('name')}",
+        "score_websites": "Rating those websites", "before_after_card": "Making the before/after card",
         "boardroom": "Convening the Boardroom", "boardroom_history": "Your past Boardroom verdicts",
         "boardroom_add_advisor": f"Building the {g('name')} seat", "boardroom_advisors": "Your board of advisors",
         "boardroom_ask": f"Asking {g('seat')}",
@@ -419,7 +429,7 @@ def execute(user, name, args, task_id=None, approved=False, direct=False):
             return {"status": "waiting_for_approval",
                     "note": "Not done yet. The user must approve this on the dashboard."}
         if name in ("create_video", "revise_video", "create_ai_clip", "create_ebook", "boardroom",
-                    "boardroom_ask"):
+                    "boardroom_ask", "before_after_card"):
             args = dict(args, _task=task_id)
         out = globals()["t_" + name](user, **args)
         core.log(uid, describe(name, args), "done")
@@ -957,6 +967,17 @@ def t_vendor_brief(user, name, fresh=True):
 def t_vendor_remove(user, name):
     import vendors
     return vendors.remove(user, name)
+
+
+def t_score_websites(user, urls):
+    import prospect
+    return prospect.rate(urls if isinstance(urls, list) else [urls])
+
+
+def t_before_after_card(user, site_id, old_url, _task=None):
+    import beforeafter
+    say = (lambda text: core.set_task(_task, detail=text)) if _task else None
+    return beforeafter.make(user, int(site_id), old_url, progress=say)
 
 
 def t_boardroom(user, decision, options=None, mode="full", seats=None, _task=None):

@@ -1039,6 +1039,14 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="wb-go">GENERATE WEBSITE</button></div>
     <div class="msg" id="wb-msg"></div>
   </div>
+  <details class="panel" style="gap:10px">
+    <summary style="cursor:pointer;font-weight:600">Find rebuild prospects — rate an outdated site</summary>
+    <div class="muted" style="font-size:12px;margin-top:8px">Paste one or more website addresses. Trillion rates how dated each looks — a high score is a business worth pitching a rebuild to. Then generate their new site and a before/after card.</div>
+    <textarea id="pr-urls" rows="3" placeholder="oldplumber.co.za&#10;dusty-dental-site.com" style="width:100%"></textarea>
+    <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="pr-go" style="min-height:40px;font-size:12px">RATE SITES</button></div>
+    <div class="msg" id="pr-msg"></div>
+    <div id="pr-out" style="display:flex;flex-direction:column;gap:8px"></div>
+  </details>
   <div class="grid2" id="weblist"></div>
 </div>
 
@@ -1811,6 +1819,14 @@ let webPoll=null;
 async function loadWeb(){
   try{const d=await (await api('/api/gensites')).json();drawWeb(d.sites||[]);}catch(e){}
 }
+$('pr-go')&&($('pr-go').onclick=async()=>{const urls=($('pr-urls').value||'').split(/[\s,]+/).filter(Boolean),m=$('pr-msg'),o=$('pr-out');
+  if(!urls.length){m.className='msg bad';m.textContent='Paste at least one website address.';return;}
+  const b=$('pr-go');b.disabled=true;const was=b.textContent;b.textContent='RATING…';m.className='msg';m.textContent='';o.innerHTML='';
+  try{const r=await (await api('/api/prospect/score',{json:{urls}})).json();
+    if(r.error){m.className='msg bad';m.textContent=r.error;}
+    else o.innerHTML=(r.results||[]).map(x=>{const col=x.score>=5?'#d94a6a':x.score>=3?'#e8a33d':x.score>=0?'#1fa67a':'#888';
+      return `<div class="panel" style="gap:4px"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><div style="font-size:13px;word-break:break-all;flex:1">${esc(x.final||x.url)}</div><span style="background:${col};color:#fff;padding:2px 10px;border-radius:999px;font-size:12px;white-space:nowrap">${x.score<0?'—':x.score} · ${esc(x.band)}</span></div>${(x.flags||[]).length?`<div class="muted" style="font-size:11px">${x.flags.map(esc).join(' · ')}${x.has_form===false?' · no contact form':''}</div>`:''}</div>`;}).join('');
+  }catch(e){m.className='msg bad';m.textContent=e.message;}finally{b.disabled=false;b.textContent=was;}});
 async function loadActivity(id,w){let d;try{d=await (await api('/api/gensites/'+id+'/activity')).json();}catch(e){w.innerHTML='<div class="msg bad">Could not load.</div>';return;}
   if(d.error){w.innerHTML='<div class="msg bad">'+esc(d.error)+'</div>';return;}
   const c=d.counts||{};const dt=t=>new Date(t*1000).toLocaleDateString();
@@ -1834,6 +1850,7 @@ function drawWeb(sites){
         <a class="btn pri" href="${link}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;text-decoration:none;min-height:40px;font-size:12px">OPEN / PREVIEW</a>
         <a class="btn" href="/api/gensites/${s.id}/file" download style="display:inline-flex;align-items:center;text-decoration:none;min-height:40px;font-size:12px">DOWNLOAD HTML</a>
         <button class="btn" data-wbv="${s.id}" style="min-height:40px;font-size:12px">${s.has_video?'NEW PITCH VIDEO':'PITCH VIDEO'}</button>
+        <button class="btn" data-wbba="${s.id}" style="min-height:40px;font-size:12px">BEFORE/AFTER</button>
         ${s.has_video?`<a class="btn" href="/api/gensites/${s.id}/pitch-video?download=1" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;text-decoration:none;min-height:40px;font-size:12px">▶ WATCH VIDEO</a>`:''}
         <button class="btn" data-wbc="${s.id}" style="min-height:40px;font-size:12px">CHANGE…</button>
         ${(s.addons||[]).some(a=>['shop','members','appointments','community'].includes(a))?`<button class="btn" data-wba="${s.id}" style="min-height:40px;font-size:12px">ACTIVITY</button>`:''}
@@ -1874,6 +1891,16 @@ function drawWeb(sites){
     </div>`;}).join('')||'<div class="muted">No sites yet. Fill in a business above and press Generate.</div>';
   document.querySelectorAll('[data-wbd]').forEach(b=>b.onclick=async()=>{await api('/api/gensites/'+b.dataset.wbd,{method:'DELETE'});loadWeb();});
   document.querySelectorAll('[data-wba]').forEach(b=>b.onclick=async()=>{const id=b.dataset.wba,w=$('wbact-'+id);if(!w.hidden){w.hidden=true;return;}w.hidden=false;w.innerHTML='<div class="muted" style="font-size:13px">Loading…</div>';loadActivity(id,w);});
+  document.querySelectorAll('[data-wbba]').forEach(b=>b.onclick=async()=>{const id=b.dataset.wbba,m=$('wb-msg');
+    const old=prompt("The prospect's CURRENT website address (for the BEFORE shot):");if(!old)return;b.disabled=true;
+    m.className='msg muted';m.textContent='Making the before/after card (shots of both sites)…';
+    try{await api('/api/gensites/'+id+'/before-after',{json:{old_url:old}});}catch(e){m.className='msg bad';m.textContent=e.message;b.disabled=false;return;}
+    const poll=setInterval(async()=>{try{const d=await (await api('/api/gensites/'+id+'/before-after')).json();
+      if(d.status==='running'){m.textContent='Before/after: '+(d.step||'working')+'…';return;}
+      clearInterval(poll);b.disabled=false;
+      if(d.status==='error'){m.className='msg bad';m.textContent=d.error||'Could not build the card.';}
+      else{m.className='msg ok';m.innerHTML='Before/after card ready. <a href="/api/gensites/'+id+'/before-after?download=1" target="_blank" style="color:var(--accent,#7f5af0)">Open / download</a>';}
+    }catch(e){clearInterval(poll);b.disabled=false;}},2500);});
   document.querySelectorAll('[data-wbv]').forEach(b=>b.onclick=async()=>{const id=b.dataset.wbv,m=$('wb-msg');b.disabled=true;
     m.className='msg muted';m.textContent='Making a 30-second pitch video (about 2-4 minutes)…';
     try{await api('/api/gensites/'+id+'/pitch-video',{json:{}});}catch(e){m.className='msg bad';m.textContent=e.message;b.disabled=false;return;}

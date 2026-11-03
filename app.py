@@ -2149,6 +2149,32 @@ def gensite_pitch_video_status(sid: int, download: int = 0, user=Depends(auth)):
     return {k: v for k, v in st.items() if k != "file"} | {"ready": st.get("status") == "done"}
 
 
+@app.post("/api/gensites/{sid}/before-after")
+def gensite_before_after(sid: int, p: dict = Body(default={}), user=Depends(auth)):
+    import beforeafter
+    return beforeafter.start(user, sid, (p.get("old_url") or "").strip())
+
+
+@app.get("/api/gensites/{sid}/before-after")
+def gensite_before_after_status(sid: int, download: int = 0, user=Depends(auth)):
+    import beforeafter
+    if download:
+        f = beforeafter.card_path(user, sid)
+        if not f:
+            raise HTTPException(404, "No card yet")
+        return FileResponse(f, media_type="image/jpeg", filename=f"before-after-{sid}.jpg")
+    return beforeafter.status(user, sid)
+
+
+@app.post("/api/prospect/score")
+def prospect_score(p: dict = Body(...), user=Depends(auth)):
+    import prospect
+    urls = p.get("urls")
+    if isinstance(urls, str):
+        urls = [u for u in urls.replace(",", " ").split() if u.strip()]
+    return prospect.rate(urls or [])
+
+
 @app.delete("/api/gensites/{sid}")
 def gensites_forget(sid: int, user=Depends(auth)):
     return web.forget(user, sid)
