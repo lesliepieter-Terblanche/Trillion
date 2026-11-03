@@ -382,10 +382,16 @@ def _wa_message(user, lead, host, scheme="https"):
             + "No obligation at all." + (f"\n\n{who}" if who else ""))
 
 
-def pc_whatsapp_open(user, number, text):
-    """Fallback for when the phone isn't available: open WhatsApp Desktop on THIS PC at a chat with `number`,
-    with the pitch message pre-typed, for the owner to press Send. Uses the whatsapp: protocol WhatsApp
-    Desktop registers. Returns True if it launched. Best-effort and cross-platform-guarded."""
+def pc_whatsapp_send(user, number, text, file=None):
+    """Fallback for when the phone isn't available: send the pitch through WhatsApp Desktop on THIS PC.
+
+    Opens a chat with `number` (the pitch text pre-typed via the whatsapp: protocol WhatsApp Desktop
+    registers), then on Windows drives the app to send automatically: press Enter to send the text, then
+    paste the pitch video from the clipboard and press Enter to send it too. Returns:
+      "sent"  - auto-send ran (text, and the video if given);
+      "ready" - the chat was opened with the pitch ready, but auto-send couldn't run (owner presses Send);
+      False   - nothing could be opened.
+    Best-effort: WhatsApp Desktop allows no official automation, so on any snag it degrades to "ready"."""
     import os as _os, re as _re, sys as _sys, subprocess as _sp
     from urllib.parse import quote as _quote
     try:
@@ -397,16 +403,57 @@ def pc_whatsapp_open(user, number, text):
     if not num:
         return False
     uri = f"whatsapp://send?phone={num}&text={_quote(text or '')}"
+    # open the chat with the text pre-filled
     try:
         if _sys.platform.startswith("win"):
-            _os.startfile(uri)                       # launches WhatsApp Desktop and opens the chat
+            _os.startfile(uri)
         elif _sys.platform == "darwin":
             _sp.Popen(["open", uri])
         else:
             _sp.Popen(["xdg-open", uri])
-        return True
     except Exception:
         return False
+    if not _sys.platform.startswith("win"):
+        return "ready"                               # auto-send only on Windows WhatsApp Desktop
+    ps = _shutil_which_ps()
+    if not ps:
+        return "ready"
+    vid = str(file) if file and _os.path.exists(str(file)) else ""
+    # PowerShell: focus WhatsApp, send the pre-typed text, then (if any) paste the video and send it.
+    script = r"""
+Add-Type -AssemblyName System.Windows.Forms | Out-Null
+$sh = New-Object -ComObject WScript.Shell
+function Focus { for ($i=0; $i -lt 8; $i++) { if ($sh.AppActivate('WhatsApp')) { return $true }; Start-Sleep -Milliseconds 700 } return $false }
+Start-Sleep -Seconds 5
+if (-not (Focus)) { exit 3 }
+Start-Sleep -Milliseconds 900
+[System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+$vid = %VID%
+if ($vid -ne '') {
+  Start-Sleep -Milliseconds 1200
+  Set-Clipboard -LiteralPath $vid
+  Start-Sleep -Milliseconds 900
+  Focus | Out-Null
+  Start-Sleep -Milliseconds 500
+  [System.Windows.Forms.SendKeys]::SendWait('^v')
+  Start-Sleep -Seconds 9
+  Focus | Out-Null
+  [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+}
+exit 0
+"""
+    script = script.replace("%VID%", ("'" + vid.replace("'", "''") + "'") if vid else "''")
+    try:
+        r = _sp.run([ps, "-NoProfile", "-NonInteractive", "-Command", script],
+                    capture_output=True, text=True, timeout=90)
+        return "sent" if r.returncode == 0 else "ready"
+    except Exception:
+        return "ready"
+
+
+def _shutil_which_ps():
+    import shutil as _sh
+    return _sh.which("powershell") or _sh.which("pwsh") or _sh.which("powershell.exe")
 
 
 def send_whatsapp_for_site(user, sid, phone_no, host, scheme="https"):
@@ -442,7 +489,7 @@ def start_whatsapp_for_site(user, sid, phone_no, host, scheme="https"):
     phone_no = (phone_no or "").strip()
     if not phone_no and not (row["phone"] or "").strip():
         return {"status": "error", "error": "Enter the owner's WhatsApp number first."}
-    job = {"status": "sending", "detail": "Opening WhatsApp on your phone and attaching the pitch… (watch your phone)"}
+    job = {"status": "sending", "detail": "Sending the pitch on WhatsApp… trying your phone first, then WhatsApp on this PC."}
     with _WA_LOCK:
         _WA_JOBS[key] = dict(job)
 
@@ -456,13 +503,24 @@ def start_whatsapp_for_site(user, sid, phone_no, host, scheme="https"):
                 # Desktop on this PC: open the chat with the pitch pre-typed for the owner to press Send.
                 lead = core.q("SELECT * FROM leads WHERE user_id=? AND site_id=?", (uid, sid), one=True)
                 num = (phone_no or (lead["phone"] if lead else "") or "").strip()
-                opened = False
+                res = False
                 if lead and lead["token"] and num:
+                    vid = None
                     try:
-                        opened = pc_whatsapp_open(user, num, _wa_message(user, lead, host, scheme))
+                        import os as _os
+                        site = core.q("SELECT folder FROM gensites WHERE token=?", (lead["token"],), one=True)
+                        if site and site["folder"]:
+                            cand = _os.path.join(site["folder"], "pitch.mp4")
+                            vid = cand if _os.path.exists(cand) else None
+                        res = pc_whatsapp_send(user, num, _wa_message(user, lead, host, scheme), file=vid)
                     except Exception:
-                        opened = False
-                if opened:
+                        res = False
+                if res == "sent":
+                    core.x("UPDATE leads SET status=CASE WHEN status='site_created' THEN 'emailed' ELSE status END, "
+                           "emailed_at=COALESCE(emailed_at,?), note='WhatsApp sent from PC', updated=? WHERE id=?",
+                           (_now(), _now(), lead["id"]))
+                    out = {"status": "pc_sent", "to": num, "phone_error": r["error"]}
+                elif res == "ready":
                     core.x("UPDATE leads SET status=CASE WHEN status='site_created' THEN 'emailed' ELSE status END, "
                            "emailed_at=COALESCE(emailed_at,?), note='WhatsApp opened on PC (press Send)', updated=? WHERE id=?",
                            (_now(), _now(), lead["id"]))
