@@ -322,6 +322,10 @@ SLIDER_ASSETS = (
 # cards, and magnetic primary buttons. Respects prefers-reduced-motion and never hides content.
 MOTION_ASSETS = (
     "<style>"
+    # base: never let a stray wide element (hero planes, a slider) scroll the whole page sideways on a phone.
+    # overflow:clip clips horizontally without creating a scroll container, so sticky navs keep working.
+    "html{overflow-x:clip}.hero{overflow-x:clip}"
+    "@supports not (overflow:clip){body{overflow-x:hidden}}"
     ".mspot{position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity .35s;"
     "background:radial-gradient(circle 200px at var(--mx,50%) var(--my,50%),color-mix(in srgb,var(--accent) 22%,transparent),transparent 60%);z-index:0}"
     ".card:hover .mspot{opacity:1}.card>*:not(.mspot){position:relative;z-index:1}"
