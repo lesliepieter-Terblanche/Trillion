@@ -33,6 +33,38 @@ IMAGE_EXT = (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif")
 MIN_SCENE = 2.6                        # a scene is never shorter than this, even with a tiny caption
 PAD_SCENE = 0.6                        # a breath of silence after each line
 
+# Fixed cinematic "looks" - deterministic ffmpeg grades applied to each scene's moving still. No tokens, no
+# cloud model: just colour, grain and vignette, so every video can have a distinct feel. The caption stays
+# crisp because the grade is applied to the picture before the caption is laid over it.
+STYLES = {
+    "clean":  {"label": "Clean", "grade": ""},
+    "film":   {"label": "Cinematic film", "grade": "eq=contrast=1.08:saturation=1.12:gamma=0.98,"
+               "noise=alls=7:allf=t,vignette=PI/5"},
+    "warm":   {"label": "Warm / golden", "grade": "eq=saturation=1.10:contrast=1.05,"
+               "colorbalance=rm=0.10:gm=0.03:bm=-0.09,vignette=PI/6"},
+    "cool":   {"label": "Cool / midnight", "grade": "eq=saturation=1.05:contrast=1.06,"
+               "colorbalance=rm=-0.06:gm=0.0:bm=0.12,vignette=PI/6"},
+    "noir":   {"label": "Black & white", "grade": "hue=s=0,eq=contrast=1.25:brightness=0.02,"
+               "noise=alls=6:allf=t,vignette=PI/5"},
+    "paper":  {"label": "Hand-drawn paper", "grade": "eq=saturation=0.55:contrast=1.05:gamma=1.04,"
+               "colorbalance=rs=0.12:gs=0.04:bs=-0.10,noise=alls=11:allf=t"},
+    "bold":   {"label": "Bold graphic", "grade": "eq=saturation=1.5:contrast=1.2,"
+               "curves=preset=increase_contrast"},
+    "retro":  {"label": "Retro VHS", "grade": "rgbashift=rh=4:bh=-4,noise=alls=12:allf=t,"
+               "eq=saturation=1.3:contrast=1.08,vignette=PI/5"},
+}
+DEFAULT_STYLE = "film"
+
+
+def styles():
+    """[(key, label)] for the UI, in a sensible order."""
+    order = ["film", "clean", "warm", "cool", "noir", "paper", "bold", "retro"]
+    return [(k, STYLES[k]["label"]) for k in order if k in STYLES]
+
+
+def _grade(style):
+    return STYLES.get(style or "", STYLES[DEFAULT_STYLE])["grade"]
+
 
 def _slug(text, fallback="montage"):
     return re.sub(r"[^a-z0-9]+", "-", str(text or "").lower()).strip("-")[:40] or fallback
@@ -122,7 +154,7 @@ def _narrate(text, dest_wav, voice=None):
 
 
 # ---------- render one scene to its own chunk (the resumable unit) ----------
-def _render_scene(idx, still, caption_png, narration_wav, dur, out_mp4, w, h):
+def _render_scene(idx, still, caption_png, narration_wav, dur, out_mp4, w, h, style=DEFAULT_STYLE):
     ff = video.find_ffmpeg()
     frames = max(1, int(round(dur * video.FPS)))
     # alternate the camera move so consecutive scenes don't feel identical
@@ -133,10 +165,12 @@ def _render_scene(idx, still, caption_png, narration_wav, dur, out_mp4, w, h):
     else:
         zexpr = "z='if(lte(zoom,1.0),1.14,max(1.001,zoom-0.0012))'"
         xexpr, yexpr = "x='iw/2-(iw/zoom/2)'", "y='ih/2-(ih/zoom/2)'"
-    # pre-scale big so zoompan is smooth, zoompan down to frame size, then lay the caption over it
+    grade = _grade(style)
+    grade = ("," + grade) if grade else ""          # applied to the picture, before the caption goes on top
+    # pre-scale big so zoompan is smooth, zoompan down to frame size, grade, then lay the caption over it
     vf = (f"[0:v]scale={w*2}:{h*2}:force_original_aspect_ratio=increase,crop={w*2}:{h*2},"
           f"zoompan={zexpr}:{xexpr}:{yexpr}:d={frames}:s={w}x{h}:fps={video.FPS},"
-          f"setsar=1[bg];[bg][1:v]overlay=0:0:format=auto[v]")
+          f"setsar=1{grade}[bg];[bg][1:v]overlay=0:0:format=auto[v]")
     has_audio = bool(narration_wav and os.path.exists(narration_wav))
     cmd = [ff, "-y", "-v", "error", "-loop", "1", "-i", str(still), "-i", str(caption_png)]
     if has_audio:
@@ -157,13 +191,14 @@ def _render_scene(idx, still, caption_png, narration_wav, dur, out_mp4, w, h):
 
 
 # ---------- the whole montage ----------
-def build(user, title, scenes, fmt="vertical", voice=None, progress=None, job_dir=None):
+def build(user, title, scenes, fmt="vertical", voice=None, style=DEFAULT_STYLE, progress=None, job_dir=None):
     """scenes: list of {"image": <path on the PC>, "text": <narration/caption, optional>}.
     Renders each scene to its own saved chunk (resumable), then stitches them with a music bed.
-    Returns the usual video dict."""
+    style picks a fixed cinematic look (see STYLES). Returns the usual video dict."""
     say = progress or (lambda t: None)
     uid = user["id"]
     fmt = fmt if fmt in video.SIZES else "vertical"
+    style = style if style in STYLES else DEFAULT_STYLE
     w, h = video.SIZES[fmt]
     scenes = [s for s in (scenes or []) if s and s.get("image") and os.path.exists(s["image"])
               and str(s["image"]).lower().endswith(IMAGE_EXT)][:12]
@@ -175,13 +210,15 @@ def build(user, title, scenes, fmt="vertical", voice=None, progress=None, job_di
     job = Path(job_dir) if job_dir else (WORK / f"{slug}-{stamp}")
     job.mkdir(parents=True, exist_ok=True)
     manifest = job / "manifest.json"
-    if manifest.exists():                                   # resuming: keep the scene list we started with
+    if manifest.exists():                                   # resuming: keep the scene list and look we started with
         try:
-            scenes = json.loads(manifest.read_text()).get("scenes", scenes)
+            m = json.loads(manifest.read_text())
+            scenes = m.get("scenes", scenes)
+            style = m.get("style", style) if m.get("style") in STYLES else style
         except Exception:
             pass
     else:
-        manifest.write_text(json.dumps({"title": title, "fmt": fmt, "scenes": scenes}, ensure_ascii=False))
+        manifest.write_text(json.dumps({"title": title, "fmt": fmt, "style": style, "scenes": scenes}, ensure_ascii=False))
 
     chunks, resumed = [], 0
     for i, sc in enumerate(scenes):
@@ -198,7 +235,7 @@ def build(user, title, scenes, fmt="vertical", voice=None, progress=None, job_di
         dur = _narrate(sc.get("text", ""), wav, voice=voice)
         dur = max(MIN_SCENE, dur + PAD_SCENE)
         say(f"Scene {i + 1} of {len(scenes)}: rendering")
-        _render_scene(i, still, cap, wav if dur and os.path.exists(wav) else None, dur, chunk, w, h)
+        _render_scene(i, still, cap, wav if dur and os.path.exists(wav) else None, dur, chunk, w, h, style=style)
         chunks.append(chunk)
 
     # stitch the chunks
@@ -245,9 +282,11 @@ def build(user, title, scenes, fmt="vertical", voice=None, progress=None, job_di
     notes = [f"Made on this PC from {len(scenes)} scene picture{'s' if len(scenes) != 1 else ''} you gave, "
              "with the local voice - nothing was sent to the internet and no key was needed.",
              "Rendered scene by scene, so a long one can be resumed if it is interrupted."]
+    notes.append(f"Look: {STYLES[style]['label']}.")
     if resumed:
         notes.append(f"{resumed} scene{'s' if resumed != 1 else ''} picked up from an earlier run.")
-    detail = {"engine": "Montage (your scenes)", "format": fmt, "scenes": [sc.get("text", "")[:80] for sc in scenes],
+    detail = {"engine": "Montage (your scenes)", "format": fmt, "style": style,
+              "scenes": [sc.get("text", "")[:80] for sc in scenes],
               "narration": " ".join(sc.get("text", "") for sc in scenes), "footage": [], "footage_source": "",
               "music": music_name if mixed else "", "ai_pictures": 0, "voiceover": True, "notes": notes,
               "request": f"Montage of {len(scenes)} uploaded scenes", "media": [sc["image"] for sc in scenes],

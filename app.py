@@ -1535,10 +1535,20 @@ def run_agent(user, text, files=None):
         # the user gave their own scene pictures to be completed into a narrated video (local + free + resumable)
         try:
             vr = video_request(text)
+            low = text.lower()
+            style = ""
+            for kw, st in (("black and white", "noir"), ("black & white", "noir"), ("noir", "noir"),
+                           ("hand-drawn", "paper"), ("hand drawn", "paper"), ("paper", "paper"),
+                           ("vhs", "retro"), ("retro", "retro"), ("bold", "bold"), ("graphic", "bold"),
+                           ("warm", "warm"), ("golden", "warm"), ("cool", "cool"), ("midnight", "cool"),
+                           ("cinematic", "film"), ("film", "film"), ("clean", "clean")):
+                if kw in low:
+                    style = st
+                    break
             scenes = [{"image": p, "text": ""} for p in _imgs]
             res = tools.execute(user, "montage_video",
                                 {"scenes": scenes, "title": vr["prompt"][:60], "topic": vr["prompt"],
-                                 "format": vr.get("format", "vertical")}, task_id=tid)
+                                 "format": vr.get("format", "vertical"), "style": style}, task_id=tid)
         finally:
             BUSY[uid] = False
         reply = video_reply(res)
@@ -2596,12 +2606,13 @@ def montage_build(p: dict = Body(...), user=Depends(auth)):
     title = (p.get("title") or "").strip() or "Scene montage"
     topic = (p.get("topic") or "").strip()
     fmt = (p.get("format") or "vertical").strip()
+    style = (p.get("style") or "").strip()
     tid = core.add_task(user["id"], f"Scene montage: {title}")
 
     def go():
         try:
             tools.execute(user, "montage_video",
-                          {"scenes": scenes, "title": title, "topic": topic, "format": fmt}, task_id=tid)
+                          {"scenes": scenes, "title": title, "topic": topic, "format": fmt, "style": style}, task_id=tid)
             core.set_task(tid, status="completed", detail="Your scene video is ready on the Videos page.")
         except Exception as e:
             core.set_task(tid, status="failed", detail=f"{type(e).__name__}: {e}"[:200])

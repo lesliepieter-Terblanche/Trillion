@@ -131,8 +131,9 @@ SPECS = [
        "or a 'stickman/storyboard/scene' video - NOT create_video (which uses stock footage). Free and fully local; it is "
        "rendered scene by scene so a long one can resume if interrupted. Give one scene per picture, in order: image is the "
        "file's path on the PC, text is that scene's narration/caption (leave a scene's text empty to have it written from the "
-       "topic). title names the video; format is vertical, square or landscape. Takes a few minutes.",
-       {"title": S, "format": S, "topic": S,
+       "topic). title names the video; format is vertical, square or landscape. style is the cinematic look: film, clean, "
+       "warm, cool, noir (black & white), paper (hand-drawn), bold (graphic) or retro (VHS). Takes a few minutes.",
+       {"title": S, "format": S, "topic": S, "style": S,
         "scenes": {"type": "array", "items": {"type": "object", "properties": {"image": S, "text": S}, "required": ["image"]}}},
        ["scenes"]),
     fn("create_ebook", "Write and lay out a designed ebook (PDF with cover, contents page and chapters) from a plain description. "
@@ -1448,7 +1449,7 @@ def t_create_video(user, prompt, seconds=20, format="vertical", voiceover=True, 
     return video.create(core.LLM, user, prompt, seconds, fmt, bool(voiceover), progress=say, media=media)
 
 
-def t_montage_video(user, scenes, title="", format="vertical", topic="", _task=None):
+def t_montage_video(user, scenes, title="", format="vertical", topic="", style="", _task=None):
     """Complete the user's own scene pictures (stickmen/storyboard/photos) into a narrated video.
     Local and free: Ken-Burns over each still, local Kokoro voice, caption, music - rendered scene by
     scene so a long one resumes if interrupted."""
@@ -1475,7 +1476,9 @@ def t_montage_video(user, scenes, title="", format="vertical", topic="", _task=N
             for i in blanks:
                 if i < len(lines) and lines[i]:
                     clean[i]["text"] = lines[i]
-    return montage.build(user, title or (topic.strip()[:60] or "Scene montage"), clean, fmt=fmt, progress=say)
+    look = str(style or "").strip().lower()
+    look = look if look in montage.STYLES else montage.DEFAULT_STYLE
+    return montage.build(user, title or (topic.strip()[:60] or "Scene montage"), clean, fmt=fmt, style=look, progress=say)
 
 
 def t_revise_video(user, video_id, change, _task=None):

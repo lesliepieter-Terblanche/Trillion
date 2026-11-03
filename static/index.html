@@ -990,6 +990,7 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <div class="btns" style="justify-content:flex-start;margin-top:8px">
       <button class="btn" id="mon-add">+ ADD SCENE</button>
       <label class="field" style="max-width:220px"><span>Shape</span><select id="mon-fmt"><option value="vertical">Vertical (Reels/TikTok)</option><option value="square">Square</option><option value="landscape">Landscape (YouTube)</option></select></label>
+      <label class="field" style="max-width:220px"><span>Look</span><select id="mon-style"><option value="film">Cinematic film</option><option value="clean">Clean</option><option value="warm">Warm / golden</option><option value="cool">Cool / midnight</option><option value="noir">Black &amp; white</option><option value="paper">Hand-drawn paper</option><option value="bold">Bold graphic</option><option value="retro">Retro VHS</option></select></label>
       <button class="btn pri" id="mon-go">MAKE THE VIDEO</button>
     </div>
     <div class="msg" id="mon-msg"></div>
@@ -1821,7 +1822,7 @@ $('mon-go')&&($('mon-go').onclick=async()=>{const ready=monScenes.filter(s=>s.id
   if(ready.length<monScenes.length){$('mon-msg').textContent='Some pictures are still uploading — give it a second.';return;}
   $('mon-msg').textContent='Making your video from '+ready.length+' scene'+(ready.length>1?'s':'')+'. It renders scene by scene; watch progress in the Control Room.';
   try{await api('/api/montage',{json:{title:$('mon-title').value.trim(),topic:$('mon-topic').value.trim(),format:$('mon-fmt').value,
-    scenes:ready.map(s=>({id:s.id,text:s.text}))}});}catch(e){$('mon-msg').textContent='Could not start the video.';return;}
+    style:$('mon-style').value,scenes:ready.map(s=>({id:s.id,text:s.text}))}});}catch(e){$('mon-msg').textContent='Could not start the video.';return;}
   let n=0;const t=setInterval(()=>{n++;loadVideos();if(n>30)clearInterval(t);},10000);});
 // ---------- Campaign dashboard ----------
 const LEAD_BADGE={site_created:['Site made','#8a8a9a'],emailed:['Emailed','#3b82f6'],followed_up:['Followed up','#6366f1'],replied:['Replied','#22c55e'],accepted:['Accepted','#16a34a'],declined:['Declined','#ef4444']};
