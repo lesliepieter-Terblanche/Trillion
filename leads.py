@@ -367,6 +367,50 @@ def send_whatsapp_for_site(user, sid, phone_no, host, scheme="https"):
     return send_whatsapp(user, row["id"], host, scheme)
 
 
+# WhatsApp sending drives the linked phone over ADB (open WhatsApp, attach, press Send) — that takes several
+# seconds and can fail for plain reasons (phone asleep/locked, not linked, WhatsApp missing). Run it in the
+# background so the page never just hangs, and report progress/outcome the UI can poll.
+_WA_JOBS = {}            # (uid, sid) -> {status: sending|done|error, detail/error/to/note}
+_WA_LOCK = threading.Lock()
+
+
+def start_whatsapp_for_site(user, sid, phone_no, host, scheme="https"):
+    init()
+    uid, sid = user["id"], int(sid)
+    key = (uid, sid)
+    with _WA_LOCK:
+        if (_WA_JOBS.get(key) or {}).get("status") == "sending":
+            return dict(_WA_JOBS[key])
+    row = core.q("SELECT id, phone FROM leads WHERE user_id=? AND site_id=?", (uid, sid), one=True)
+    if not row:
+        return {"status": "error", "error": "No lead for this site yet — generate the site first."}
+    phone_no = (phone_no or "").strip()
+    if not phone_no and not (row["phone"] or "").strip():
+        return {"status": "error", "error": "Enter the owner's WhatsApp number first."}
+    job = {"status": "sending", "detail": "Opening WhatsApp on your phone and attaching the pitch… (watch your phone)"}
+    with _WA_LOCK:
+        _WA_JOBS[key] = dict(job)
+
+    def go():
+        try:
+            r = send_whatsapp_for_site(user, sid, phone_no, host, scheme)
+            if r.get("error"):
+                out = {"status": "error", "error": r["error"]}
+            else:
+                out = {"status": "done", "to": r.get("to") or phone_no, "note": r.get("note", "")}
+        except Exception as e:
+            out = {"status": "error", "error": f"{type(e).__name__}: {str(e)[:160]}"}
+        with _WA_LOCK:
+            _WA_JOBS[key] = out
+    threading.Thread(target=go, daemon=True).start()
+    return job
+
+
+def whatsapp_status(user, sid):
+    with _WA_LOCK:
+        return dict(_WA_JOBS.get((user["id"], int(sid))) or {"status": "idle"})
+
+
 def send_whatsapp(user, lid, host, scheme="https"):
     """Send the pitch deck + live preview link to a lead over WhatsApp (their phone), using Trillion's phone link.
     Best for no-website leads, who have a mobile but rarely an email."""

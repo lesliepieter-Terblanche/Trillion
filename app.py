@@ -2195,7 +2195,14 @@ def gensite_email_pitch(sid: int, request: Request, p: dict = Body(default={}), 
 def gensite_whatsapp_pitch(sid: int, request: Request, p: dict = Body(default={}), user=Depends(auth)):
     import leads
     dns = (TAILSCALE.get("v") or {}).get("dns") or app_host(request)
-    return leads.send_whatsapp_for_site(user, sid, (p.get("phone") or "").strip(), dns, "https")
+    # background: driving WhatsApp on the phone takes several seconds, so don't block the request
+    return leads.start_whatsapp_for_site(user, sid, (p.get("phone") or "").strip(), dns, "https")
+
+
+@app.get("/api/gensites/{sid}/whatsapp-pitch")
+def gensite_whatsapp_pitch_status(sid: int, user=Depends(auth)):
+    import leads
+    return leads.whatsapp_status(user, sid)
 
 
 @app.post("/api/gensites/{sid}/before-after")

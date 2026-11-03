@@ -1964,10 +1964,22 @@ function drawWeb(sites){
     }catch(e){msg.style.color='#d94a6a';msg.textContent=e.message;}finally{b.disabled=false;}});
   document.querySelectorAll('[data-lwapitch]').forEach(b=>b.onclick=async()=>{const id=b.dataset.lwapitch;
     const inp=document.querySelector('[data-lphone="'+id+'"]'),msg=document.querySelector('[data-lpmsg="'+id+'"]');
-    const phone=(inp.value||'').trim();b.disabled=true;msg.className='muted';msg.style.color='';msg.textContent='Sending the pitch deck over WhatsApp…';
-    try{const r=await (await api('/api/gensites/'+id+'/whatsapp-pitch',{json:{phone}})).json();
-      if(r.error){msg.style.color='#d94a6a';msg.textContent=r.error;}else{msg.style.color='#1fa67a';msg.textContent='Pitch deck sent on WhatsApp to '+r.to+'. Tracked on the Campaign page.';}
-    }catch(e){msg.style.color='#d94a6a';msg.textContent=e.message;}finally{b.disabled=false;}});
+    const phone=(inp.value||'').trim();b.disabled=true;msg.className='muted';msg.style.color='';msg.style.fontWeight='600';
+    msg.textContent='Starting the WhatsApp pitch…';
+    const done=(ok,txt)=>{msg.style.color=ok?'#1fa67a':'#d94a6a';msg.style.fontWeight='';msg.textContent=txt;b.disabled=false;};
+    try{
+      const r=await (await api('/api/gensites/'+id+'/whatsapp-pitch',{json:{phone}})).json();
+      if(r.status==='error'||r.error){done(false,r.error||'Could not start.');return;}
+      if(r.status==='done'){done(true,'Pitch sent on WhatsApp to '+(r.to||phone)+'. Tracked on the Campaign page.');return;}
+      msg.textContent=r.detail||'Opening WhatsApp on your phone…';
+      const poll=setInterval(async()=>{try{const d=await (await api('/api/gensites/'+id+'/whatsapp-pitch')).json();
+        if(d.status==='sending'){if(d.detail)msg.textContent=d.detail;return;}
+        clearInterval(poll);
+        if(d.status==='done')done(true,'Pitch sent on WhatsApp to '+(d.to||phone)+'. Tracked on the Campaign page.');
+        else if(d.status==='error')done(false,d.error||'WhatsApp did not send.');
+        else done(false,'WhatsApp did not send — check that your phone is linked and unlocked on the Phone page.');
+      }catch(e){clearInterval(poll);done(false,e.message);}},3000);
+    }catch(e){done(false,e.message);}});
   document.querySelectorAll('[data-wbba]').forEach(b=>b.onclick=async()=>{const id=b.dataset.wbba,m=$('wb-msg');
     const old=prompt("The prospect's CURRENT website address (for the BEFORE shot):");if(!old)return;b.disabled=true;
     m.className='msg muted';m.textContent='Making the before/after card (shots of both sites)…';
