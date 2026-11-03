@@ -106,10 +106,12 @@ def _category(types):
 
 
 def _hours(weekday):
-    wk = weekday or []
+    """Keep the full, human-readable opening hours WITH the day names (e.g. 'Monday: 9 AM – 5 PM'), one per
+    line, so the site can show a proper schedule. Google already localises these nicely."""
+    wk = [str(s).strip() for s in (weekday or []) if str(s).strip()]
     if not wk:
         return ""
-    return "; ".join(s.split(": ", 1)[-1] if ": " in s else s for s in wk[:7])[:120]
+    return "\n".join(wk[:7])
 
 
 def _photos_new(key, photos, n=6):

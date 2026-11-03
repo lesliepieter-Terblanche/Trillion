@@ -375,6 +375,21 @@ def _reviews_html(items):
             + "".join(cards) + '</div><div class="tdots"></div></div>')
 
 
+def _hours_compact(hours):
+    """A one-line hours summary for the footer; the full schedule shows in the Visit section."""
+    lines = [x.strip() for x in str(hours or "").splitlines() if x.strip()]
+    if not lines:
+        return "By appointment"
+    times = []
+    for ln in lines:
+        times.append(ln.split(":", 1)[1].strip() if ":" in ln else ln)
+    # if every open day is the same time, say it once; otherwise point to the schedule on the page
+    uniq = {t for t in times if t.lower() not in ("closed",)}
+    if len(uniq) == 1 and len(lines) >= 5:
+        return "Open " + next(iter(uniq))
+    return "See opening hours on this page"
+
+
 def _value_html(data, info):
     """The premium 'value' block that makes a generated site read like a considered, high-ticket build:
     a stats band, a why-us row, a how-it-works process, an FAQ and a guarantee strip. Driven by the brain's
@@ -461,6 +476,42 @@ def _value_html(data, info):
                    '<div class="sectlabel reveal">Good to know</div>'
                    f'<h2 class="reveal">{_esc(data.get("faq_head") or "Questions, answered")}</h2>'
                    '<div style="margin-top:34px">' + rows + '</div></div></section>')
+
+    # 4.5) Visit us — opening hours + address + phone + directions (only when we actually have the details)
+    hours_raw = str(info.get("hours") or "").strip()
+    addr = str(info.get("address") or info.get("location") or "").strip()
+    phone = str(info.get("phone") or "").strip()
+    if hours_raw or addr:
+        hrows = ""
+        for ln in [x.strip() for x in hours_raw.splitlines() if x.strip()][:7]:
+            if ":" in ln:
+                day, t = ln.split(":", 1)
+                hrows += (f'<div style="display:flex;justify-content:space-between;gap:16px;padding:9px 0;'
+                          f'border-bottom:1px solid var(--border)"><span style="font-weight:600">{_esc(day.strip())}</span>'
+                          f'<span class="muted">{_esc(t.strip())}</span></div>')
+            else:
+                hrows += f'<div style="padding:9px 0;border-bottom:1px solid var(--border)">{_esc(ln)}</div>'
+        hours_col = (f'<div><div style="font-weight:700;font-size:18px;margin-bottom:10px">Opening hours</div>{hrows}</div>'
+                     if hrows else "")
+        contact_bits = []
+        if addr:
+            dir_url = "https://www.google.com/maps/search/?api=1&query=" + quote_plus(addr)
+            contact_bits.append(f'<div style="margin-bottom:14px"><div style="font-weight:700;font-size:18px">Find us</div>'
+                                f'<div class="muted" style="margin-top:4px;line-height:1.5">{_esc(addr)}</div>'
+                                f'<a href="{dir_url}" target="_blank" rel="noopener" style="display:inline-block;margin-top:10px;'
+                                f'color:var(--accent);font-weight:600;text-decoration:none">Get directions &rarr;</a></div>')
+        if phone:
+            contact_bits.append(f'<div><div style="font-weight:700;font-size:18px">Call us</div>'
+                                f'<a href="tel:{_esc(phone)}" style="color:var(--accent);font-weight:600;text-decoration:none;'
+                                f'font-size:17px">{_esc(phone)}</a></div>')
+        contact_col = "".join(contact_bits)
+        cols = "".join(c for c in (hours_col, contact_col) if c)
+        if cols:
+            out.append('<section class="pad" id="visit" style="background:var(--surface)"><div class="wrap" style="max-width:860px">'
+                       '<div class="sectlabel reveal">Visit us</div>'
+                       f'<h2 class="reveal">{_esc(data.get("visit_head") or "Come see us")}</h2>'
+                       '<div class="reveal" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));'
+                       'gap:34px;margin-top:34px;align-items:start">' + cols + '</div></div></section>')
 
     # 5) guarantee strip
     guar = _esc(data.get("guarantee") or f"If it's not right, we make it right. That's the promise behind every "
@@ -593,20 +644,23 @@ Shape exactly:
 "sub":"one warm sentence, max 22 words","cta1":"2-3 word button","cta2":"2-3 word button",
 "nav":["3 short nav words"],"navcta":"2-3 word button",
 "strip":["4 tiny trust badges e.g. '12 years local','Open 7 days'"],
-"services_label":"1-2 words","services_head":"short section heading","services_sub":"one sentence",
-"services":[{{"t":"a REAL, specific service this {cat or 'business'} offers","d":"one sentence benefit"}} x3],
-"reviews_head":"short heading","cta_head":"short closing headline","cta_sub":"one sentence",
+"services_label":"1-2 words","services_head":"benefit-led section heading","services_sub":"one persuasive sentence",
+"services":[{{"t":"a REAL, specific service this {cat or 'business'} offers","d":"1-2 sentences on the OUTCOME the customer gets, not just what it is"}} x5],
+"reviews_head":"short heading","cta_head":"a compelling closing headline that drives action","cta_sub":"one persuasive sentence that makes them get in touch now",
 "stats":[{{"n":"a short punchy figure e.g. '12+','4.9★','Same day'","l":"3-5 word label"}} x3],
-"why_head":"short heading for a why-choose-us section","why":[{{"t":"a real reason to choose this {cat or 'business'}","d":"one warm sentence"}} x3],
+"why_head":"short heading for a why-choose-us section","why":[{{"t":"a real reason to choose this {cat or 'business'}","d":"one persuasive sentence on the benefit to the customer"}} x3],
 "process_head":"short heading for a how-it-works section","process":[{{"t":"step name","d":"one sentence"}} x3],
-"faq_head":"short heading","faqs":[{{"q":"a real question a customer of this {cat or 'business'} would ask","a":"one honest, specific sentence"}} x4],
+"faq_head":"short heading","faqs":[{{"q":"a real question a customer of this {cat or 'business'} would ask","a":"one honest, reassuring sentence that removes a buying objection"}} x4],
 "guarantee":"one confident sentence promising to stand behind the work"}}
-For "services", name the 3 actual services a {cat or 'business like this'} provides — infer them from the category and the reviews (e.g. a barber: cuts, fades, beard trims; an auto shop: servicing, repairs, diagnostics). Never use vague filler like "quality service". Mention {name} by name in the headline or sub. English, confident, no hashtags, no emojis in text."""
+For "services", name 5 actual services a {cat or 'business like this'} provides — infer them from the category and the reviews (e.g. a barber: cuts, fades, beard trims, hot-towel shaves, kids' cuts; an auto shop: servicing, repairs, diagnostics, brakes, tyres). Write every description to SELL: lead with the benefit or outcome for the customer, be specific, and give a reason to choose {name}. Never use vague filler like "quality service" or "we care about customers". Mention {name} by name in the headline or sub. English, confident, persuasive, no hashtags, no emojis in text."""
     if info.get("change_note"):
         ask += f"\nAlso apply this change the owner asked for: {info['change_note']}"
     data = {}
     try:
-        text = (llm(user, [{"role": "system", "content": "You are a senior web copywriter. Reply with JSON only."},
+        text = (llm(user, [{"role": "system", "content": "You are a senior conversion copywriter for premium "
+                            "local service businesses. Write specific, benefit-led, persuasive copy that makes "
+                            "the reader want to book or buy — every line earns its place and sells the outcome. "
+                            "Ground everything in the real business details given. Reply with JSON only."},
                            {"role": "user", "content": ask}]).get("content") or "")
         data = json.loads(text[text.index("{"): text.rindex("}") + 1])
     except Exception:
@@ -616,9 +670,9 @@ For "services", name the 3 actual services a {cat or 'business like this'} provi
         v = data.get(k)
         return v if v else d
     svc_list = data.get("services") if isinstance(data.get("services"), list) else []
-    svc_list = [s for s in svc_list if isinstance(s, dict) and s.get("t")][:3]
+    svc_list = [s for s in svc_list if isinstance(s, dict) and s.get("t")][:6]
     if len(svc_list) < 3:
-        typed = [x.strip() for x in re.split(r"[,/;\n]", svc) if x.strip()][:3]
+        typed = [x.strip() for x in re.split(r"[,/;\n]", svc) if x.strip()][:6]
         if typed:
             while len(typed) < 3:
                 typed.append(["Quality work", "Trusted local team", "Fair pricing"][len(typed)])
@@ -658,7 +712,7 @@ For "services", name the 3 actual services a {cat or 'business like this'} provi
         "CTA_HEAD": _esc(g("cta_head", "Ready when you are")),
         "CTA_SUB": _esc(g("cta_sub", "Get in touch today and we'll take it from there.")),
         "PHONE": _esc(info.get("phone") or ""), "ADDR": _esc(info.get("location") or info.get("address") or ""),
-        "HOURS": _esc(info.get("hours") or "By appointment"),
+        "HOURS": _esc(_hours_compact(info.get("hours"))),
         "VALUE": _value_html(data, info),
     }
 
