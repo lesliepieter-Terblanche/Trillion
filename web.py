@@ -49,6 +49,8 @@ TEMPLATES = {
     "mesh":      {"file": "paper-mesh.html", "photo": False, "dark": True},            # soft animated mesh gradient
     "swirl":     {"file": "paper-swirl.html", "photo": False},                          # bold cinematic spiral, light/dark
     "neuro":     {"file": "paper-neuro.html", "photo": False},                          # organic neuro-plasma flow
+    # full-bleed cinematic background VIDEO that matches the trade (needs a free Pexels key + a found clip)
+    "video":     {"file": "video.html", "photo": True, "dark": True, "video": True},
 }
 # trades that suit each ThreeUI look (only used when the look is left on Auto)
 THREEUI_WORDS = {
@@ -1032,9 +1034,14 @@ def render(content, palette, photos_rel, template="premium", font=None):
     content["FONT"] = body_fam
     content["FONTDEF"] = fontdef
     content["SLIDERJS"] = SLIDER_ASSETS + MOTION_ASSETS
-    content["GALLERY_SECTION"] = _gallery_section(photos_rel[1:] if tpl.get("photo") else photos_rel)
-    if tpl.get("photo"):
-        content["HERO_PHOTO"] = photos_rel[0] if photos_rel else ""
+    if tpl.get("video"):
+        content.setdefault("HERO_VIDEO", "")
+        content.setdefault("HERO_PHOTO", "")
+        content["GALLERY_SECTION"] = _gallery_section(photos_rel)   # a video hero keeps the whole gallery
+    else:
+        content["GALLERY_SECTION"] = _gallery_section(photos_rel[1:] if tpl.get("photo") else photos_rel)
+        if tpl.get("photo"):
+            content["HERO_PHOTO"] = photos_rel[0] if photos_rel else ""
     for k, v in palette.items():
         if k != "mode":
             html = html.replace("__" + k + "__", v)
@@ -1198,8 +1205,25 @@ def build(user, info, progress=None):
     folder.mkdir(parents=True, exist_ok=True)
     say("Pulling in the photos")
     photos_rel = _photos_into(folder, info.get("photos") or [])
+    # category-matched cinematic media (free Pexels stock): a real video of this kind of business for the hero,
+    # plus relevant photos when the business has none of its own. Falls back silently if no key / no clip.
+    media = {}
+    look = str(info.get("look") or "").lower()
+    try:
+        import pexels
+        if pexels.key_for(user) and look not in ("premium", "object3d", "editorial", "mesh", "swirl", "neuro",
+                                                 "orb", "liquid", "streams", "aurora", "globe", "portal"):
+            media = pexels.fetch_for_site(user, folder, cat, name, want_video=(look in ("", "auto", "video")),
+                                          want_images=not photos_rel, progress=say)
+            if media.get("images"):
+                photos_rel = (photos_rel or []) + media["images"]
+    except Exception:
+        media = {}
     # choose the look (template), then a palette that suits it
-    template = pick_template(cat, photos_rel, info.get("look") or "")
+    if media.get("video") and look in ("", "auto", "video"):
+        template = "video"                       # a real walkthrough clip of this trade beats an abstract hero
+    else:
+        template = pick_template(cat, photos_rel, info.get("look") or "")
     style = info.get("style") or pick_style(cat, name)
     palette = PALETTES.get(style, PALETTES["violet"])
     if TEMPLATES[template].get("dark") and palette.get("mode") != "dark":
@@ -1216,6 +1240,9 @@ def build(user, info, progress=None):
     say("Writing the copy")
     content = plan(core.LLM if hasattr(core, "LLM") else (lambda u, m: {"content": ""}), user, info)
     content.update(_addons(info, palette))      # optional features the owner ticked
+    if template == "video":
+        content["HERO_VIDEO"] = media.get("video") or "hero.mp4"
+        content["HERO_PHOTO"] = media.get("poster") or (photos_rel[0] if photos_rel else "")
     say("Building the website")
     font_idx = info.get("font_idx")
     if not isinstance(font_idx, int):
@@ -1369,7 +1396,9 @@ def revise(user, sid, change, progress=None, opts=None):
     if _re.search(r"\b(font|fonts|typeface|typography|lettering)\b", low):
         font_idx = (font_idx + 1 + random.randrange(len(FONT_PAIRS) - 1)) % len(FONT_PAIRS)   # reroll to a new one
     # look
-    if _re.search(r"\bribbons?\b", low):
+    if _re.search(r"\b(video hero|walkthrough|real video|cinematic video|video of the)\b", low):
+        template = "video"
+    elif _re.search(r"\bribbons?\b", low):
         template = "ribbons"
     elif _re.search(r"\b(orb|sphere|smoke)\b", low):
         template = "orb"
@@ -1495,9 +1524,23 @@ def revise(user, sid, change, progress=None, opts=None):
     content = plan(core.LLM if hasattr(core, "LLM") else (lambda u, m: {"content": ""}),
                    user, dict(info, change_note=note))
     content.update(_addons(info, palette))
-    html = render(content, palette, photos_rel, template, font=font_idx)
     folder = Path(row["folder"])
     folder.mkdir(parents=True, exist_ok=True)
+    if template == "video":          # keep the existing hero clip, or fetch one if switching to a video hero
+        if not (folder / "hero.mp4").exists():
+            try:
+                import pexels
+                if pexels.key_for(user):
+                    pexels.fetch_for_site(user, folder, info.get("category", ""), info.get("business", ""),
+                                          want_video=True, want_images=False, progress=say)
+            except Exception:
+                pass
+        content["HERO_VIDEO"] = "hero.mp4" if (folder / "hero.mp4").exists() else ""
+        content["HERO_PHOTO"] = "hero-poster.jpg" if (folder / "hero-poster.jpg").exists() else \
+            (photos_rel[0] if photos_rel else "")
+        if not content["HERO_VIDEO"]:
+            template = pick_template(info.get("category", ""), photos_rel, avoid="video")
+    html = render(content, palette, photos_rel, template, font=font_idx)
     (folder / "index.html").write_text(html, encoding="utf-8")
     try:
         (folder / "pitch.html").write_text(

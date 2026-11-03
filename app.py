@@ -3491,6 +3491,9 @@ def secret_test(name: str, user=Depends(auth)):
                           headers={"x-api-key": key, "anthropic-version": "2023-06-01"})
         elif name == "pixabay":
             r = httpx.get("https://pixabay.com/api/videos/", params={"key": key, "q": "city", "per_page": 3}, timeout=15)
+        elif name == "pexels":
+            r = httpx.get("https://api.pexels.com/v1/search", headers={"Authorization": key},
+                          params={"query": "office", "per_page": 1}, timeout=15)
         elif name == "google_places":
             r = httpx.post("https://places.googleapis.com/v1/places:searchText", timeout=15,
                            headers={"X-Goog-Api-Key": key, "X-Goog-FieldMask": "places.id",
