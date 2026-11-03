@@ -982,6 +982,19 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <div class="msg" id="vmsg"></div>
     <div class="muted" id="vtip" style="font-size:13px">Best results: a free Pixabay key for real moving footage and an ElevenLabs key for the voice-over, both under Settings, Keys. Long scenes cut between two shots. It takes a few minutes; progress shows on the home screen.</div>
   </div>
+  <div class="panel" id="mon-panel"><b>Complete my own scenes into a video</b>
+    <div class="muted" style="font-size:13px">Give a picture for each scene — hand-drawn stickmen, a storyboard, screenshots or photos — in order. Trillion gives each one a slow cinematic camera move, speaks your line in its own local voice, adds a caption and music, and joins them into one video. Fully on this PC, free, no key needed. It renders scene by scene, so a long one resumes if it's interrupted.</div>
+    <label class="field"><span>Title</span><input id="mon-title" placeholder="Our onboarding story"></label>
+    <label class="field"><span>Topic <span class="muted">(optional — used to write a line for any scene you leave blank)</span></span><input id="mon-topic" placeholder="How a new customer gets set up with us"></label>
+    <div id="mon-scenes"></div>
+    <div class="btns" style="justify-content:flex-start;margin-top:8px">
+      <button class="btn" id="mon-add">+ ADD SCENE</button>
+      <label class="field" style="max-width:220px"><span>Shape</span><select id="mon-fmt"><option value="vertical">Vertical (Reels/TikTok)</option><option value="square">Square</option><option value="landscape">Landscape (YouTube)</option></select></label>
+      <button class="btn pri" id="mon-go">MAKE THE VIDEO</button>
+    </div>
+    <div class="msg" id="mon-msg"></div>
+    <input type="file" id="mon-file" accept="image/*" hidden>
+  </div>
   <div class="panel" id="mpt-panel"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><b>Cinematic engine (MoneyPrinterTurbo)</b><span class="pill" id="mpt-pill"></span></div>
     <div class="muted" style="font-size:13px">A stronger video engine: your local brain writes the script, real stock footage (via your free Pixabay key) becomes the moving background, with a free voice, subtitles and music. Big one-time setup, installed in its own space so it can't affect Trillion. Once it's set up, "Create video" uses it automatically; your current engine stays as a backup until it's proven.</div>
     <div id="mpt-nokey" class="bad" style="font-size:13px" hidden>Add a free Pixabay key under Settings → Keys first - it's what fetches the moving footage.</div>
@@ -1746,7 +1759,7 @@ function sgDraw(d){const ready=d.ready,job=d.job||{};
 $('sg-install')&&($('sg-install').onclick=async()=>{const m=$('sg-msg');m.className='msg muted';m.textContent='Downloading the browser in the background - this takes a few minutes. You can carry on.';try{await api('/api/sitegrab/install',{json:{}});}catch(e){}
   const t=setInterval(async()=>{try{const d=await (await api('/api/sitegrab')).json();sgDraw(d);if(d.ready){clearInterval(t);}else if(d.job&&!d.job.running&&d.job.error){clearInterval(t);}}catch(e){}},8000);});
 async function loadVideos(){
-  mptLoad();sgLoad();
+  mptLoad();sgLoad();monDraw();
   if(S){$('vai').checked=S.user.settings.video_ai_images!==false;$('vai').onchange=()=>api('/api/settings',{method:'PUT',json:{video_ai_images:$('vai').checked}}).then(tick);}
   const vs=await (await api('/api/videos')).json();
   $('vlist').innerHTML=vs.map(v=>`<div class="panel" style="gap:10px">${v.exists?`<video controls preload="none" ${v.thumb?`poster="/api/videos/${v.id}/thumb"`:''} src="/api/videos/${v.id}/file" style="width:100%;max-height:420px;background:#000"></video>`:'<div class="bad">The file was moved or deleted.</div>'}
@@ -1777,6 +1790,39 @@ $('vgo').onclick=async()=>{const about=$('vprompt').value.trim();if(!about){$('v
   if($('vkind').value==='ai')await send(`Generate an AI clip, ${Math.min(15,+$('vsec').value)} seconds, ${$('vfmt').value}: ${about}`,false);
   else await send(`Create a ${$('vsec').value} second ${$('vfmt').value} video${$('vvo').checked?'':' with no voice-over'}: ${about}`,false);
   $('vmsg').textContent='';$('vprompt').value='';loadVideos();};
+// ---------- Complete my own scenes ----------
+let monScenes=[];
+function monUpload(file){return new Promise((res,rej)=>{const x=new XMLHttpRequest();x.open('POST','/api/upload?name='+encodeURIComponent(file.name||'scene'));
+  x.onload=()=>{if(x.status===200){try{res(JSON.parse(x.responseText));}catch(e){rej('bad');}}else rej('upload failed');};
+  x.onerror=()=>rej('connection lost');x.setRequestHeader('Content-Type','application/octet-stream');x.send(file);});}
+function monDraw(){const box=$('mon-scenes');if(!box)return;
+  box.innerHTML=monScenes.map((s,i)=>`<div class="panel" style="gap:8px;flex-direction:row;align-items:flex-start">
+    <img src="${s.url}" style="width:72px;height:72px;object-fit:cover;border-radius:8px;background:#000;flex:none">
+    <div style="flex:1;display:flex;flex-direction:column;gap:6px;min-width:0">
+      <div class="muted" style="font-size:12px">Scene ${i+1} · ${esc(s.name)}</div>
+      <input data-mt="${i}" placeholder="What is said over this scene (leave blank to have it written for you)" value="${esc(s.text||'')}">
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px;flex:none">
+      <button class="btn" data-mup="${i}" style="min-height:28px;font-size:12px;padding:2px 8px"${i===0?' disabled':''}>↑</button>
+      <button class="btn" data-mdn="${i}" style="min-height:28px;font-size:12px;padding:2px 8px"${i===monScenes.length-1?' disabled':''}>↓</button>
+      <button class="btn" data-mx="${i}" style="min-height:28px;font-size:12px;padding:2px 8px">✕</button>
+    </div></div>`).join('')||'<div class="muted" style="font-size:13px">No scenes yet — press “+ ADD SCENE” and pick a picture for each one.</div>';
+  box.querySelectorAll('[data-mt]').forEach(inp=>inp.oninput=()=>{monScenes[+inp.dataset.mt].text=inp.value;});
+  box.querySelectorAll('[data-mx]').forEach(b=>b.onclick=()=>{const s=monScenes[+b.dataset.mx];if(s&&s.url)URL.revokeObjectURL(s.url);monScenes.splice(+b.dataset.mx,1);monDraw();});
+  box.querySelectorAll('[data-mup]').forEach(b=>b.onclick=()=>{const i=+b.dataset.mup;[monScenes[i-1],monScenes[i]]=[monScenes[i],monScenes[i-1]];monDraw();});
+  box.querySelectorAll('[data-mdn]').forEach(b=>b.onclick=()=>{const i=+b.dataset.mdn;[monScenes[i+1],monScenes[i]]=[monScenes[i],monScenes[i+1]];monDraw();});}
+$('mon-add')&&($('mon-add').onclick=()=>$('mon-file').click());
+$('mon-file')&&($('mon-file').onchange=async e=>{const fs=[...e.target.files];e.target.value='';
+  for(const f of fs){if(monScenes.length>=12){$('mon-msg').textContent='Twelve scenes is the most in one video.';break;}
+    const s={id:null,name:f.name||'scene',text:'',url:URL.createObjectURL(f)};monScenes.push(s);monDraw();
+    try{const r=await monUpload(f);s.id=r.id;}catch(err){$('mon-msg').textContent='A picture failed to upload — remove it and try again.';}}});
+$('mon-go')&&($('mon-go').onclick=async()=>{const ready=monScenes.filter(s=>s.id);
+  if(ready.length<1){$('mon-msg').textContent='Add at least one scene picture first.';return;}
+  if(ready.length<monScenes.length){$('mon-msg').textContent='Some pictures are still uploading — give it a second.';return;}
+  $('mon-msg').textContent='Making your video from '+ready.length+' scene'+(ready.length>1?'s':'')+'. It renders scene by scene; watch progress in the Control Room.';
+  try{await api('/api/montage',{json:{title:$('mon-title').value.trim(),topic:$('mon-topic').value.trim(),format:$('mon-fmt').value,
+    scenes:ready.map(s=>({id:s.id,text:s.text}))}});}catch(e){$('mon-msg').textContent='Could not start the video.';return;}
+  let n=0;const t=setInterval(()=>{n++;loadVideos();if(n>30)clearInterval(t);},10000);});
 // ---------- Campaign dashboard ----------
 const LEAD_BADGE={site_created:['Site made','#8a8a9a'],emailed:['Emailed','#3b82f6'],followed_up:['Followed up','#6366f1'],replied:['Replied','#22c55e'],accepted:['Accepted','#16a34a'],declined:['Declined','#ef4444']};
 async function loadDash(){try{drawDash(await (await api('/api/leads')).json());}catch(e){}}

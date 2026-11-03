@@ -1011,6 +1011,10 @@ def tools_for(user, text):
 
 
 VIDEO_RE = re.compile(r"\b(create|make|generate|produce|build|render)\b[^.?!]{0,80}\bvideo\b", re.I)
+# the user's own scene pictures, to be "completed" into a video (stickmen / storyboard / these scenes)
+MONTAGE_RE = re.compile(r"\b(stick\s?m(?:a|e)n|stick figures?|storyboard|these scenes?|my scenes?|each scene|"
+                        r"scene by scene|complete (?:these|my|the) (?:scenes?|pictures?|drawings?|images?)|"
+                        r"(?:turn|make) (?:these|my) (?:scenes?|pictures?|drawings?|sketches?|images?) into)\b", re.I)
 REVISE_RE = re.compile(r"\b(change|fix|revise|redo|remake|update|edit)\b[^.?!]{0,30}\bvideo\b\s*#?\s*(\d+)\s*[:,\-]?\s*(.*)", re.I | re.S)
 
 
@@ -1102,8 +1106,14 @@ def video_reply(res):
     if "error" in res:
         return "I could not make the video: " + res["error"]
     extra = " ".join(res.get("notes", []))
+    if res.get("engine") == "montage":                     # the user's own scenes, completed locally
+        n = res.get("scenes", 0)
+        return (f"Your video is ready: {res['title']}, {round(res['seconds'])} seconds, from your {n} "
+                f"scene{'s' if n != 1 else ''} with the local voice. It is on the Videos page and saved at "
+                f"{res['saved']}. {extra}").strip()
+    clips = res.get("footage_clips") or 0
     return (f"Your video is ready: {res['title']}, {round(res['seconds'])} seconds, "
-            f"{'with' if res['voice_over'] else 'without'} voice-over, {res['footage_clips']} stock clip{'s' if res['footage_clips'] != 1 else ''}"
+            f"{'with' if res.get('voice_over') else 'without'} voice-over, {clips} stock clip{'s' if clips != 1 else ''}"
             f"{' and ' + str(res['ai_pictures']) + ' AI-made picture' + ('s' if res['ai_pictures'] != 1 else '') if res.get('ai_pictures') else ''}. "
             f"It is on the Videos page and saved at {res['saved']}. {extra}").strip()
 
@@ -1514,6 +1524,21 @@ def run_agent(user, text, files=None):
         try:
             res = tools.execute(user, "revise_video",
                                 {"video_id": int(_mrev.group(2)), "change": _mrev.group(3).strip()}, task_id=tid)
+        finally:
+            BUSY[uid] = False
+        reply = video_reply(res)
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="failed" if "error" in res else "completed", detail=reply[:200])
+        return {"reply": reply, "task_id": tid, "provider": LAST_PROVIDER.get(uid, "local")}
+    _imgs = [f["path"] for f in files if f["kind"] == "image"]
+    if _imgs and (MONTAGE_RE.search(text) or (VIDEO_RE.search(text) and len(_imgs) >= 2)) and not asking:
+        # the user gave their own scene pictures to be completed into a narrated video (local + free + resumable)
+        try:
+            vr = video_request(text)
+            scenes = [{"image": p, "text": ""} for p in _imgs]
+            res = tools.execute(user, "montage_video",
+                                {"scenes": scenes, "title": vr["prompt"][:60], "topic": vr["prompt"],
+                                 "format": vr.get("format", "vertical")}, task_id=tid)
         finally:
             BUSY[uid] = False
         reply = video_reply(res)
@@ -2553,6 +2578,35 @@ def mpt_get(user=Depends(auth)):
 def mpt_install(user=Depends(admin)):
     import mpt
     return mpt.start_install(user)
+
+
+@app.post("/api/montage")
+def montage_build(p: dict = Body(...), user=Depends(auth)):
+    """Build a video from the user's own scene pictures (Videos page). Scenes are uploaded images (by
+    attachment id) each with optional narration; empty lines are written from the topic. Runs in the
+    background and reports progress on the task widget, like the other long video jobs."""
+    raw = p.get("scenes") or []
+    scenes = []
+    for sc in raw[:12]:
+        f = attach.get(user, sc.get("id")) if str(sc.get("id") or "").isdigit() else None
+        if f and f["kind"] == "image" and os.path.exists(f["path"]):
+            scenes.append({"image": f["path"], "text": str(sc.get("text") or "").strip()})
+    if not scenes:
+        raise HTTPException(400, "Add a picture for each scene first (two or more).")
+    title = (p.get("title") or "").strip() or "Scene montage"
+    topic = (p.get("topic") or "").strip()
+    fmt = (p.get("format") or "vertical").strip()
+    tid = core.add_task(user["id"], f"Scene montage: {title}")
+
+    def go():
+        try:
+            tools.execute(user, "montage_video",
+                          {"scenes": scenes, "title": title, "topic": topic, "format": fmt}, task_id=tid)
+            core.set_task(tid, status="completed", detail="Your scene video is ready on the Videos page.")
+        except Exception as e:
+            core.set_task(tid, status="failed", detail=f"{type(e).__name__}: {e}"[:200])
+    threading.Thread(target=go, daemon=True).start()
+    return {"task_id": tid, "scenes": len(scenes)}
 
 
 @app.get("/api/sitegrab")

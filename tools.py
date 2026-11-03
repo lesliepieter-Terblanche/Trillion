@@ -125,6 +125,16 @@ SPECS = [
        "FreeVideo. Use only when the user asks for an AI video, AI clip or generated clip. Takes several minutes. "
        "format is vertical, square or landscape.",
        {"prompt": S, "seconds": {"type": "integer"}, "format": S}, ["prompt"]),
+    fn("montage_video", "Turn the user's OWN scene pictures (hand-drawn stickmen, a storyboard, screenshots, photos) into a "
+       "finished narrated video, completing each still with a slow cinematic camera move, the local voice, a caption and "
+       "music. Use this when the user has attached their own scene images and wants them 'completed', 'made into a video', "
+       "or a 'stickman/storyboard/scene' video - NOT create_video (which uses stock footage). Free and fully local; it is "
+       "rendered scene by scene so a long one can resume if interrupted. Give one scene per picture, in order: image is the "
+       "file's path on the PC, text is that scene's narration/caption (leave a scene's text empty to have it written from the "
+       "topic). title names the video; format is vertical, square or landscape. Takes a few minutes.",
+       {"title": S, "format": S, "topic": S,
+        "scenes": {"type": "array", "items": {"type": "object", "properties": {"image": S, "text": S}, "required": ["image"]}}},
+       ["scenes"]),
     fn("create_ebook", "Write and lay out a designed ebook (PDF with cover, contents page and chapters) from a plain description. "
        "Takes several minutes.", {"prompt": S, "chapters": {"type": "integer"}}, ["prompt"]),
     fn("gumroad_sales", "The user's Gumroad store sales and earnings for a period. period is one of: today, week, days30, month, all.",
@@ -339,6 +349,7 @@ def describe(name, a):
         "create_video": "Creating a video",
         "revise_video": "Changing the video",
         "create_ai_clip": "Generating an AI clip",
+        "montage_video": "Completing your scenes into a video",
         "create_ebook": "Writing an ebook",
         "search_manual": f"Searching the manual for {g('query')}", "read_manual_page": f"Reading manual page {g('page')}",
         "list_manuals": "Listing the manuals", "add_manual": f"Reading in the manual {g('path')}",
@@ -428,7 +439,7 @@ def execute(user, name, args, task_id=None, approved=False, direct=False):
             watch.alert(user, "approval", "Trillion needs your OK", summary)
             return {"status": "waiting_for_approval",
                     "note": "Not done yet. The user must approve this on the dashboard."}
-        if name in ("create_video", "revise_video", "create_ai_clip", "create_ebook", "boardroom",
+        if name in ("create_video", "revise_video", "create_ai_clip", "montage_video", "create_ebook", "boardroom",
                     "boardroom_ask", "before_after_card"):
             args = dict(args, _task=task_id)
         out = globals()["t_" + name](user, **args)
@@ -1435,6 +1446,36 @@ def t_create_video(user, prompt, seconds=20, format="vertical", voiceover=True, 
             say(f"Cinematic engine hit a snag ({type(e).__name__}); using the classic engine")
         core.log(user["id"], f"MoneyPrinterTurbo failed, used classic engine: {type(e).__name__}: {e}"[:300], "waiting")
     return video.create(core.LLM, user, prompt, seconds, fmt, bool(voiceover), progress=say, media=media)
+
+
+def t_montage_video(user, scenes, title="", format="vertical", topic="", _task=None):
+    """Complete the user's own scene pictures (stickmen/storyboard/photos) into a narrated video.
+    Local and free: Ken-Burns over each still, local Kokoro voice, caption, music - rendered scene by
+    scene so a long one resumes if interrupted."""
+    import montage
+    import os as _os
+    fmt = str(format or "vertical").lower()
+    fmt = "landscape" if fmt in ("landscape", "horizontal", "wide", "youtube") else ("square" if fmt == "square" else "vertical")
+    say = (lambda text: core.set_task(_task, detail=text)) if _task else None
+    # keep only scenes whose picture is actually on the PC, in the order given
+    clean = []
+    for sc in (scenes or []):
+        img = str((sc or {}).get("image") or "").strip()
+        if img and _os.path.exists(img):
+            clean.append({"image": img, "text": str(sc.get("text") or "").strip()})
+    if not clean:
+        return {"error": "I couldn't find the scene pictures. Attach a picture for each scene, then ask again."}
+    # any scenes with no words of their own get a line written from the topic/title
+    if topic.strip() or title.strip():
+        blanks = [i for i, sc in enumerate(clean) if not sc["text"]]
+        if blanks:
+            if say:
+                say("Writing the narration for your scenes")
+            lines = montage.script_for(user, topic.strip() or title.strip(), len(clean))
+            for i in blanks:
+                if i < len(lines) and lines[i]:
+                    clean[i]["text"] = lines[i]
+    return montage.build(user, title or (topic.strip()[:60] or "Scene montage"), clean, fmt=fmt, progress=say)
 
 
 def t_revise_video(user, video_id, change, _task=None):
