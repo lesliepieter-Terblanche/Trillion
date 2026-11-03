@@ -1092,6 +1092,42 @@ _DECK_FEATURES = {
 }
 
 
+def refresh_pitch(folder, detail):
+    """Rewrite pitch.html for an already-built site from its stored detail, so a deck made before a change
+    (e.g. the 'request more features' form) is brought up to date when the pitch is sent. Best-effort."""
+    import os as _os
+    try:
+        info = dict(detail.get("info") or {})
+        info["addons"] = detail.get("addons") or []
+        style = detail.get("style") or "violet"
+        palette = PALETTES.get(style, PALETTES["violet"])
+        html = pitch_deck(folder, info, palette, info["addons"],
+                          has_video=_os.path.exists(_os.path.join(str(folder), "pitch.mp4")))
+        with open(_os.path.join(str(folder), "pitch.html"), "w", encoding="utf-8") as fh:
+            fh.write(html)
+        return True
+    except Exception:
+        return False
+
+
+def feature_list(name, addons):
+    """What a generated site gives the owner: the four things every site includes, plus a label for each
+    add-on they picked. Shared by the pitch deck and the pitch email so both say the same thing."""
+    base = ["A fast, modern website built around " + str(name),
+            "Looks right on a phone, tablet and computer",
+            "Your real services, hours and contact details",
+            "Found on Google with your business name"]
+    have = [str(a).lower() for a in (addons or [])]
+    return base + [v for k, v in _DECK_FEATURES.items() if k in have]
+
+
+def extra_features(addons):
+    """The add-ons NOT already in this site, offered in the 'request a price for more features' form
+    as (key, label) pairs so the owner can be quoted for them."""
+    have = [str(a).lower() for a in (addons or [])]
+    return [(k, v) for k, v in _DECK_FEATURES.items() if k not in have]
+
+
 def pitch_deck(folder, info, palette, addons, has_video=False):
     """Write pitch.html into the site folder: a one-page offer deck the prospect reads — what they get, how
     installation works, and a clear note that domain and hosting are not included. Self-contained, palette-matched,
@@ -1102,11 +1138,7 @@ def pitch_deck(folder, info, palette, addons, has_video=False):
     p = palette
     feats = [v for k, v in _DECK_FEATURES.items() if k in [str(a).lower() for a in (addons or [])]]
     _pr = price(addons)
-    base = ["A fast, modern website built around " + _esc(name),
-            "Looks right on a phone, tablet and computer",
-            "Your real services, hours and contact details",
-            "Found on Google with your business name"]
-    feat_items = base + [_esc(f) for f in feats]
+    feat_items = [_esc(f) for f in feature_list(name, addons)]
     feat_html = "".join(
         f'<li style="padding:11px 0;border-bottom:1px solid {p["C_BORDER"]};display:flex;gap:12px;align-items:flex-start">'
         f'<span style="color:{p["C_ACCENT"]};font-weight:800">&#10003;</span><span>{f}</span></li>'
@@ -1128,6 +1160,29 @@ def pitch_deck(folder, info, palette, addons, has_video=False):
                  f'{p["C_BORDER"]};color:{p["C_TEXT"]};text-decoration:none;font-weight:600">&#9654; Watch the 30-sec video</a>'
                  ) if has_video else ""
     accent_grad = f"linear-gradient(100deg,{p['C_ACCENT']},{p['C_ACCENT2']})"
+    # a real form so the prospect can ask for a price on features the sample doesn't include yet (GET, so it
+    # works over the Funnel with no JS; it posts to the public 'quote' route, which Trillion tracks)
+    extra = extra_features(addons)
+    if extra:
+        checks = "".join(
+            f'<label style="display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid {p["C_BORDER"]}">'
+            f'<input type="checkbox" name="f" value="{k}" style="width:20px;height:20px;margin-top:2px;flex:none">'
+            f'<span>{_esc(v)}</span></label>' for k, v in extra)
+        inp = (f"background:{p['C_BG']};border:1px solid {p['C_BORDER']};color:{p['C_TEXT']};border-radius:12px;"
+               "padding:12px 14px;font-size:15px;width:100%;box-sizing:border-box;font-family:inherit")
+        more_html = f"""
+<h2 id="more">Want more features?</h2>
+<div class="card">
+<p style="margin:0 0 14px;color:{p['C_MUTED']}">Need something the sample doesn't show yet? Tick what you'd like and I'll send you a price &mdash; no obligation. Each extra option is {_pr['per_str']}.</p>
+<form method="get" action="quote">
+<ul style="margin:0 0 14px">{checks}</ul>
+<div style="margin-bottom:12px"><textarea name="note" rows="3" placeholder="Anything else you'd like on the site?" style="{inp}"></textarea></div>
+<div style="margin-bottom:16px"><input name="contact" placeholder="Best email or WhatsApp number to reply on" style="{inp}"></div>
+<button class="btn" type="submit" style="background:{accent_grad};color:#fff;border:0;cursor:pointer">Request a price</button>
+</form></div>
+"""
+    else:
+        more_html = ""
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Your new website — {_esc(name)}</title>
 <style>:root{{color-scheme:{p['mode']}}}*{{box-sizing:border-box}}body{{margin:0;background:{p['C_BG']};color:{p['C_TEXT']};
@@ -1170,6 +1225,7 @@ ul{{list-style:none;padding:0;margin:0}}a{{color:{p['C_ACCENT']}}}</style></head
 <li style="padding:5px 0">&bull; Once you've sorted those, I connect your site to them and it goes live. I'll guide you through it.</li>
 </ul></div>
 
+{more_html}
 <h2>Ready?</h2>
 <p class="sub">Let me know and we'll make it yours.</p>
 <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px">

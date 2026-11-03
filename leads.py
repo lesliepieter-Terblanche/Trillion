@@ -148,6 +148,58 @@ def record_reply(token, answer):
     return {"ok": True, "yes": yes, "business": biz, "known": bool(row)}
 
 
+def record_quote(token, features, note="", contact=""):
+    """A prospect used the 'request a price for more features' form on the pitch deck. Public (keyed by the
+    site token). Records the request against the lead, marks it a hot reply, and alerts the owner."""
+    init()
+    token = str(token or "").strip()
+    row = core.q("SELECT id, business, user_id, status, note FROM leads WHERE token=?", (token,), one=True)
+    biz = (row["business"] if row else "") or "your business"
+    try:
+        import web
+        labels = [web._DECK_FEATURES.get(str(f).lower(), str(f)) for f in (features or []) if str(f).strip()]
+    except Exception:
+        labels = [str(f) for f in (features or []) if str(f).strip()]
+    note = " ".join(str(note or "").split())[:500]
+    contact = " ".join(str(contact or "").split())[:160]
+    if row:
+        parts = ["Requested a price for more features via the deck:"]
+        parts.append("wants " + (", ".join(labels) if labels else "extra features"))
+        if note:
+            parts.append(f'note: "{note}"')
+        if contact:
+            parts.append(f"contact: {contact}")
+        summary = " — ".join(parts)
+        # a price request is a hot signal: surface it as 'replied' unless already accepted/declined
+        new_status = "replied" if (row["status"] or "") in ("site_created", "emailed", "followed_up") else row["status"]
+        core.x("UPDATE leads SET status=?, last_reply_at=?, note=?, updated=? WHERE id=?",
+               (new_status, _now(), summary, _now(), row["id"]))
+        try:
+            import watch
+            watch.alert({"id": row["user_id"]}, "lead", "A prospect wants a quote",
+                        f"{biz} asked for a price on more features — follow up!")
+        except Exception:
+            pass
+    return {"ok": True, "business": biz, "features": labels, "note": note, "contact": contact, "known": bool(row)}
+
+
+def quote_page(business, features, contact=""):
+    """Styled thank-you page shown after the prospect submits the 'more features' form (served under /site/)."""
+    biz = business or "your business"
+    acc = "#7c5cff"
+    want = (", ".join(features)) if features else "the extra features you mentioned"
+    how = (f" I'll reply on {contact}." if contact else " I'll be in touch shortly with a price.")
+    body = (f"Thanks — I've noted that you'd like a price for {want} on the {biz} website.{how}")
+    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Thank you</title>
+<style>body{{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+background:#0b0b12;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;padding:24px}}
+.c{{max-width:460px;text-align:center}}.i{{width:76px;height:76px;border-radius:50%;margin:0 auto 22px;
+background:linear-gradient(100deg,{acc},#d94fd0);display:flex;align-items:center;justify-content:center;font-size:36px}}
+h1{{font-size:28px;margin:0 0 12px;letter-spacing:-.01em}}p{{color:#aeb3c2;line-height:1.65;font-size:16px}}</style></head>
+<body><div class="c"><div class="i">&#128221;</div><h1>Got it — thank you!</h1><p>{body}</p></div></body></html>"""
+
+
 def reply_page(answer, business):
     """A styled thank-you page shown after the prospect clicks Yes/No (served under /site/)."""
     yes = str(answer or "").lower() in ("yes", "y", "1", "accept", "accepted")
@@ -193,13 +245,22 @@ def preview_url(host, token, scheme="https"):
     return f"{scheme}://{host}/site/{token}/"
 
 
-def _email_html(user, lead, base, stage, has_video=False, pline=""):
+def _email_html(user, lead, base, stage, has_video=False, pline="", feats=None):
     biz = lead["business"]
     me = core.q("SELECT name FROM users WHERE id=?", (user["id"],), one=True)
     who = (me["name"] if me and me["name"] else "").split(" ")[0] or "me"
     base = base if base.endswith("/") else base + "/"
     deck, site, video = base + "pitch.html", base, base + "pitch.mp4"
     yes, no = base + "reply?a=yes", base + "reply?a=no"
+    more = deck + "#more"
+    feats = feats or []
+    feat_html = ""
+    if feats:
+        items = "".join(
+            '<tr><td valign="top" style="color:#16a34a;font-weight:800;padding:4px 10px 4px 0">&#10003;</td>'
+            f'<td style="padding:4px 0">{f}</td></tr>' for f in feats)
+        feat_html = ('<p style="margin:24px 0 8px;font-weight:600">What you get</p>'
+                     f'<table role="presentation" cellpadding="0" cellspacing="0" style="font-size:15px">{items}</table>')
     if stage == 0:
         intro = (f"I came across {biz} on Google and built a free sample website to show what one could look like "
                  "for you — real content, works on a phone, ready to go.")
@@ -219,7 +280,9 @@ def _email_html(user, lead, base, stage, has_video=False, pline=""):
 <p style="margin:22px 0">
 <a href="{deck}" style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;padding:13px 24px;border-radius:40px;font-weight:700;margin:4px 6px">See your website &amp; the details</a>
 {vid}</p>
+{feat_html}
 <p>{close}</p>
+<p style="margin:18px 0"><a href="{more}" style="display:inline-block;background:#f3f4f6;color:#111;text-decoration:none;padding:12px 22px;border-radius:40px;font-weight:600">Want more features? Request a price &#8594;</a></p>
 <p style="margin:26px 0 10px;font-weight:600">Want it? One tap:</p>
 <table role="presentation" cellpadding="0" cellspacing="0"><tr>
 <td style="padding-right:10px"><a href="{yes}" style="display:inline-block;background:#16a34a;color:#fff;text-decoration:none;padding:13px 26px;border-radius:40px;font-weight:700">Yes, let's do it</a></td>
@@ -253,17 +316,21 @@ def send_pitch(user, lid, host, scheme="https"):
     stage = int(lead["followups"] or 0) if lead["status"] in ("emailed", "followed_up") else 0
     has_video = False
     pline = ""
+    feats = []
     try:
         import os, json as _json, web
         site = core.q("SELECT folder, detail FROM gensites WHERE token=?", (lead["token"],), one=True)
         if site:
             has_video = bool(os.path.exists(os.path.join(site["folder"], "pitch.mp4")))
-            addons = (_json.loads(site["detail"] or "{}") or {}).get("addons") or []
+            detail = _json.loads(site["detail"] or "{}") or {}
+            addons = detail.get("addons") or []
             pline = web.price_line(addons)
+            feats = web.feature_list(lead["business"], addons)
+            web.refresh_pitch(site["folder"], detail)      # ensure the deck has the latest (incl. the more-features form)
     except Exception:
         pass
     try:
-        mail.send(user, lead["email"], _subject(lead, stage), _email_html(user, lead, link, stage, has_video, pline))
+        mail.send(user, lead["email"], _subject(lead, stage), _email_html(user, lead, link, stage, has_video, pline, feats))
     except Exception as e:
         return {"error": f"Could not send: {type(e).__name__}. Check your Gmail connection."}
     if stage == 0:
@@ -316,17 +383,23 @@ def send_whatsapp(user, lid, host, scheme="https"):
     biz = lead["business"]
     me = core.q("SELECT name FROM users WHERE id=?", (user["id"],), one=True)
     who = (me["name"] if me and me["name"] else "").split(" ")[0] or ""
-    pline = ""
+    pline, bullets = "", ""
     try:
         import json as _json, web
-        site = core.q("SELECT detail FROM gensites WHERE token=?", (lead["token"],), one=True)
+        site = core.q("SELECT folder, detail FROM gensites WHERE token=?", (lead["token"],), one=True)
         if site:
-            pline = web.price_line((_json.loads(site["detail"] or "{}") or {}).get("addons") or [])
+            detail = _json.loads(site["detail"] or "{}") or {}
+            addons = detail.get("addons") or []
+            pline = web.price_line(addons)
+            bullets = "\n".join("✓ " + f for f in web.feature_list(biz, addons))
+            web.refresh_pitch(site["folder"], detail)      # ensure the deck has the latest (incl. the more-features form)
     except Exception:
         pass
     msg = (f"Hi, I came across {biz} on Google and built a free sample website to show what one could look like "
            f"for you. Have a look here (there's a Yes/No button at the bottom to let me know):\n{deck}\n\n"
+           + (f"What you get:\n{bullets}\n\n" if bullets else "")
            + (f"Price: {pline}\n(Domain & hosting are arranged on your side.)\n\n" if pline else "")
+           + f"Want more features? Ask for a price here:\n{deck}#more\n\n"
            + "No obligation at all." + (f"\n\n{who}" if who else ""))
     try:
         from pathlib import Path as _P

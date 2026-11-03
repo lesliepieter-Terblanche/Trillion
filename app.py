@@ -2256,6 +2256,18 @@ def gensite_reply(token: str, a: str = "", user=None):
     return HTMLResponse(leads.reply_page(a, r.get("business")))
 
 
+@app.get("/site/{token}/quote")
+@app.get("/site/site/{token}/quote")
+def gensite_quote(token: str, request: Request):
+    """Public 'request a price for more features' form submit from the pitch deck. GET so the plain HTML form
+    works over the Funnel with no JS. Records the request against the lead and shows a thank-you page."""
+    import leads
+    qp = request.query_params
+    feats = qp.getlist("f")
+    r = leads.record_quote(token, feats, qp.get("note", ""), qp.get("contact", ""))
+    return HTMLResponse(leads.quote_page(r.get("business"), r.get("features") or [], r.get("contact") or ""))
+
+
 @app.api_route("/site/{token}/__api/{action}", methods=["GET", "POST"])
 @app.api_route("/site/site/{token}/__api/{action}", methods=["GET", "POST"])
 async def site_tier2_api(token: str, action: str, request: Request):
