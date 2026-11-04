@@ -534,6 +534,17 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
       <label class="field"><span>Country code for local numbers (27 = South Africa)</span><input id="s-phone_country_code" style="max-width:120px"></label>
       <div><button class="btn pri" id="phsave">SAVE PHONE SETTINGS</button> <span class="msg" id="phsmsg"></span></div>
     </div>
+    <div class="panel" id="dc-panel" hidden><div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><b>Computer control (this PC)</b><span class="pill" id="dc-pill"></span></div>
+      <div class="muted" style="font-size:13px">Lets Trillion see and operate <b>this computer</b> — open apps, click buttons and type in any window — the same way it controls your phone. Owner login only. Then just ask, e.g. "open Excel and start a new sheet" or "open Chrome and go to gmail.com". One-time setup installs the control parts.</div>
+      <div id="dc-nowin" class="bad" style="font-size:13px" hidden>This only works on the Windows PC that runs Trillion.</div>
+      <div id="dc-setup" hidden><div class="btns" style="justify-content:flex-start"><button class="btn pri" id="dc-install">SET UP COMPUTER CONTROL</button></div></div>
+      <label class="tickrow" id="dc-togglerow" hidden><input type="checkbox" id="s-desktop_control"><span><b>Let Trillion control this computer</b><br><span class="muted">It can open apps, click and type in any window on this PC. It acts as you, so only switch on if you're comfortable with that.</span></span></label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px" id="dc-dorow" hidden>
+        <input id="dc-do" placeholder='e.g. "open Notepad and type my address"' style="flex:1;min-width:180px;padding:8px 11px;border:1px solid var(--edge2);border-radius:8px;background:var(--panel2,transparent);color:var(--text);font-size:13px">
+        <button class="btn" id="dc-go">DO IT</button>
+      </div>
+      <div class="msg" id="dc-msg"></div>
+    </div>
     <div class="panel"><b>Unlock code</b>
       <div class="muted" style="font-size:13px">Saved encrypted on this PC so she can unlock your phone. She tries a code once only; if it fails she stops until you save it again, so the phone cannot be locked out.</div>
       <div id="ul-state" class="msg" style="font-size:15px"></div>
@@ -2410,8 +2421,34 @@ async function loadPhonePage(){
   if(!S)return;fillPhoneSettings();const full=!!S.user.settings.phone_full_control;
   $('pp-cmds').innerHTML=PPC.filter(c=>!c[2]||full).map((c,i)=>`<button type="button" data-pc="${esc(c[1])}">${esc(c[0])}</button>`).join('')+(full?'':'<span class="muted" style="font-size:13px;align-self:center">Tick Full phone control below for Home, Back, volume and reading the screen.</span>');
   $('pp-cmds').querySelectorAll('[data-pc]').forEach(b=>b.onclick=()=>runHere(b.dataset.pc,$('pp-cmdmsg')));
-  ppUse();render();loadPhone();ulLoad();loadWA(true);loadContacts($('pp-cmsg'));wtLoad();mtLoad();ngLoad();mbLoad();vcLoad();loadCameras();scLoad();
+  ppUse();render();loadPhone();ulLoad();loadWA(true);loadContacts($('pp-cmsg'));wtLoad();mtLoad();ngLoad();mbLoad();vcLoad();loadCameras();scLoad();dcLoad();
 }
+async function dcLoad(){
+  const adm=S&&S.user.is_admin,panel=$('dc-panel');if(!panel)return;
+  panel.hidden=!adm;if(!adm)return;
+  let d={};try{d=await (await api('/api/desktop')).json();}catch(e){return;}
+  const job=d.job||{};
+  $('dc-pill').textContent=!d.available?'Windows only':(d.ready?(d.enabled?'on':'ready (off)'):(job.running?'setting up…':'not set up'));
+  $('dc-pill').className='pill'+(d.ready&&d.enabled?' on':'');
+  $('dc-nowin').hidden=d.available;
+  $('dc-setup').hidden=!(d.available&&!d.ready);
+  $('dc-install').disabled=!!job.running;
+  $('dc-togglerow').hidden=!(d.available&&d.ready);
+  $('dc-dorow').hidden=!(d.available&&d.ready&&d.enabled);
+  const t=$('s-desktop_control');if(t){t.checked=!!d.enabled;t.onchange=async()=>{
+    try{await api('/api/settings',{method:'PUT',json:{desktop_control:t.checked}});await tick();dcLoad();
+      $('dc-msg').className='msg ok';$('dc-msg').textContent='Computer control '+(t.checked?'ON — just ask it to do something on the PC.':'off.');}
+    catch(e){$('dc-msg').className='msg bad';$('dc-msg').textContent=e.message;}};}
+}
+$('dc-install')&&($('dc-install').onclick=async()=>{const m=$('dc-msg');m.className='msg muted';m.textContent='Installing the computer-control parts in the background…';
+  try{await api('/api/desktop/install',{json:{}});}catch(e){}
+  const t=setInterval(async()=>{try{const d=await (await api('/api/desktop')).json();dcLoad();
+    if(d.ready){clearInterval(t);m.className='msg ok';m.textContent='Ready. Tick the box to let Trillion control this PC.';}
+    else if(d.job&&!d.job.running&&d.job.error){clearInterval(t);m.className='msg bad';m.textContent='Setup failed: '+d.job.error;}}catch(e){}},6000);});
+$('dc-go')&&($('dc-go').onclick=async()=>{const v=$('dc-do').value.trim();if(!v){$('dc-do').focus();return;}
+  if(sending){$('dc-msg').className='msg bad';$('dc-msg').textContent='Busy with another job.';return;}
+  $('dc-msg').className='msg muted';$('dc-msg').textContent='Working on it — watch the screen and the Control Room.';
+  await send(v,false);$('dc-do').value='';$('dc-msg').textContent='';});
 async function loadCameras(){
   const adm=S&&S.user.is_admin;$('camadd').hidden=!adm;
   let cams=[];try{cams=(await (await api('/api/cameras')).json()).cameras||[];}catch(e){}

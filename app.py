@@ -2609,6 +2609,18 @@ def mpt_install(user=Depends(admin)):
     return mpt.start_install(user)
 
 
+@app.get("/api/desktop")
+def desktop_get(user=Depends(auth)):
+    import desktop
+    return dict(desktop.state(), enabled=bool(core.settings(user).get("desktop_control")))
+
+
+@app.post("/api/desktop/install")
+def desktop_install(user=Depends(admin)):
+    import desktop
+    return desktop.start_install(user)
+
+
 @app.post("/api/montage")
 def montage_build(p: dict = Body(...), user=Depends(auth)):
     """Build a video from the user's own scene pictures (Videos page). Scenes are uploaded images (by

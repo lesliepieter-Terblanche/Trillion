@@ -111,6 +111,21 @@ SPECS = [
     fn("phone_swipe", "Swipe the phone screen up, down, left or right (swipe up to scroll down a page).", {"direction": S}),
     fn("phone_shell", "Run an Android shell command on the user's phone. Owner only, and always needs approval.", {"command": S}),
     fn("phone_screenshot", "Take a screenshot of the user's phone screen and save it to their folder.", {}),
+    fn("computer_screen", "Read what is on THIS computer's screen right now: the texts, buttons and fields on the window "
+       "in front, each with its position. Do this before clicking so you know what's there, and again after each step to "
+       "see what changed. For controlling the PC itself (not a website or the phone).", {}),
+    fn("computer_click", "Click something on this computer's screen. Give the visible text of the item (target), or an x and y. "
+       "button can be 'left' or 'right'; set double true for a double-click.",
+       {"target": S, "x": {"type": "integer"}, "y": {"type": "integer"}, "button": S, "double": {"type": "boolean"}}, []),
+    fn("computer_type", "Type text into the field in focus on this computer. Click the field first. Set enter true to press "
+       "Enter afterwards.", {"text": S, "enter": {"type": "boolean"}}, ["text"]),
+    fn("computer_press", "Press a key or shortcut on this computer: enter, tab, esc, up/down/left/right, save, copy, paste, "
+       "cut, selectall, find, close, switch, or a combo like 'ctrl+s'.", {"key": S}, ["key"]),
+    fn("computer_scroll", "Scroll on this computer: amount negative scrolls down, positive scrolls up. Optional x,y to scroll "
+       "over a spot.", {"amount": {"type": "integer"}, "x": {"type": "integer"}, "y": {"type": "integer"}}, []),
+    fn("open_app", "Open an app on this computer by name (notepad, excel, chrome, outlook…), or a file path or URL.", {"app": S}, ["app"]),
+    fn("focus_window", "Bring a window on this computer to the front by (part of) its title.", {"title": S}, ["title"]),
+    fn("list_windows", "List the titles of the windows open on this computer.", {}),
     fn("create_image", "Create a picture (PNG) from a description with Google's image model, using this login's own Gemini key. "
        "shape is square, tall or wide.", {"prompt": S, "shape": S}, ["prompt"]),
     fn("create_video", "Create a finished cinematic social media video (MP4) from a plain description. No media is "
@@ -280,6 +295,9 @@ def calling():
 
 
 FULL_PHONE = {"phone_read_screen", "phone_tap", "phone_type", "phone_press", "phone_swipe", "phone_shell"}
+# controlling this PC's screen: owner-login only, and off until "Computer control" is switched on
+DESKTOP = {"computer_screen", "computer_click", "computer_type", "computer_press", "computer_scroll",
+           "open_app", "focus_window", "list_windows"}
 
 
 def resolve(user, path):
@@ -340,6 +358,10 @@ def describe(name, a):
         "phone_type": "Typing on the phone", "phone_press": f"Pressing {g('key')}", "phone_swipe": f"Swiping {g('direction')}",
         "phone_shell": f"Run on the phone: {g('command')}",
         "phone_locate": "Locating the phone", "phone_ring": "Ringing the phone",
+        "computer_screen": "Reading the computer screen", "computer_click": f"Clicking {g('target') or 'the screen'}",
+        "computer_type": "Typing on the computer", "computer_press": f"Pressing {g('key')}",
+        "computer_scroll": "Scrolling", "open_app": f"Opening {g('app')}", "focus_window": f"Switching to {g('title')}",
+        "list_windows": "Listing open windows",
         "clone_website": f"{'Copying' if g('mode') == 'copy' else 'Rebuilding the style of'} {g('url')}",
         "seo_rankings": "Checking Google rankings",
         "competitor_watch": "Checking competitor websites",
@@ -395,6 +417,10 @@ def execute(user, name, args, task_id=None, approved=False, direct=False):
             return {"error": "Only the owner login can run commands on a phone."}
         if name in FULL_PHONE and not core.settings(user).get("phone_full_control"):
             return {"error": "Full phone control is switched off. Switch it on on the Phone page."}
+        if name in DESKTOP and not user["is_admin"]:
+            return {"error": "Only the owner login can control this computer."}
+        if name in DESKTOP and not core.settings(user).get("desktop_control"):
+            return {"error": "Computer control is switched off. Switch it on on the Phone page (Computer control)."}
         if name == "update_self" and not user["is_admin"]:
             return {"error": "Only the owner login can update Trillion."}
         if name in NEEDS_APPROVAL and not approved:
@@ -451,7 +477,7 @@ def execute(user, name, args, task_id=None, approved=False, direct=False):
     except TypeError as e:
         return {"error": f"Wrong details for {name}: {e}"}
     except Exception as e:
-        if type(e).__name__ == "PhoneError":
+        if type(e).__name__ in ("PhoneError", "DesktopError"):
             return {"error": str(e)}
         return {"error": f"{type(e).__name__}: {e}"}
 
@@ -1581,3 +1607,44 @@ def t_phone_swipe(user, direction):
 def t_phone_shell(user, command):
     import phone
     return phone.shell(user, command)
+
+
+# ---------- computer control (this PC) ----------
+def t_computer_screen(user):
+    import desktop
+    return desktop.screen(user)
+
+
+def t_computer_click(user, target="", x=None, y=None, button="left", double=False):
+    import desktop
+    return desktop.click(user, target, x, y, button=button or "left", double=bool(double))
+
+
+def t_computer_type(user, text, enter=False):
+    import desktop
+    return desktop.type_text(user, text, enter=bool(enter))
+
+
+def t_computer_press(user, key):
+    import desktop
+    return desktop.press(user, key)
+
+
+def t_computer_scroll(user, amount=-4, x=None, y=None):
+    import desktop
+    return desktop.scroll(user, amount if isinstance(amount, int) else -4, x, y)
+
+
+def t_open_app(user, app):
+    import desktop
+    return desktop.open_app(user, app)
+
+
+def t_focus_window(user, title):
+    import desktop
+    return desktop.focus_window(user, title)
+
+
+def t_list_windows(user):
+    import desktop
+    return desktop.list_windows(user)

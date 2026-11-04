@@ -32,6 +32,7 @@ DEFAULT_SETTINGS = {
     "daily_review": True,
     "auto_evolve": False,
     "phone_full_control": False,   # read the screen, tap, type, swipe: off until the login switches it on
+    "desktop_control": False,      # owner-only: let Trillion see and operate this PC's screen; off until switched on
     "quick_actions": ["whatsapp", "ring", "find", "briefing", "video", "openwa"],   # the buttons on this login's home screen
     "phone_auto_unlock": False,        # unlock the phone by herself with the saved code when a command needs it
     "fast_answers": True,              # plain questions go to the small quick model; anything she has to do uses the full one
