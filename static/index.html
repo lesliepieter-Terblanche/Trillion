@@ -904,6 +904,11 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <div id="wr-setup" hidden><div class="btns" style="justify-content:flex-start"><button class="btn pri" id="wr-install">SET UP THE WEB READER</button></div></div>
     <div class="msg" id="wr-msg"></div>
   </div>
+  <div class="panel" id="tr-panel"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><b>Video &amp; podcast transcripts</b><span class="pill" id="tr-pill"></span></div>
+    <div class="muted" style="font-size:13px">Pull the spoken words out of a YouTube video or a podcast from just a link — handy for turning a reference video into a script, researching a topic, or summarising a talk. Just ask, e.g. "get me the transcript of &lt;link&gt;". Free and on this PC. One-time setup.</div>
+    <div id="tr-setup" hidden><div class="btns" style="justify-content:flex-start"><button class="btn pri" id="tr-install">SET UP TRANSCRIPTS</button></div></div>
+    <div class="msg" id="tr-msg"></div>
+  </div>
   <div class="panel"><b>Clone a website</b>
     <div class="cl-modes"><button type="button" data-clm="copy" class="on"><b>Copy a site</b><span>A full working copy: every page, picture and style, as files and folders</span></button>
       <button type="button" data-clm="rebuild"><b>Rebuild in a style</b><span>A new site for your business in the layout and look of another one</span></button></div>
@@ -3068,9 +3073,19 @@ async function wrLoad(){const adm=S&&S.user.is_admin;const panel=$('wr-panel');i
   $('wr-install')&&($('wr-install').disabled=!!job.running);}
 $('wr-install')&&($('wr-install').onclick=async()=>{const m=$('wr-msg');m.className='msg muted';m.textContent='Setting up in the background — you can carry on. Ready in a few minutes.';try{await api('/api/webread/install',{json:{}});}catch(e){}
   const t=setInterval(async()=>{try{const d=await (await api('/api/webread')).json();wrLoad();if(d.ready){clearInterval(t);m.className='msg ok';m.textContent='Web reader ready — Trillion can now get past anti-bot walls.';}else if(d.job&&!d.job.running&&d.job.error){clearInterval(t);m.className='msg bad';m.textContent='Setup failed: '+d.job.error;}}catch(e){}},6000);});
+// ---------- video / podcast transcripts ----------
+async function trLoad(){const adm=S&&S.user.is_admin;const panel=$('tr-panel');if(!panel)return;
+  let d={};try{d=await (await api('/api/transcript')).json();}catch(e){return;}
+  const job=d.job||{};
+  $('tr-pill').textContent=d.ready?'ready':(job.running?'setting up…':'not set up');
+  $('tr-pill').className='pill'+(d.ready?' on':'');
+  $('tr-setup').hidden=d.ready||!adm;
+  $('tr-install')&&($('tr-install').disabled=!!job.running);}
+$('tr-install')&&($('tr-install').onclick=async()=>{const m=$('tr-msg');m.className='msg muted';m.textContent='Setting up in the background — ready in a minute.';try{await api('/api/transcript/install',{json:{}});}catch(e){}
+  const t=setInterval(async()=>{try{const d=await (await api('/api/transcript')).json();trLoad();if(d.ready){clearInterval(t);m.className='msg ok';m.textContent='Transcripts ready — ask for the transcript of any video or podcast link.';}else if(d.job&&!d.job.running&&d.job.error){clearInterval(t);m.className='msg bad';m.textContent='Setup failed: '+d.job.error;}}catch(e){}},6000);});
 // ---------- scrape a site ----------
 let scRows=null;
-async function scLoad(){try{scDraw(await (await api('/api/scrape')).json());}catch(e){wrLoad();return;}wrLoad();}
+async function scLoad(){try{scDraw(await (await api('/api/scrape')).json());}catch(e){wrLoad();trLoad();return;}wrLoad();trLoad();}
 function scDraw(s){const ready=s.ready,job=s.job||{};
   $('sc-pill').textContent=ready?'ready':(job.running?'setting up…':'not set up');$('sc-pill').className='pill'+(ready?' on':'');
   $('sc-setup').hidden=ready;$('sc-form').hidden=!ready;

@@ -65,6 +65,11 @@ SPECS = [
        "that a normal fetch can't open). Use this to read or summarise a single page; use read_website to read and analyse a whole "
        "site into files. stealth defaults on; turn it off for a plain fast fetch.",
        {"url": S, "stealth": {"type": "boolean"}}, ["url"]),
+    fn("get_transcript", "Get the transcript (spoken words) of a YouTube video or a podcast from its link — great for turning a "
+       "reference video into a script, researching a topic, or summarising a talk. Free and on this PC.", {"url": S}, ["url"]),
+    fn("read_private", "Read a web page that needs you to be signed in (a LinkedIn post, a members area, an account page) using "
+       "Trillion's own browser, where your login for that site is remembered. Returns the page's text. If you're not signed in "
+       "there yet, it tells you to open that site on the Browser page and log in once.", {"url": S}, ["url"]),
     fn("clone_website", "Clone a website into website files and folders. mode copy = a full working copy (only the user's own "
        "site, or one whose owner gave permission: set permission true only if the user said so). mode rebuild = a new site for "
        "the user's own business in the layout and style of url, with new words; brand is the business name and about what it does.",
@@ -372,6 +377,8 @@ def describe(name, a):
         "automations": "Checking automations", "automation_switch": f"Switching {g('name')} {'on' if a.get('on') else 'off'}",
         "read_website": f"Reading the website {g('url')}",
         "read_page": f"Reading {g('url')}",
+        "get_transcript": f"Getting the transcript of {g('url')}",
+        "read_private": f"Reading {g('url')} (signed in)",
         "watch_alert": f"Alert on the watch: {g('text')[:80]}",
         "phone_screenshot": "Taking a phone screenshot",
         "create_video": "Creating a video",
@@ -472,7 +479,7 @@ def execute(user, name, args, task_id=None, approved=False, direct=False):
             return {"status": "waiting_for_approval",
                     "note": "Not done yet. The user must approve this on the dashboard."}
         if name in ("create_video", "revise_video", "create_ai_clip", "montage_video", "create_ebook", "boardroom",
-                    "boardroom_ask", "before_after_card"):
+                    "boardroom_ask", "before_after_card", "get_transcript"):
             args = dict(args, _task=task_id)
         out = globals()["t_" + name](user, **args)
         core.log(uid, describe(name, args), "done")
@@ -1395,6 +1402,46 @@ def t_read_page(user, url, stealth=True):
         return {"error": r.get("error") or "Could not read that page."}
     return {"url": r["url"], "title": r.get("title", ""), "status": r.get("status"),
             "content": r.get("markdown", ""), "truncated": r.get("truncated", False), "via": r.get("engine")}
+
+
+def t_get_transcript(user, url, _task=None):
+    import transcript
+    say = (lambda t: core.set_task(_task, detail=t)) if _task else None
+    r = transcript.get(url, progress=say)
+    if not r.get("ok"):
+        return {"error": r.get("error") or "Could not get a transcript."}
+    return {"title": r.get("title", ""), "url": r["url"], "via": r.get("via"), "words": r.get("words"),
+            "language": r.get("lang", ""), "transcript": r["text"]}
+
+
+def t_read_private(user, url):
+    import webview
+    from urllib.parse import urlparse
+    u = str(url or "").strip()
+    if u and not re.match(r"^[a-z]+://", u, re.I):
+        u = "https://" + u
+    host = (urlparse(u).hostname or "site").lower()
+    host = host[4:] if host.startswith("www.") else host
+    link = {"id": "read:" + host, "url": u, "name": host}
+    try:
+        s = webview.session(user, link, "", start=True)
+    except Exception as e:
+        return {"error": f"Could not open the browser on the PC ({type(e).__name__})."}
+    if not s or (getattr(s, "error", "") and not getattr(s, "alive", False)):
+        return {"error": (getattr(s, "error", "") or "The browser could not open that page.")}
+    try:
+        s.call(lambda z: (z.page.goto(u, wait_until="domcontentloaded", timeout=45000), z.page.wait_for_timeout(1600)))
+        txt = s.call(lambda z: z.text()) or ""
+    except Exception as e:
+        return {"error": f"Could not read that page ({str(e)[:120]})."}
+    low = txt.lower()
+    wall = len(txt) < 1200 and any(w in low for w in ("sign in", "log in", "login", "password", "create account", "join now"))
+    if wall:
+        return {"login_needed": True, "url": u,
+                "note": f"You don't seem to be signed in to {host}. Open {host} on the Browser page and log in once — "
+                        "the login is remembered, so after that I can read it. Here's what the page showed:",
+                "content": txt[:1500]}
+    return {"url": u, "site": host, "content": txt[:16000], "truncated": len(txt) > 16000}
 
 
 def t_watch_alert(user, text, title="Trillion"):

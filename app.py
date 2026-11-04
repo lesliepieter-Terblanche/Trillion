@@ -2633,6 +2633,18 @@ def webread_install(user=Depends(admin)):
     return webread.start_install(user)
 
 
+@app.get("/api/transcript")
+def transcript_get(user=Depends(auth)):
+    import transcript
+    return transcript.state()
+
+
+@app.post("/api/transcript/install")
+def transcript_install(user=Depends(admin)):
+    import transcript
+    return transcript.start_install(user)
+
+
 @app.post("/api/montage")
 def montage_build(p: dict = Body(...), user=Depends(auth)):
     """Build a video from the user's own scene pictures (Videos page). Scenes are uploaded images (by
