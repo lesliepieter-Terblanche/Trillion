@@ -61,6 +61,10 @@ SPECS = [
        "it: outputs can include pptx (presentation), docx (report document) and xlsx (spreadsheet of pages). focus is what the "
        "user wants to learn or the purpose of the files. Runs in the background; tell the user it has started.",
        {"url": S, "outputs": {"type": "array", "items": S}, "focus": S, "max_pages": {"type": "integer"}}, ["url"]),
+    fn("read_page", "Read ONE web page's content and get it back as clean text (even pages behind an anti-bot / Cloudflare wall "
+       "that a normal fetch can't open). Use this to read or summarise a single page; use read_website to read and analyse a whole "
+       "site into files. stealth defaults on; turn it off for a plain fast fetch.",
+       {"url": S, "stealth": {"type": "boolean"}}, ["url"]),
     fn("clone_website", "Clone a website into website files and folders. mode copy = a full working copy (only the user's own "
        "site, or one whose owner gave permission: set permission true only if the user said so). mode rebuild = a new site for "
        "the user's own business in the layout and style of url, with new words; brand is the business name and about what it does.",
@@ -367,6 +371,7 @@ def describe(name, a):
         "competitor_watch": "Checking competitor websites",
         "automations": "Checking automations", "automation_switch": f"Switching {g('name')} {'on' if a.get('on') else 'off'}",
         "read_website": f"Reading the website {g('url')}",
+        "read_page": f"Reading {g('url')}",
         "watch_alert": f"Alert on the watch: {g('text')[:80]}",
         "phone_screenshot": "Taking a phone screenshot",
         "create_video": "Creating a video",
@@ -1381,6 +1386,15 @@ def t_read_website(user, url, outputs=None, focus="", max_pages=40):
     except siteread.SiteError as e:
         return {"error": str(e)}
     return {"started": True, "note": siteread.started_reply(j)}
+
+
+def t_read_page(user, url, stealth=True):
+    import webread
+    r = webread.read(url, stealth=bool(stealth), markdown=True)
+    if not r.get("ok"):
+        return {"error": r.get("error") or "Could not read that page."}
+    return {"url": r["url"], "title": r.get("title", ""), "status": r.get("status"),
+            "content": r.get("markdown", ""), "truncated": r.get("truncated", False), "via": r.get("engine")}
 
 
 def t_watch_alert(user, text, title="Trillion"):

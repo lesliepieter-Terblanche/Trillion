@@ -2621,6 +2621,18 @@ def desktop_install(user=Depends(admin)):
     return desktop.start_install(user)
 
 
+@app.get("/api/webread")
+def webread_get(user=Depends(auth)):
+    import webread
+    return webread.state()
+
+
+@app.post("/api/webread/install")
+def webread_install(user=Depends(admin)):
+    import webread
+    return webread.start_install(user)
+
+
 @app.post("/api/montage")
 def montage_build(p: dict = Body(...), user=Depends(auth)):
     """Build a video from the user's own scene pictures (Videos page). Scenes are uploaded images (by

@@ -35,14 +35,23 @@ def score(url):
         return {"url": url, "score": -1, "band": "no url", "flags": ["empty"], "final": url, "has_form": False}
     if not url.lower().startswith("http"):
         url = "https://" + url
-    try:
-        r = urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": _UA}),
-                                   timeout=20, context=_CTX)
-        h = r.read(600000).decode("utf-8", "replace")
-        final = r.geturl()
-    except Exception as e:
-        return {"url": url, "score": -1, "band": "could not open", "flags": [f"error: {str(e)[:60]}"],
-                "final": url, "has_form": False}
+    h, final = "", url
+    try:                                    # stronger reader first: gets past anti-bot / Cloudflare walls
+        import webread
+        got = webread.fetch(url, stealth=True, timeout=25)
+        if got.get("ok") and got.get("html"):
+            h, final = got["html"][:600000], got.get("url") or url
+    except Exception:
+        pass
+    if not h:                               # fallback: plain stdlib request
+        try:
+            r = urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": _UA}),
+                                       timeout=20, context=_CTX)
+            h = r.read(600000).decode("utf-8", "replace")
+            final = r.geturl()
+        except Exception as e:
+            return {"url": url, "score": -1, "band": "could not open", "flags": [f"error: {str(e)[:60]}"],
+                    "final": url, "has_form": False}
     s, flags = 0, []
     if 'name="viewport"' not in h and "name='viewport'" not in h:
         s += 3

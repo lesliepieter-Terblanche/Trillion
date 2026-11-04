@@ -899,6 +899,11 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <div class="msg" id="sc-msg"></div>
     <div id="sc-result" style="overflow:auto;margin-top:8px"></div>
   </div>
+  <div class="panel" id="wr-panel"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><b>Stronger web reader (Scrapling)</b><span class="pill" id="wr-pill"></span></div>
+    <div class="muted" style="font-size:13px">Lets Trillion read pages that block a normal fetch — anti-bot and Cloudflare walls, stubborn JavaScript sites — and hand the text to the brain cleanly. Once it's set up, reading a page, scoring a prospect's site and other look-ups get past those walls automatically. One-time setup (installs in the background; nothing paid, nothing leaves the PC).</div>
+    <div id="wr-setup" hidden><div class="btns" style="justify-content:flex-start"><button class="btn pri" id="wr-install">SET UP THE WEB READER</button></div></div>
+    <div class="msg" id="wr-msg"></div>
+  </div>
   <div class="panel"><b>Clone a website</b>
     <div class="cl-modes"><button type="button" data-clm="copy" class="on"><b>Copy a site</b><span>A full working copy: every page, picture and style, as files and folders</span></button>
       <button type="button" data-clm="rebuild"><b>Rebuild in a style</b><span>A new site for your business in the layout and look of another one</span></button></div>
@@ -3053,9 +3058,19 @@ function evDraw(d){$('ev-auto').checked=!!d.auto;
   $('ev-suggest').querySelectorAll('[data-evd]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{evDraw(await (await api('/api/evolve/dismiss',{json:{id:+b.dataset.evd}})).json());}catch(e){}});}
 $('ev-auto')&&($('ev-auto').onchange=async()=>{try{evDraw(await (await api('/api/evolve/auto',{json:{on:$('ev-auto').checked}})).json());}catch(e){}});
 
+// ---------- stronger web reader (Scrapling) ----------
+async function wrLoad(){const adm=S&&S.user.is_admin;const panel=$('wr-panel');if(!panel)return;
+  let d={};try{d=await (await api('/api/webread')).json();}catch(e){return;}
+  const job=d.job||{};
+  $('wr-pill').textContent=d.ready?'ready':(job.running?'setting up…':'not set up');
+  $('wr-pill').className='pill'+(d.ready?' on':'');
+  $('wr-setup').hidden=d.ready||!adm;
+  $('wr-install')&&($('wr-install').disabled=!!job.running);}
+$('wr-install')&&($('wr-install').onclick=async()=>{const m=$('wr-msg');m.className='msg muted';m.textContent='Setting up in the background — you can carry on. Ready in a few minutes.';try{await api('/api/webread/install',{json:{}});}catch(e){}
+  const t=setInterval(async()=>{try{const d=await (await api('/api/webread')).json();wrLoad();if(d.ready){clearInterval(t);m.className='msg ok';m.textContent='Web reader ready — Trillion can now get past anti-bot walls.';}else if(d.job&&!d.job.running&&d.job.error){clearInterval(t);m.className='msg bad';m.textContent='Setup failed: '+d.job.error;}}catch(e){}},6000);});
 // ---------- scrape a site ----------
 let scRows=null;
-async function scLoad(){try{scDraw(await (await api('/api/scrape')).json());}catch(e){}}
+async function scLoad(){try{scDraw(await (await api('/api/scrape')).json());}catch(e){wrLoad();return;}wrLoad();}
 function scDraw(s){const ready=s.ready,job=s.job||{};
   $('sc-pill').textContent=ready?'ready':(job.running?'setting up…':'not set up');$('sc-pill').className='pill'+(ready?' on':'');
   $('sc-setup').hidden=ready;$('sc-form').hidden=!ready;
