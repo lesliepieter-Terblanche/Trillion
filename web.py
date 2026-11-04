@@ -51,6 +51,15 @@ TEMPLATES = {
     "neuro":     {"file": "paper-neuro.html", "photo": False},                          # organic neuro-plasma flow
     # full-bleed cinematic background VIDEO that matches the trade (needs a free Pexels key + a found clip)
     "video":     {"file": "video.html", "photo": True, "dark": True, "video": True},
+    # cinematic CSS/JS looks (no WebGL): reliable everywhere, palette-driven, offline
+    "spotlight": {"file": "web-spotlight.html", "photo": False, "dark": True},   # cursor-follow spotlight over a grid
+    "marquee":   {"file": "web-marquee.html", "photo": False, "dark": True},     # giant kinetic type behind the hero
+    "frost":     {"file": "web-frost.html", "photo": False, "dark": True},       # liquid-glass card over drifting aurora
+    "parallax":  {"file": "web-parallax.html", "photo": False, "dark": True},    # mouse-parallax colour blobs
+    "duotone":   {"file": "web-duotone.html", "photo": True, "dark": True},      # full-bleed duotone photo hero
+    "bento":     {"file": "web-bento.html", "photo": False},                      # modern bento-grid hero (light)
+    "glow":      {"file": "web-glow.html", "photo": False},                       # soft CSS mesh-gradient (light)
+    "stack":     {"file": "web-stack.html", "photo": False},                      # oversized editorial typography (light)
 }
 # trades that suit each ThreeUI look (only used when the look is left on Auto)
 THREEUI_WORDS = {
@@ -171,34 +180,34 @@ def _dark_style(category):
 # When the look is left on Auto, pick at RANDOM from a category-appropriate set so no two sites share a
 # layout — but every option in the set still suits that kind of business, so it stays on-brand.
 LAYOUT_POOLS = [
-    (EDITORIAL_WORDS, ["editorial", "premium", "ribbons", "object3d"]),
+    (EDITORIAL_WORDS, ["editorial", "premium", "ribbons", "object3d", "stack", "glow", "bento", "frost"]),
     (("restaurant", "cafe", "coffee", "bar", "bistro", "grill", "diner", "eatery", "bakery", "deli", "restaur",
-      "hotel", "guest", "lodge", "pub", "takeaway"), ["cinematic", "ember", "premium", "orb"]),
+      "hotel", "guest", "lodge", "pub", "takeaway"), ["cinematic", "ember", "premium", "orb", "duotone"]),
     (("salon", "beauty", "spa", "hair", "barber", "nail", "wellness", "yoga", "pilates", "massage", "aesthetic",
-      "skin", "therap"), ["cinematic", "orb", "neuro", "premium", "resonance", "bells"]),
+      "skin", "therap"), ["cinematic", "orb", "neuro", "premium", "resonance", "bells", "frost", "glow", "duotone"]),
     (("gym", "fitness", "crossfit", "boxing", "club", "night", "lounge", "gaming", "esport"),
-     ["streams", "premium", "portal", "laser", "dotgrid"]),
+     ["streams", "premium", "portal", "laser", "dotgrid", "spotlight", "marquee", "parallax", "duotone"]),
     (("music", "sound", "audio", "recording", "dj", "venue", "event", "wedding", "church", "choir", "piano", "guitar"),
-     ["resonance", "bells", "swirl", "portal", "streams", "premium"]),
+     ["resonance", "bells", "swirl", "portal", "streams", "premium", "marquee", "parallax"]),
     (("auto", "detailing", "car ", "motor", "tyre", "spares", "mechanic", "panel", "workshop"),
-     ["liquid", "object3d", "premium", "streams"]),
+     ["liquid", "object3d", "premium", "streams", "spotlight"]),
     (("jewel", "watch", "luxury", "boutique", "fashion", "interior", "decor", "furniture", "florist"),
-     ["cinematic", "liquid", "glass", "premium"]),
+     ["cinematic", "liquid", "glass", "premium", "frost", "stack", "duotone"]),
     (("property", "estate", "real estate", "letting", "rental", "architect", "construct", "build", "solar",
       "landscap", "garden", "farm", "eco-", "eco ", "green", "travel", "tour", "lodge", "guest", "outdoor", "survey", "mining"),
-     ["aurora", "topo", "premium", "editorial", "object3d"]),
+     ["aurora", "topo", "premium", "editorial", "object3d", "glow", "stack", "parallax"]),
     (("tech", "software", "it service", "it support", "digital", "agency", "data", "cloud", "cyber", "network",
       "startup", "security", "print", "signage", "telecom", "fibre", "isp"),
-     ["mesh", "dotgrid", "constellation", "neuro", "globe", "ribbons", "object3d"]),
+     ["mesh", "dotgrid", "constellation", "neuro", "globe", "ribbons", "object3d", "spotlight", "bento", "parallax", "glow"]),
     (("gaming", "arcade", "retro", "creative", "design studio", "media", "vfx", "animation", "nightlife", "festival"),
-     ["pixels", "swirl", "portal", "mesh", "dotgrid", "streams", "premium"]),
+     ["pixels", "swirl", "portal", "mesh", "dotgrid", "streams", "premium", "spotlight", "marquee", "parallax"]),
     (("consult", "finance", "account", "advis", "corporate", "legal", "insurance", "broker"),
-     ["glass", "mesh", "editorial", "premium", "constellation"]),
+     ["glass", "mesh", "editorial", "premium", "constellation", "bento", "frost", "stack", "glow"]),
     (("retail", "product", "supplier", "wholesale", "hardware", "electronic", "fabricat", "logistics",
       "courier", "freight", "shipping", "trading", "import", "export", "distribut"),
-     ["object3d", "globe", "dotgrid", "premium", "constellation"]),
+     ["object3d", "globe", "dotgrid", "premium", "constellation", "bento", "spotlight"]),
 ]
-DEFAULT_POOL = ["premium", "mesh", "object3d", "orb", "ribbons", "editorial"]
+DEFAULT_POOL = ["premium", "mesh", "object3d", "orb", "ribbons", "editorial", "glow", "bento", "spotlight", "stack"]
 
 
 def _layout_pool(category, photos):
@@ -1268,7 +1277,8 @@ def build(user, info, progress=None):
     try:
         import pexels
         if pexels.key_for(user) and look not in ("premium", "object3d", "editorial", "mesh", "swirl", "neuro",
-                                                 "orb", "liquid", "streams", "aurora", "globe", "portal"):
+                                                 "orb", "liquid", "streams", "aurora", "globe", "portal",
+                                                 "spotlight", "marquee", "frost", "parallax", "bento", "glow", "stack"):
             media = pexels.fetch_for_site(user, folder, cat, name, want_video=(look in ("", "auto", "video")),
                                           want_images=not photos_rel, progress=say)
             if media.get("images"):
@@ -1454,6 +1464,22 @@ def revise(user, sid, change, progress=None, opts=None):
     # look
     if _re.search(r"\b(video hero|walkthrough|real video|cinematic video|video of the)\b", low):
         template = "video"
+    elif _re.search(r"\b(spotlight|cursor light|torch|grid hero)\b", low):
+        template = "spotlight"
+    elif _re.search(r"\b(bento|grid of tiles|card grid)\b", low):
+        template = "bento"
+    elif _re.search(r"\b(marquee|scrolling text|kinetic type|ticker)\b", low):
+        template = "marquee"
+    elif _re.search(r"\b(frost|frosted glass|liquid glass|glass card|glassmorphism)\b", low):
+        template = "frost"
+    elif _re.search(r"\b(parallax|floating blobs)\b", low):
+        template = "parallax"
+    elif _re.search(r"\b(duotone|duo tone|two.?tone photo|colou?r wash)\b", low):
+        template = "duotone" if photos_rel else "spotlight"
+    elif _re.search(r"\b(glow|soft gradient|pastel|mesh glow|css gradient|aurora glow)\b", low):
+        template = "glow"
+    elif _re.search(r"\b(stack|oversized type|big type|typographic|editorial type|huge headline)\b", low):
+        template = "stack"
     elif _re.search(r"\bribbons?\b", low):
         template = "ribbons"
     elif _re.search(r"\b(orb|sphere|smoke)\b", low):
