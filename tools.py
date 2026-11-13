@@ -50,9 +50,11 @@ SPECS = [
        "If display is given (a cast screen name), also put the picture on that screen.", {"camera": S, "display": S}, ["camera"]),
     fn("camera_move", "Move a PTZ camera: action is left, right, up, down, zoom_in, zoom_out or stop. camera is its name. "
        "Only works on cameras that support ONVIF.", {"camera": S, "action": S}, ["camera", "action"]),
-    fn("webcam_snapshot", "Open the user's own webcam on THIS PC (the built-in or USB laptop/desktop camera) and show "
-       "a picture from it. Use this for 'open my webcam', 'take a photo with my camera', 'what do you see'. This is the "
-       "local PC camera, not a network/security camera (for those use camera_snapshot).", {}),
+    fn("webcam_open", "Turn on the user's webcam and show the LIVE picture on this PC's screen by opening the Windows "
+       "Camera app. Use this for 'open my webcam', 'activate my camera', 'show my webcam on screen', 'turn on my camera'.", {}),
+    fn("webcam_snapshot", "Take a single still picture from the user's own webcam on THIS PC (built-in or USB camera) and "
+       "show it on the dashboard. Use for 'take a photo with my camera', 'what do you see'. For a live on-screen view use "
+       "webcam_open instead; this is the local PC camera, not a network/security camera (those use camera_snapshot).", {}),
     fn("seo_rankings", "Google rankings of the user's websites for their tracked search words, from SerpBear.", {"domain": S}, []),
     fn("competitor_watch", "Watch competitor websites for changes (prices, specials, new products and pages) and report "
        "what changed. action: add (url, optional name and hours between checks), list, remove (url or name), "
@@ -353,7 +355,7 @@ def describe(name, a):
         "announce": f"Announcing on the speaker: {g('text')[:60]}", "cast_media": f"Casting {g('url')[:60]}",
         "cast_control": f"Cast {g('action')}", "list_cast_devices": "Looking for cast devices",
         "list_cameras": "Listing cameras", "camera_snapshot": f"Taking a picture from {g('camera')}",
-        "webcam_snapshot": "Opening your webcam",
+        "webcam_open": "Opening your webcam", "webcam_snapshot": "Taking a webcam picture",
         "camera_move": f"Moving {g('camera')} {g('action')}",
         "use_skill": f"Reading the skill {g('name')}", "draft_skill": f"Drafting a playbook: {g('name')}",
         "connector_tools": f"Checking what {g('connector')} can do",
@@ -941,6 +943,17 @@ def t_camera_snapshot(user, camera, display=""):
         except Exception as e:
             out["display_error"] = f"Took the picture but could not put it on {display}: {type(e).__name__}."
     return out
+
+
+def t_webcam_open(user):
+    import cameras
+    try:
+        cameras.open_camera_app()
+    except cameras.CameraError as e:
+        return {"error": str(e)}
+    except Exception as e:
+        return {"error": f"Could not open the webcam: {type(e).__name__}."}
+    return {"ok": True, "note": "Opened the Camera app - your webcam is live on the PC screen."}
 
 
 def t_webcam_snapshot(user):

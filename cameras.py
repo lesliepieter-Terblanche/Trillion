@@ -236,6 +236,26 @@ def webcam_snapshot(index=0, timeout=20):
                       "use by another app (Teams, Zoom, Skype or the Camera app), then try again.")
 
 
+def open_camera_app():
+    """Turn on the PC webcam and show the LIVE picture on this PC's screen by opening the Windows Camera app."""
+    import os
+    if os.name != "nt":
+        raise CameraError("Opening the live camera window is only supported on Windows.")
+    try:
+        # The Camera app's URI launcher - opens the live webcam view full-screen on the PC.
+        subprocess.Popen(["cmd", "/c", "start", "", "microsoft.windows.camera:"], shell=False)
+        return True
+    except Exception:
+        pass
+    try:
+        subprocess.Popen(["explorer.exe",
+                          r"shell:AppsFolder\Microsoft.WindowsCamera_8wekyb3d8bbwe!App"], shell=False)
+        return True
+    except Exception as e:
+        raise CameraError(f"Could not open the Camera app ({type(e).__name__}). "
+                          "Check the Windows Camera app is installed.")
+
+
 def _first_dshow_video():
     """Name of the first DirectShow video device, read from ffmpeg's device list (Windows)."""
     try:
