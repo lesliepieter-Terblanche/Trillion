@@ -50,6 +50,11 @@ Step "Adding casting and cameras (optional)"
 & .\.venv\Scripts\python.exe -m pip install --quiet --no-deps pychromecast gTTS onvif-zeep
 if ($LASTEXITCODE -ne 0) { Write-Host "Skipped casting/camera extras; everything else still works." -ForegroundColor DarkYellow }
 
+# Optional: OpenCV for the local PC webcam. If it will not install, the webcam still works via ffmpeg,
+# so a failure here does not stop setup.
+& .\.venv\Scripts\python.exe -m pip install --quiet opencv-python
+if ($LASTEXITCODE -ne 0) { Write-Host "Skipped OpenCV; the webcam still works through ffmpeg." -ForegroundColor DarkYellow }
+
 if (-not $SkipModels) {
   Step "Downloading the local models (about 15 GB the first time)"
   if (-not (Works "ollama" "list")) { Start-Process "ollama" "serve" -WindowStyle Hidden; Start-Sleep 5 }

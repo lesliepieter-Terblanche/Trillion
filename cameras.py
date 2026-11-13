@@ -193,6 +193,65 @@ def snapshot(cam, timeout=25):
     return fn
 
 
+def webcam_snapshot(index=0, timeout=20):
+    """Grab one frame from a webcam physically on THIS PC (built-in or USB) - not a network camera.
+    Returns the saved filename in SNAP_DIR. Tries OpenCV first, then ffmpeg's DirectShow capture."""
+    import os
+    fn = f"webcam_{int(time.time())}.jpg"
+    out = SNAP_DIR / fn
+    # 1) OpenCV - simplest and most reliable when it's installed.
+    try:
+        import cv2
+        backend = getattr(cv2, "CAP_DSHOW", 0) if os.name == "nt" else 0
+        cap = cv2.VideoCapture(index, backend)
+        try:
+            ok, frame = False, None
+            if cap.isOpened():
+                for _ in range(6):                 # drop the first frames while the sensor warms up / exposes
+                    ok, frame = cap.read()
+            if ok and frame is not None:
+                cv2.imwrite(str(out), frame)
+        finally:
+            cap.release()
+        if out.exists() and out.stat().st_size > 0:
+            _prune()
+            return fn
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    # 2) ffmpeg DirectShow fallback on Windows (ffmpeg ships with Trillion, so this needs no extra install).
+    if os.name == "nt":
+        dev = _first_dshow_video()
+        if dev:
+            cmd = [_ffmpeg(), "-nostdin", "-y", "-f", "dshow", "-i", f"video={dev}", "-frames:v", "1", str(out)]
+            try:
+                subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            except Exception:
+                pass
+            if out.exists() and out.stat().st_size > 0:
+                _prune()
+                return fn
+    raise CameraError("Could not reach a webcam on this PC. Make sure a camera is connected and not already in "
+                      "use by another app (Teams, Zoom, Skype or the Camera app), then try again.")
+
+
+def _first_dshow_video():
+    """Name of the first DirectShow video device, read from ffmpeg's device list (Windows)."""
+    try:
+        r = subprocess.run([_ffmpeg(), "-hide_banner", "-list_devices", "true", "-f", "dshow", "-i", "dummy"],
+                           capture_output=True, text=True, timeout=15)
+        txt = (r.stderr or "") + (r.stdout or "")
+        names = re.findall(r'"([^"]+)"\s*\(video\)', txt)        # newer ffmpeg marks the type on the same line
+        if names:
+            return names[0]
+        for m in re.finditer(r'"([^"]+)"', txt):                 # older ffmpeg: just take the first quoted name
+            return m.group(1)
+    except Exception:
+        return None
+    return None
+
+
 def _prune(keep_seconds=3600):
     now = time.time()
     for f in SNAP_DIR.glob("*.jpg"):
