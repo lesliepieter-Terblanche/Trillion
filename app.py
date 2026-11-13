@@ -214,8 +214,10 @@ def llm_chat(user, messages, tool_specs=None, fast=False, live=False):
         native.append(m)
     LAST_MODEL[uid] = model
     LAST_PROVIDER[uid] = "local"
-    req = {"model": model, "messages": native, "stream": True, "keep_alive": "4h",
-           "options": {"num_ctx": 6144 if fast else int(s.get("context_size", 12288)), "temperature": 0.2}}
+    # keep the main model warm, but let the small fast model fall out of VRAM when idle so a 16 GB card
+    # isn't holding two models at once (which forces the brain to spill onto the CPU and crawl)
+    req = {"model": model, "messages": native, "stream": True, "keep_alive": "10m" if fast else "4h",
+           "options": {"num_ctx": 6144 if fast else int(s.get("context_size", 8192)), "temperature": 0.2}}
     if tool_specs:
         req["tools"] = tool_specs
     content, calls = "", []
@@ -4763,11 +4765,13 @@ def start_background():
             names = [m["name"] for m in core.models()["list"]]
             for u in core.q("SELECT * FROM users WHERE is_admin=1 LIMIT 1"):
                 st = core.settings(u)
-                for want in (st.get("local_model", "qwen2.5:14b"), st.get("fast_model") or "qwen2.5:3b"):
-                    if want in names:
-                        httpx.post(core.OLLAMA + "/api/chat", timeout=300,
-                                   json={"model": want, "messages": [], "keep_alive": "4h",
-                                         "options": {"num_ctx": 12288 if want == st.get("local_model", "qwen2.5:14b") else 6144}})
+                # warm only the MAIN model (the small fast one loads on demand) so we don't pin two models
+                # in VRAM at startup on a 16 GB card
+                main = st.get("local_model", "qwen2.5:14b")
+                if main in names:
+                    httpx.post(core.OLLAMA + "/api/chat", timeout=300,
+                               json={"model": main, "messages": [], "keep_alive": "4h",
+                                     "options": {"num_ctx": int(st.get("context_size", 8192))}})
         except Exception:
             pass
         try:                                            # flag anything broken at startup, so the owner sees it without asking
