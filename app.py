@@ -443,6 +443,11 @@ MORNING_RE = re.compile(r"\b(?:morning|daily|today'?s)\s+(?:brief(?:ing)?|rundow
                         r"|\bbrief\s+me\b|\bwhat'?s?\s+(?:my|on my)\s+(?:day|plate)\b", re.I)
 SCRAPE_RE = re.compile(r"\bscrape\b|\b(?:pull|grab|extract|harvest)\b.{0,50}\b(?:from|off)\b.{0,30}https?://"
                        r"|\bget\b.{0,40}\bfrom (?:this|the) (?:page|site|url|website)\b", re.I)
+# The local brain sometimes refuses "open my webcam" as a hardware request, so route it straight to the tool.
+WEBCAM_NOUN = re.compile(r"\b(?:web\s?cam|laptop camera|pc camera|my camera|the camera|front camera|selfie camera)\b", re.I)
+WEBCAM_VERB = re.compile(r"\b(?:open|activate|turn on|switch on|start|show|access|enable|use|take|capture|snap|grab|"
+                         r"see|look)\b", re.I)
+WEBCAM_SHOT_RE = re.compile(r"\b(?:photo|picture|snap|snapshot|still|selfie|what (?:do|can) you see)\b", re.I)
 PROJECTS_RE = re.compile(r"\bwhat(?:'?s| is| are)?\s+(?:you\s+)?(?:working on|running)\b"
                          r"|\bwhat are you (?:doing|busy with)\b"
                          r"|\b(?:my|the|any|your|current(?:ly)?)\s+(?:running\s+)?(?:projects?|jobs?)\b"
@@ -1217,6 +1222,16 @@ def run_agent(user, text, files=None):
         else:
             reply = f"Nothing is running right now. {done_today} finished today."
         return _chat_reply(uid, tid, reply)
+    if WEBCAM_NOUN.search(text) and WEBCAM_VERB.search(text) and len(text) < 90:
+        shot = bool(WEBCAM_SHOT_RE.search(text))
+        res = tools.execute(user, "webcam_snapshot" if shot else "webcam_open", {})
+        if isinstance(res, dict) and res.get("error"):
+            return _chat_reply(uid, tid, res["error"])
+        if shot:
+            url = res.get("image_url", "") if isinstance(res, dict) else ""
+            return _chat_reply(uid, tid, f"Here's what your webcam sees.\n\n![webcam]({url})" if url
+                               else "I took a webcam picture.")
+        return _chat_reply(uid, tid, "Your webcam is on — the camera window is open on your PC screen.")
     sc = scrape_chat(user, uid, tid, text)
     if sc is not None:
         return sc
