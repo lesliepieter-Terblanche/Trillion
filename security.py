@@ -29,6 +29,8 @@ except AttributeError:
 DIR = core.DATA / "security"
 BASELINE = DIR / "baseline.json"
 LOGFILE = DIR / "events.json"
+ALERTSTATE = DIR / "alert_state.json"      # what we last notified about, so we don't repeat it every pass
+ALERT_COOLDOWN = 12 * 3600                  # if nothing changed, remind at most this often (seconds)
 LAST = {"t": 0, "findings": [], "scanning": False}
 _LOCK = threading.Lock()
 RISKY_PORTS = {3389: "Remote Desktop (RDP)", 445: "Windows file sharing (SMB)", 135: "Windows RPC",
@@ -174,6 +176,8 @@ def set_baseline(user):
         if mac:
             base["devices"][mac] = d.get("name") or d.get("hostname") or d.get("ip") or mac
     BASELINE.write_text(json.dumps(base))
+    try: ALERTSTATE.unlink()        # fresh "normal" - forget what we'd previously warned about
+    except Exception: pass
     return {"ok": True, "admins": len(base["admins"]), "ports": len(base["ports"]), "devices": len(base["devices"])}
 
 
@@ -289,9 +293,29 @@ def watch_once(user):
         return
     res = scan(user)
     findings = [f for f in res.get("findings", []) if f.get("sev") in ("high", "med")]
+    # Decide whether this is worth a NEW notification. A standing condition (e.g. RDP left open, a device
+    # that's always on the network) must not re-alert every pass - only when the picture actually changes,
+    # or once in a long while as a reminder. Dismissing on the phone then stays dismissed.
+    sig = sorted(f"{f.get('kind')}|{f.get('what')}" for f in findings)
+    try:
+        prev = json.loads(ALERTSTATE.read_text())
+    except Exception:
+        prev = {}
     if not findings:
+        if prev:                                   # everything cleared up - forget it so it can alert again later
+            try: ALERTSTATE.unlink()
+            except Exception: pass
         return
-    _log_event(user["id"], findings)
+    same = prev.get("sig") == sig
+    recent = same and (time.time() - float(prev.get("t") or 0) < ALERT_COOLDOWN)
+    _log_event(user["id"], findings)               # always keep the history/record
+    if recent:
+        return                                     # already told them this, and the cooldown hasn't passed
+    try:
+        DIR.mkdir(parents=True, exist_ok=True)
+        ALERTSTATE.write_text(json.dumps({"sig": sig, "t": time.time()}))
+    except Exception:
+        pass
     autodef = bool(s.get("security_autodefend"))
     acted = []
     if autodef:
