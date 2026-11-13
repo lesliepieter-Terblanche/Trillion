@@ -217,9 +217,10 @@ def scan(user, minutes=60):
                                  "what": f"New program listening on port {l['port']}: {l['proc']}",
                                  "detail": l.get("path") or f"PID {l['pid']}",
                                  "action": {"kill": l["pid"], "proc": l["proc"]}})
-        # new devices on the home network
-        dev_findings, _seen = _new_lan_devices(user, base.get("devices") or {})
-        findings += dev_findings
+        # new devices on the home network (only if the user wants the Wi-Fi watched, not just this PC)
+        if core.settings(user).get("security_watch_devices", True):
+            dev_findings, _seen = _new_lan_devices(user, base.get("devices") or {})
+            findings += dev_findings
 
         order = {"high": 0, "med": 1, "low": 2}
         findings.sort(key=lambda f: order.get(f.get("sev"), 3))
@@ -343,5 +344,7 @@ def state(user):
         last = dict(LAST)
     s = core.settings(user)
     return {"available": available(), "monitor": bool(s.get("security_monitor")),
-            "autodefend": bool(s.get("security_autodefend")), "baseline": bool(_read_baseline()),
+            "autodefend": bool(s.get("security_autodefend")),
+            "watch_devices": bool(s.get("security_watch_devices", True)),
+            "baseline": bool(_read_baseline()),
             "last_scan": last["t"], "findings": last["findings"]}

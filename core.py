@@ -39,6 +39,7 @@ DEFAULT_SETTINGS = {
     "fast_model": "qwen2.5:3b",
     "security_monitor": True,          # owner-only: watch this PC + home network for attacks/intruders and alert
     "security_autodefend": False,      # also act (block the attacker's IP, stop a rogue program) - not just alert
+    "security_watch_devices": True,    # also alert on new/unknown devices on the Wi-Fi (off = watch this PC only)
     "wa_inbox": True,                  # show incoming WhatsApp messages (read from the phone's notifications) on the dashboard
     "freevideo_url": "",               # where FreeVideo listens on this PC; empty means the usual http://127.0.0.1:8188
     "video_ai_images": True,           # scenes with no stock footage get an AI-made picture instead of a plain backdrop

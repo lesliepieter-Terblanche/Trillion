@@ -549,6 +549,7 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
       <div class="muted" style="font-size:13px">Trillion watches <b>this PC and your own home network</b> for signs of hacking — malware Windows Defender finds, bursts of failed sign-ins, a new admin account, risky ports open to the network, and unknown devices joining your Wi-Fi. It alerts you, and can block an attacker or stop a rogue program. Owner only, and it works alongside Windows Defender — it doesn't replace it.</div>
       <div id="sec-nowin" class="bad" style="font-size:13px" hidden>This only works on the Windows PC that runs Trillion.</div>
       <label class="tickrow" id="sec-monrow"><input type="checkbox" id="s-security_monitor"><span><b>Watch my PC &amp; network</b><br><span class="muted">Checks every few minutes and alerts you if something looks like an attack.</span></span></label>
+      <label class="tickrow" id="sec-devrow"><input type="checkbox" id="s-security_watch_devices"><span><b>Watch new Wi-Fi devices</b><br><span class="muted">Also alert when an unknown device joins your home network. Turn off to watch only this PC (Defender, failed logins, new admin, open ports) and skip the Wi-Fi device alerts.</span></span></label>
       <label class="tickrow" id="sec-defrow"><input type="checkbox" id="s-security_autodefend"><span><b>Auto-defend</b><br><span class="muted">Also act automatically — block the attacker's IP in the firewall. Leave off to just be alerted and decide yourself.</span></span></label>
       <div class="btns" style="justify-content:flex-start;margin-top:6px">
         <button class="btn" id="sec-scan">SCAN NOW</button>
@@ -2458,12 +2459,15 @@ async function secLoad(){const adm=S&&S.user.is_admin,panel=$('sec-panel');if(!p
   $('sec-pill').textContent=!d.available?'Windows only':(d.monitor?(d.autodefend?'watching + defending':'watching'):'off');
   $('sec-pill').className='pill'+(d.monitor?' on':'');
   $('sec-nowin').hidden=d.available;
-  const m=$('s-security_monitor'),a=$('s-security_autodefend');
+  const m=$('s-security_monitor'),a=$('s-security_autodefend'),wd=$('s-security_watch_devices');
   if(m){m.checked=!!d.monitor;m.onchange=()=>secSet({monitor:m.checked});}
   if(a){a.checked=!!d.autodefend;a.onchange=()=>secSet({autodefend:a.checked});}
+  if(wd){wd.checked=d.watch_devices!==false;wd.onchange=()=>secSet({watch_devices:wd.checked});}
   secDraw(d.findings);}
 async function secSet(p){try{const d=await (await api('/api/security/settings',{method:'PUT',json:p})).json();secLoad();
-  $('sec-msg').className='msg ok';$('sec-msg').textContent='Security watch '+(d.monitor?(d.autodefend?'on, auto-defending.':'on — I\'ll alert you.'):'off.');}
+  $('sec-msg').className='msg ok';
+  $('sec-msg').textContent=('watch_devices' in p)?(d.watch_devices?'Now also watching for new Wi-Fi devices.':'Wi-Fi device alerts off — watching this PC only.')
+    :('Security watch '+(d.monitor?(d.autodefend?'on, auto-defending.':'on — I\'ll alert you.'):'off.'));}
   catch(e){$('sec-msg').className='msg bad';$('sec-msg').textContent=e.message;}}
 $('sec-scan')&&($('sec-scan').onclick=async()=>{const m=$('sec-msg');m.className='msg muted';m.textContent='Scanning your PC and network…';
   try{const d=await (await api('/api/security/scan',{json:{}})).json();if(d.error){m.className='msg bad';m.textContent=d.error;return;}

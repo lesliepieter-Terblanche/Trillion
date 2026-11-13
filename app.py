@@ -2673,6 +2673,8 @@ def security_settings(p: dict = Body(default={}), user=Depends(admin)):
         s["security_monitor"] = bool(p["monitor"])
     if "autodefend" in p:
         s["security_autodefend"] = bool(p["autodefend"])
+    if "watch_devices" in p:
+        s["security_watch_devices"] = bool(p["watch_devices"])
     core.save_settings(user["id"], s)
     import security
     # take a baseline the first time monitoring is switched on, so there's something to compare against
