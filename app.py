@@ -2476,7 +2476,18 @@ def place_call(user, topic="projects", items=None, opening=None):
         opening = (f"Hi {user['name']}, it's {name}. " + (f"{len(items)} things need you. " if len(items) > 1 else "")
                    + " ".join(i["text"] for i in items[:4]) + ". What would you like me to do?")
     elif topic and topic != "projects":
-        opening = f"Hi {user['name']}, it's {name}. You asked me to call you about {topic}. Anything you want me to do?"
+        # Actually answer what they asked to be called about (weather, news, a question) and say it on the call,
+        # instead of only naming the topic and asking what they want.
+        ans = ""
+        try:
+            ans = (run_agent(user, topic, channel="call").get("reply") or "").strip()
+        except Exception:
+            ans = ""
+        bad = ans.lower().startswith(("i could not", "i couldn't", "that did not", "that didn't", "i am busy", "i'm busy"))
+        if ans and not bad:
+            opening = f"Hi {user['name']}, it's {name}. {ans} Anything else you want me to do?"
+        else:
+            opening = f"Hi {user['name']}, it's {name}. You asked me to call you about {topic}. Anything you want me to do?"
     else:
         opening = f"Good {'morning' if datetime.datetime.now().hour < 12 else 'day'} {user['name']}, it's {name}. " + project_briefing(user) + " Anything you want me to do?"
 
