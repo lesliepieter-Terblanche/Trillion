@@ -1,11 +1,20 @@
 @echo off
 title Trillion
+rem --- Run as administrator. If this window is not elevated, relaunch it elevated and close this one.
+rem     (Windows shows its usual "Do you want to allow this app to make changes?" prompt - click Yes.)
+net session >nul 2>&1
+if %errorlevel% neq 0 (
+  echo Asking Windows for administrator rights...
+  powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+  exit /b
+)
 cd /d "%~dp0"
 if not exist ".venv\Scripts\python.exe" (
   echo Trillion is not set up yet. Double-click "1 - Setup.bat" first.
   pause
   exit /b 1
 )
+echo Running as administrator.
 echo Starting Trillion. Keep this window open while you use it.
 echo On this PC:    http://localhost:8787
 echo On your phone: http://YOUR-PC-TAILSCALE-ADDRESS:8787
