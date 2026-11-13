@@ -3602,7 +3602,7 @@ def messages(user=Depends(auth)):
 
 # ---------- settings and keys ----------
 EDITABLE = ["freevideo_url", "wake_word", "video_ai_images", "wa_inbox", "fast_answers", "theme", "quick_actions", "whatsapp_auto_contacts", "phone_own_number", "phone_full_control", "personality", "phone_country_code", "assistant_name", "brand", "accent", "site", "brain", "local_model", "heavy_model", "heavy_answers", "cloud_model", "voice", "kokoro_voice",
-            "eleven_voice_id", "daily_review", "call_done_announce", "call_done_device"]
+            "eleven_voice_id", "daily_review", "call_done_announce", "call_done_device", "desktop_control"]
 
 
 @app.put("/api/settings")
