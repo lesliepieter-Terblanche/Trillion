@@ -871,9 +871,17 @@ def ask(user, text, sites=None):
             cfg["day"] = "tomorrow"
         elif re.search(r"\b(today|now|outside)\b", text, re.I):
             cfg["day"] = "today"
-        m = re.search(r"\b(?:in|for|at)\s+([A-Za-z][A-Za-z .'-]{2,40}?)(?:\s+(?:today|tomorrow|now|please))?[?.!]*$", text)
-        if m and m.group(1).strip().lower() not in ("today", "tomorrow", "the morning", "the week"):
-            cfg["city"] = m.group(1).strip()
+        # Pull the place out of e.g. "weather in Roodepoort for tomorrow". The non-greedy name stops before a
+        # trailing "for tomorrow" / day word so those don't get swallowed into the place (which broke the lookup).
+        m = re.search(r"\b(?:in|for|at)\s+([A-Za-z][A-Za-z .'-]{2,40}?)"
+                      r"(?:\s+(?:for|on)\s+\w+|\s+(?:today|tomorrow|tonight|now|please|this week|this weekend|"
+                      r"the (?:morning|week|weekend)))?[?.!]*$", text, re.I)
+        if m:
+            city = m.group(1).strip().rstrip(" .,'")
+            city = re.sub(r"\s+(?:for|on|in|at)$", "", city, flags=re.I).strip()   # drop any dangling preposition
+            if city and city.lower() not in ("today", "tomorrow", "tonight", "the morning", "the week",
+                                             "the weekend", "now"):
+                cfg["city"] = city
     label = BY_TYPE[kind]["label"]
     card = None
     if kind == "news":                               # "news on the war" -> fresh topical search, not the routine feeds
