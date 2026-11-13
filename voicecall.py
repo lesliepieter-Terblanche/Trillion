@@ -22,7 +22,7 @@ import numpy as np
 RATE = 8000
 FRAME = 160                       # 20 ms at 8 kHz (the old telephone sound)
 VOICE_RATE = 16000                # Trillion's voice is made at 16 kHz; wideband calls (G.722) carry it as it is
-CALL_MODEL = os.environ.get("TRILLION_CALL_WHISPER", "large-v3-turbo")
+CALL_MODEL = os.environ.get("TRILLION_CALL_WHISPER", "large-v3")   # full model: better with accents on call audio
 _CALL_W = {"m": None, "tried": False}
 RING_SECONDS = 40
 MAX_TURNS = 4
