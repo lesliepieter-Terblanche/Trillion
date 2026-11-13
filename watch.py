@@ -17,8 +17,10 @@ KINDS = {
     "site": "Your website looks down",
     "brief": "A short version of each routine briefing",
     "meeting": "Meeting mode: people you let through, and the summary afterwards",
+    "security": "A possible attack or intruder on your PC or network",
 }
-DEFAULT_KINDS = {"approval": True, "job": True, "sale": True, "site": True, "brief": False, "meeting": True}
+DEFAULT_KINDS = {"approval": True, "job": True, "sale": True, "site": True, "brief": False, "meeting": True,
+                 "security": True}
 LONG_JOB = 60                  # seconds: quicker jobs finish while you are still looking at the screen
 REPEAT = 300                   # the same alert is not sent twice within five minutes
 MAX_TEXT = 400

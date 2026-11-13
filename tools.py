@@ -135,6 +135,9 @@ SPECS = [
     fn("open_app", "Open an app on this computer by name (notepad, excel, chrome, outlook…), or a file path or URL.", {"app": S}, ["app"]),
     fn("focus_window", "Bring a window on this computer to the front by (part of) its title.", {"title": S}, ["title"]),
     fn("list_windows", "List the titles of the windows open on this computer.", {}),
+    fn("security_scan", "Check this PC and the home network RIGHT NOW for signs of hacking or an intruder — Windows "
+       "Defender threats, bursts of failed sign-in attempts, a new admin account, risky ports open to the network, and "
+       "unknown new devices on the Wi-Fi. Owner only. Use when asked to check security or whether anything is wrong.", {}),
     fn("create_image", "Create a picture (PNG) from a description with Google's image model, using this login's own Gemini key. "
        "shape is square, tall or wide.", {"prompt": S, "shape": S}, ["prompt"]),
     fn("create_video", "Create a finished cinematic social media video (MP4) from a plain description. No media is "
@@ -371,6 +374,7 @@ def describe(name, a):
         "computer_type": "Typing on the computer", "computer_press": f"Pressing {g('key')}",
         "computer_scroll": "Scrolling", "open_app": f"Opening {g('app')}", "focus_window": f"Switching to {g('title')}",
         "list_windows": "Listing open windows",
+        "security_scan": "Checking your PC and network security",
         "clone_website": f"{'Copying' if g('mode') == 'copy' else 'Rebuilding the style of'} {g('url')}",
         "seo_rankings": "Checking Google rankings",
         "competitor_watch": "Checking competitor websites",
@@ -431,6 +435,8 @@ def execute(user, name, args, task_id=None, approved=False, direct=False):
             return {"error": "Full phone control is switched off. Switch it on on the Phone page."}
         if name in DESKTOP and not user["is_admin"]:
             return {"error": "Only the owner login can control this computer."}
+        if name == "security_scan" and not user["is_admin"]:
+            return {"error": "Only the owner login can run the security check."}
         if name in DESKTOP and not core.settings(user).get("desktop_control"):
             return {"error": "Computer control is switched off. Switch it on on the Phone page (Computer control)."}
         if name == "update_self" and not user["is_admin"]:
@@ -1709,3 +1715,16 @@ def t_focus_window(user, title):
 def t_list_windows(user):
     import desktop
     return desktop.list_windows(user)
+
+
+def t_security_scan(user):
+    import security
+    r = security.scan(user)
+    if not r.get("ok"):
+        return {"error": r.get("error") or "Could not run the security check."}
+    f = r.get("findings", [])
+    if not f:
+        return {"result": "All clear — no threats, break-in attempts, new admin accounts, risky open ports or "
+                          "unknown devices found.", "findings": []}
+    return {"result": f"{len(f)} thing(s) worth your attention (most serious first).",
+            "findings": [{"severity": x["sev"], "what": x["what"], "detail": x.get("detail", "")} for x in f]}

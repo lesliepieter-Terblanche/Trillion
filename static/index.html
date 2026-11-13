@@ -545,6 +545,19 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
       </div>
       <div class="msg" id="dc-msg"></div>
     </div>
+    <div class="panel" id="sec-panel" hidden><div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><b>Security watch (PC &amp; network)</b><span class="pill" id="sec-pill"></span></div>
+      <div class="muted" style="font-size:13px">Trillion watches <b>this PC and your own home network</b> for signs of hacking — malware Windows Defender finds, bursts of failed sign-ins, a new admin account, risky ports open to the network, and unknown devices joining your Wi-Fi. It alerts you, and can block an attacker or stop a rogue program. Owner only, and it works alongside Windows Defender — it doesn't replace it.</div>
+      <div id="sec-nowin" class="bad" style="font-size:13px" hidden>This only works on the Windows PC that runs Trillion.</div>
+      <label class="tickrow" id="sec-monrow"><input type="checkbox" id="s-security_monitor"><span><b>Watch my PC &amp; network</b><br><span class="muted">Checks every few minutes and alerts you if something looks like an attack.</span></span></label>
+      <label class="tickrow" id="sec-defrow"><input type="checkbox" id="s-security_autodefend"><span><b>Auto-defend</b><br><span class="muted">Also act automatically — block the attacker's IP in the firewall. Leave off to just be alerted and decide yourself.</span></span></label>
+      <div class="btns" style="justify-content:flex-start;margin-top:6px">
+        <button class="btn" id="sec-scan">SCAN NOW</button>
+        <button class="btn" id="sec-base">MARK CURRENT STATE AS NORMAL</button>
+      </div>
+      <div class="muted" style="font-size:12px;margin-top:4px">"Mark as normal" saves the current admin accounts, open ports and known devices as your baseline, so only new changes get flagged. Do this once on a PC you trust.</div>
+      <div id="sec-find" style="margin-top:8px"></div>
+      <div class="msg" id="sec-msg"></div>
+    </div>
     <div class="panel"><b>Unlock code</b>
       <div class="muted" style="font-size:13px">Saved encrypted on this PC so she can unlock your phone. She tries a code once only; if it fails she stops until you save it again, so the phone cannot be locked out.</div>
       <div id="ul-state" class="msg" style="font-size:15px"></div>
@@ -2432,8 +2445,33 @@ async function loadPhonePage(){
   if(!S)return;fillPhoneSettings();const full=!!S.user.settings.phone_full_control;
   $('pp-cmds').innerHTML=PPC.filter(c=>!c[2]||full).map((c,i)=>`<button type="button" data-pc="${esc(c[1])}">${esc(c[0])}</button>`).join('')+(full?'':'<span class="muted" style="font-size:13px;align-self:center">Tick Full phone control below for Home, Back, volume and reading the screen.</span>');
   $('pp-cmds').querySelectorAll('[data-pc]').forEach(b=>b.onclick=()=>runHere(b.dataset.pc,$('pp-cmdmsg')));
-  ppUse();render();loadPhone();ulLoad();loadWA(true);loadContacts($('pp-cmsg'));wtLoad();mtLoad();ngLoad();mbLoad();vcLoad();loadCameras();scLoad();dcLoad();
+  ppUse();render();loadPhone();ulLoad();loadWA(true);loadContacts($('pp-cmsg'));wtLoad();mtLoad();ngLoad();mbLoad();vcLoad();loadCameras();scLoad();dcLoad();secLoad();
 }
+function secDraw(f){const box=$('sec-find');if(!box)return;
+  if(!f||!f.length){box.innerHTML='<div class="muted" style="font-size:13px">No scan yet, or all clear.</div>';return;}
+  const col={high:'#d94a6a',med:'#c98a1a',low:'#6b7280'};
+  box.innerHTML=f.map(x=>`<div class="panel" style="gap:3px;border-left:3px solid ${col[x.sev]||'#6b7280'}">
+    <div style="font-weight:600;font-size:13px">${esc(x.what)}</div>${x.detail?`<div class="muted" style="font-size:12px">${esc(x.detail)}</div>`:''}</div>`).join('');}
+async function secLoad(){const adm=S&&S.user.is_admin,panel=$('sec-panel');if(!panel)return;
+  panel.hidden=!adm;if(!adm)return;
+  let d={};try{d=await (await api('/api/security')).json();}catch(e){return;}
+  $('sec-pill').textContent=!d.available?'Windows only':(d.monitor?(d.autodefend?'watching + defending':'watching'):'off');
+  $('sec-pill').className='pill'+(d.monitor?' on':'');
+  $('sec-nowin').hidden=d.available;
+  const m=$('s-security_monitor'),a=$('s-security_autodefend');
+  if(m){m.checked=!!d.monitor;m.onchange=()=>secSet({monitor:m.checked});}
+  if(a){a.checked=!!d.autodefend;a.onchange=()=>secSet({autodefend:a.checked});}
+  secDraw(d.findings);}
+async function secSet(p){try{const d=await (await api('/api/security/settings',{method:'PUT',json:p})).json();secLoad();
+  $('sec-msg').className='msg ok';$('sec-msg').textContent='Security watch '+(d.monitor?(d.autodefend?'on, auto-defending.':'on — I\'ll alert you.'):'off.');}
+  catch(e){$('sec-msg').className='msg bad';$('sec-msg').textContent=e.message;}}
+$('sec-scan')&&($('sec-scan').onclick=async()=>{const m=$('sec-msg');m.className='msg muted';m.textContent='Scanning your PC and network…';
+  try{const d=await (await api('/api/security/scan',{json:{}})).json();if(d.error){m.className='msg bad';m.textContent=d.error;return;}
+    secDraw(d.findings);m.className='msg '+((d.findings||[]).length?'bad':'ok');m.textContent=(d.findings||[]).length?((d.findings).length+' thing(s) to look at.'):'All clear.';}
+  catch(e){m.className='msg bad';m.textContent=e.message;}});
+$('sec-base')&&($('sec-base').onclick=async()=>{const m=$('sec-msg');m.className='msg muted';m.textContent='Saving the current state as normal…';
+  try{const d=await (await api('/api/security/baseline',{json:{}})).json();m.className='msg ok';m.textContent=`Baseline saved: ${d.admins} admin account(s), ${d.ports} open port(s), ${d.devices} known device(s). I'll flag changes from here.`;}
+  catch(e){m.className='msg bad';m.textContent=e.message;}});
 async function dcLoad(){
   const adm=S&&S.user.is_admin,panel=$('dc-panel');if(!panel)return;
   panel.hidden=!adm;if(!adm)return;

@@ -2647,6 +2647,56 @@ def transcript_install(user=Depends(admin)):
     return transcript.start_install(user)
 
 
+# ---------- security watch (PC + home network) — owner only ----------
+@app.get("/api/security")
+def security_get(user=Depends(admin)):
+    import security
+    return security.state(user)
+
+
+@app.post("/api/security/scan")
+def security_scan_now(user=Depends(admin)):
+    import security
+    return security.scan(user)
+
+
+@app.post("/api/security/baseline")
+def security_baseline(user=Depends(admin)):
+    import security
+    return security.set_baseline(user)
+
+
+@app.put("/api/security/settings")
+def security_settings(p: dict = Body(default={}), user=Depends(admin)):
+    s = core.settings(user)
+    if "monitor" in p:
+        s["security_monitor"] = bool(p["monitor"])
+    if "autodefend" in p:
+        s["security_autodefend"] = bool(p["autodefend"])
+    core.save_settings(user["id"], s)
+    import security
+    # take a baseline the first time monitoring is switched on, so there's something to compare against
+    if s.get("security_monitor") and not security._read_baseline():
+        try:
+            security.set_baseline(user)
+        except Exception:
+            pass
+    return security.state(user)
+
+
+@app.post("/api/security/action")
+def security_action(p: dict = Body(default={}), user=Depends(admin)):
+    import security
+    act = str(p.get("do") or "")
+    if act == "block_ip":
+        return security.block_ip(p.get("ip"))
+    if act == "unblock_ip":
+        return security.unblock_ip(p.get("ip"))
+    if act == "kill":
+        return security.kill_process(p.get("pid"))
+    raise HTTPException(400, "Unknown action")
+
+
 @app.post("/api/montage")
 def montage_build(p: dict = Body(...), user=Depends(auth)):
     """Build a video from the user's own scene pictures (Videos page). Scenes are uploaded images (by
@@ -4653,7 +4703,7 @@ def review_now(user=Depends(auth)):
 
 
 def background():
-    last_sites = last_phone = 0
+    last_sites = last_phone = last_sec = 0
     while True:
         try:
             TAILSCALE.update(t=time.time(), v=tailscale_status())
@@ -4703,6 +4753,16 @@ def background():
                     backup.start(backup.owner_settings().get("backup_target"))
             except Exception:
                 pass
+            if time.time() - last_sec > 300:              # watch the PC + home network for intruders, every 5 min
+                last_sec = time.time()
+                try:
+                    import security
+                    if security.available():
+                        for u in core.q("SELECT * FROM users WHERE is_admin=1"):
+                            if core.settings(u).get("security_monitor"):
+                                security.watch_once(u)
+                except Exception:
+                    pass
             if now.hour == 23 and now.minute >= 30:
                 core.prune_steps()                    # drop old workflow trails
                 for u in core.q("SELECT * FROM users"):

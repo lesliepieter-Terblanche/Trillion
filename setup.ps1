@@ -37,13 +37,17 @@ if ($LASTEXITCODE -ne 0) { Write-Host "Some parts failed to install. Check your 
 
 # Optional: the smart knowledge store for the second brain. If it will not install, Trillion still works
 # (she falls back to her built-in memory search), so a failure here does not stop setup.
+# --no-deps: these optional extras pull in packages (kubernetes, gTTS's click pin) that clash with Trillion's
+# core and used to downgrade it mid-setup (the long "looking at multiple versions" backtrack + red conflict
+# errors). Installing them without their dependency tree keeps core exactly as installed above, so setup is
+# fast and clean; the extras use what core already provides and fall back gracefully if something's missing.
 Step "Adding the smart knowledge store (optional)"
-& .\.venv\Scripts\python.exe -m pip install --quiet chromadb
+& .\.venv\Scripts\python.exe -m pip install --quiet --no-deps chromadb
 if ($LASTEXITCODE -ne 0) { Write-Host "Skipped the knowledge store; Trillion's built-in memory still works." -ForegroundColor DarkYellow }
 
 # Optional: casting to Google Home / Chromecast (and text-to-speech for announcements).
 Step "Adding casting and cameras (optional)"
-& .\.venv\Scripts\python.exe -m pip install --quiet pychromecast gTTS onvif-zeep
+& .\.venv\Scripts\python.exe -m pip install --quiet --no-deps pychromecast gTTS onvif-zeep
 if ($LASTEXITCODE -ne 0) { Write-Host "Skipped casting/camera extras; everything else still works." -ForegroundColor DarkYellow }
 
 if (-not $SkipModels) {
