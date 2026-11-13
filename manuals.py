@@ -53,6 +53,14 @@ LAYOUT = re.compile(r"component locations?|location index|description and operat
 ASKS_MANUAL = re.compile(r"\b(manual|workshop|xuv\w*|mahindra|my car|the car|vehicle|bakkie|engine bay|bonnet|"
                          r"torque|fuses?|wiring|part number|error code|fault code|dtc|warning light|[PBCU][0-9A-F]{4})\b", re.I)
 
+# Things that are clearly about Trillion / this PC / the home network, NOT the car.
+# Section names like "network" (a vehicle's CAN network) used to pull the car manual into
+# messages like "check my network security" - this stops that when there's no real car signal.
+NOT_MANUAL = re.compile(r"\b(my pc|this pc|my computer|this computer|my laptop|my (?:wi-?fi|network|router|firewall)|"
+                        r"network security|cyber\w*|hack\w*|intrud\w*|malware|virus|antivirus|defender|"
+                        r"firewall|ports?\b|trillion|desktop|windows|security (?:scan|check|watch)|"
+                        r"scan (?:my|this|the) (?:pc|computer|network))\b", re.I)
+
 
 class ManualError(Exception):
     pass
@@ -485,6 +493,8 @@ def about(user, text):
         return False
     if ASKS_MANUAL.search(text):
         return True
+    if NOT_MANUAL.search(text):     # a PC / network / security command for Trillion, not a car question
+        return False
     import json
     secs = {w.lower() for m in _q("SELECT sections FROM manuals WHERE user_id=? AND done=1", (user["id"],))
             for s in json.loads(m["sections"] or "[]") for w in re.findall(r"[A-Za-z]{4,}", s["name"])}

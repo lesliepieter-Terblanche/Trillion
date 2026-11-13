@@ -128,19 +128,25 @@ def _listeners():
     return out
 
 
-def _new_lan_devices(user, known):
+def _scan_devices(user):
+    """The device list from netscan.scan() (which returns a dict), or [] on any trouble."""
     try:
         import netscan
-        devs = netscan.scan(timeout=2, user=user) or []
+        res = netscan.scan(timeout=2, user=user)
+        devs = res.get("devices", []) if isinstance(res, dict) else (res or [])
+        return [d for d in devs if isinstance(d, dict)]
     except Exception:
-        return [], known
+        return []
+
+
+def _new_lan_devices(user, known):
     seen = dict(known)
     out = []
-    for d in devs:
+    for d in _scan_devices(user):
         mac = str(d.get("mac") or "").upper().strip()
         if not mac or mac in ("", "FF:FF:FF:FF:FF:FF"):
             continue
-        name = d.get("name") or d.get("host") or d.get("ip") or mac
+        name = d.get("name") or d.get("hostname") or d.get("ip") or mac
         if mac not in known:
             out.append({"sev": "med", "kind": "newdevice",
                         "what": f"New device on your network: {name}",
@@ -163,14 +169,10 @@ def set_baseline(user):
     DIR.mkdir(parents=True, exist_ok=True)
     base = {"admins": _admins(), "ports": sorted({l["port"] for l in _listeners()}),
             "devices": {}, "set": time.time()}
-    try:
-        import netscan
-        for d in (netscan.scan(timeout=2, user=user) or []):
-            mac = str(d.get("mac") or "").upper().strip()
-            if mac:
-                base["devices"][mac] = d.get("name") or d.get("host") or d.get("ip") or mac
-    except Exception:
-        pass
+    for d in _scan_devices(user):
+        mac = str(d.get("mac") or "").upper().strip()
+        if mac:
+            base["devices"][mac] = d.get("name") or d.get("hostname") or d.get("ip") or mac
     BASELINE.write_text(json.dumps(base))
     return {"ok": True, "admins": len(base["admins"]), "ports": len(base["ports"]), "devices": len(base["devices"])}
 
