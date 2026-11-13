@@ -1446,6 +1446,16 @@ function showImage(i){
   popup({kicker:'PICTURE',title:i.title||'Your picture',sub:'Saved at '+i.saved,html:`<div style="text-align:center"><img src="${esc(i.url)}" alt="${esc(i.title||'The picture she made')}" style="max-width:100%;max-height:68vh;border-radius:8px"></div>`,
     foot:`<a class="btn" style="display:inline-flex;align-items:center;text-decoration:none" href="${esc(i.url)}" download>DOWNLOAD</a>`});
 }
+function showWebcam(){
+  const src='/webcam/live?t='+Date.now();
+  popup({kicker:'WEBCAM',title:'Your webcam',sub:'Live from this PC. Close this window to turn the camera off.',
+    html:`<div style="text-align:center"><img id="wcimg" src="${src}" alt="Live webcam" style="max-width:100%;max-height:68vh;border-radius:8px;background:#000">`
+        +`<div id="wcmsg" class="muted" style="margin-top:8px;font-size:12px">Starting your webcam (give it a few seconds)...</div></div>`,
+    onclose:()=>{const i=document.getElementById('wcimg');if(i)i.src='';}});
+  const img=document.getElementById('wcimg'),msg=document.getElementById('wcmsg');
+  if(img){img.onload=()=>{if(msg)msg.textContent='';};
+          img.onerror=()=>{if(msg){msg.className='msg bad';msg.textContent='Could not start the webcam. It may be in use by another app (Teams, Zoom or the Camera app) - close that and try again.';}};}
+}
 function showMap(m){
   const q=encodeURIComponent(m.lat+','+m.lon);
   popup({kicker:'FIND MY PHONE',title:m.title||'Your phone was last here',sub:(m.accuracy_m?'Accurate to about '+m.accuracy_m+' metres. ':'')+'This is the last position the phone recorded.',
@@ -1499,7 +1509,7 @@ async function send(text,speak,atts){
   $('chat').insertAdjacentHTML('beforeend',`<div class="user">${withFiles(text+atts.map(a=>`\n[[file:${a.id}:${a.name.replace(/[\]:]/g,'-')}:${a.kind}]]`).join(''))}</div>`);$('chat').scrollTop=1e9;
   $('kicker').textContent='NOW WORKING';$('big').textContent='Thinking';$('sub').textContent=text;
   const liveT=setInterval(async()=>{try{const l=await (await fetch('/api/live')).json();if(l.text){let b=$('livebub');if(!b){$('chat').insertAdjacentHTML('beforeend','<div class="assistant" id="livebub"></div>');b=$('livebub');}b.textContent=l.text+' ▍';$('chat').scrollTop=1e9;$('big').textContent='Answering';}}catch(e){}},350);
-  try{const r=await (await api('/api/chat',{json:{message:text,attachments:atts.map(a=>a.id)}})).json();clearInterval(liveT);await loadChat();await tick();if(S&&S.approvals.length)$('chatwait').scrollIntoView({block:'nearest'});if(r.brief)showBrief(r.brief,true);if(r.map)showMap(r.map);if(r.image)showImage(r.image);if(r.ebook)showEbook(r.ebook);else if(r.link)showLink(r.link);else replyPop(text,r);if(r.show)go(r.show);if(speak||voiceOn){talking=true;if(S)render();await say(r.reply);await new Promise(r=>setTimeout(r,350));talking=false;}}
+  try{const r=await (await api('/api/chat',{json:{message:text,attachments:atts.map(a=>a.id)}})).json();clearInterval(liveT);await loadChat();await tick();if(S&&S.approvals.length)$('chatwait').scrollIntoView({block:'nearest'});if(r.brief)showBrief(r.brief,true);if(r.map)showMap(r.map);if(r.image)showImage(r.image);if(r.webcam)showWebcam();if(r.ebook)showEbook(r.ebook);else if(r.link)showLink(r.link);else if(!r.webcam)replyPop(text,r);if(r.show)go(r.show);if(speak||voiceOn){talking=true;if(S)render();await say(r.reply);await new Promise(r=>setTimeout(r,350));talking=false;}}
   catch(e){$('chat').insertAdjacentHTML('beforeend',`<div class="assistant">${esc(e.message)}</div>`);}
   clearInterval(liveT);sending=false;tick();
 }

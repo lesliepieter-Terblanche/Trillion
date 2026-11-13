@@ -1138,7 +1138,7 @@ def update_reply(res):
             "I am restarting now and will be back in a few seconds.")
 
 
-def run_agent(user, text, files=None):
+def run_agent(user, text, files=None, channel="dashboard"):
     uid = user["id"]
     files = files or []
     BUSY[uid] = True
@@ -1224,14 +1224,27 @@ def run_agent(user, text, files=None):
         return _chat_reply(uid, tid, reply)
     if WEBCAM_NOUN.search(text) and WEBCAM_VERB.search(text) and len(text) < 90:
         shot = bool(WEBCAM_SHOT_RE.search(text))
-        res = tools.execute(user, "webcam_snapshot" if shot else "webcam_open", {})
-        if isinstance(res, dict) and res.get("error"):
-            return _chat_reply(uid, tid, res["error"])
         if shot:
+            res = tools.execute(user, "webcam_snapshot", {})
+            if isinstance(res, dict) and res.get("error"):
+                return _chat_reply(uid, tid, res["error"])
             url = res.get("image_url", "") if isinstance(res, dict) else ""
             return _chat_reply(uid, tid, f"Here's what your webcam sees.\n\n![webcam]({url})" if url
                                else "I took a webcam picture.")
-        return _chat_reply(uid, tid, "Your webcam is on — the camera window is open on your PC screen.")
+        # Live view. On the dashboard, open a popup that streams the webcam (and do NOT open the Windows
+        # Camera app - it would grab the camera and the stream would go black). On a call, there's no
+        # screen to pop up on, so open the Camera app on the PC instead.
+        if channel == "call":
+            res = tools.execute(user, "webcam_open", {})
+            if isinstance(res, dict) and res.get("error"):
+                return _chat_reply(uid, tid, res["error"])
+            return _chat_reply(uid, tid, "Your webcam is on — the camera window is open on the PC screen.")
+        BUSY[uid] = False
+        reply = "Here's your webcam — live."
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.x("DELETE FROM tasks WHERE id=?", (tid,))
+        core.x("DELETE FROM steps WHERE task_id=?", (tid,))
+        return {"reply": reply, "task_id": None, "provider": "built-in", "webcam": True}
     sc = scrape_chat(user, uid, tid, text)
     if sc is not None:
         return sc
@@ -2488,7 +2501,7 @@ def call_answer(user):
             return "I am busy with another job right now. Ask me again in a minute."
         try:
             with tools.on_call():
-                return run_agent(user, words).get("reply") or "Done."
+                return run_agent(user, words, channel="call").get("reply") or "Done."
         except Exception as e:
             return f"That did not work: {type(e).__name__}."
     return answer
@@ -4477,6 +4490,20 @@ def cameras_live(cid: int, user=Depends(auth), fps: int = 8, q: int = 6, h: int 
     if not cam:
         raise HTTPException(404)
     gen = cameras.mjpeg_stream(dict(cam), fps=fps, quality=q, height=h)
+    return StreamingResponse(gen, media_type=f"multipart/x-mixed-replace; boundary={cameras.MJPEG_BOUNDARY}",
+                             headers={"Cache-Control": "no-store"})
+
+
+@app.get("/webcam/live")
+def webcam_live(user=Depends(auth), fps: int = 12, q: int = 6):
+    """Live view of THIS PC's own webcam, shown in the dashboard popup. Logged-in users only."""
+    import cameras
+    try:
+        gen = cameras.webcam_mjpeg(fps=fps, quality=q)
+    except cameras.CameraError as e:
+        raise HTTPException(503, str(e))
+    except Exception:
+        raise HTTPException(500, "Could not start the webcam.")
     return StreamingResponse(gen, media_type=f"multipart/x-mixed-replace; boundary={cameras.MJPEG_BOUNDARY}",
                              headers={"Cache-Control": "no-store"})
 

@@ -256,6 +256,35 @@ def open_camera_app():
                           "Check the Windows Camera app is installed.")
 
 
+def webcam_live_cmd(fps=12, quality=6):
+    """ffmpeg argv: the local PC webcam (DirectShow) as an MJPEG multipart stream on stdout."""
+    import os
+    if os.name != "nt":
+        raise CameraError("The live webcam view is only supported on Windows.")
+    dev = _first_dshow_video()
+    if not dev:
+        raise CameraError("No webcam found on this PC. Make sure a camera is connected and not in use by another app.")
+    return [_ffmpeg(), "-nostdin", "-loglevel", "error", "-f", "dshow", "-i", f"video={dev}",
+            "-an", "-r", str(max(1, min(int(fps), 20))),
+            "-q:v", str(max(2, min(int(quality), 15))), "-f", "mpjpeg", "-"]
+
+
+def webcam_mjpeg(fps=12, quality=6):
+    """Generator: stream the local PC webcam as MJPEG. ffmpeg is killed when the viewer disconnects."""
+    proc = subprocess.Popen(webcam_live_cmd(fps, quality), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    try:
+        while True:
+            chunk = proc.stdout.read(65536)
+            if not chunk:
+                break
+            yield chunk
+    finally:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
 def _first_dshow_video():
     """Name of the first DirectShow video device, read from ffmpeg's device list (Windows)."""
     try:
