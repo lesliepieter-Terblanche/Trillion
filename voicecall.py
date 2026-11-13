@@ -165,7 +165,12 @@ def warm_call_model():
 def hints(user):
     """Names and words the speech model should expect, so they are heard right."""
     words = ["Trillion", "Pieter", "Brandon", "Lewellyn", "TrueHome", "TackleTrail", "VapeEssence", "Gumroad", "Payhip",
-             "WhatsApp", "Linphone", "invoice", "approve", "remind me", "call back", "outstanding"]
+             "WhatsApp", "Linphone", "invoice", "approve", "remind me", "call back", "outstanding",
+             # South African places and work vocabulary, so the call hears local names right (narrowband audio
+             # otherwise turns "Roodepoort" into "Roydepoort").
+             "Roodepoort", "Johannesburg", "Joburg", "Pretoria", "Centurion", "Midrand", "Sandton", "Randburg",
+             "Krugersdorp", "Gauteng", "Cape Town", "Durban", "South Africa", "SADC", "rand",
+             "Westcon-Comstor", "Juniper", "SonarSource", "Avaya", "Nokia"]
     try:
         import core
         st = core.settings(user) if user else {}
