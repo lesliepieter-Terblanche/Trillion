@@ -444,6 +444,7 @@ MORNING_RE = re.compile(r"\b(?:morning|daily|today'?s)\s+(?:brief(?:ing)?|rundow
 SCRAPE_RE = re.compile(r"\bscrape\b|\b(?:pull|grab|extract|harvest)\b.{0,50}\b(?:from|off)\b.{0,30}https?://"
                        r"|\bget\b.{0,40}\bfrom (?:this|the) (?:page|site|url|website)\b", re.I)
 # The local brain sometimes refuses "open my webcam" as a hardware request, so route it straight to the tool.
+WEBCAM_WORD = re.compile(r"\bweb\s?cam\b", re.I)   # "webcam" alone is unambiguous - always the PC camera
 WEBCAM_NOUN = re.compile(r"\b(?:web\s?cam|laptop camera|pc camera|my camera|the camera|front camera|selfie camera)\b", re.I)
 WEBCAM_VERB = re.compile(r"\b(?:open|activate|turn on|switch on|start|show|access|enable|use|take|capture|snap|grab|"
                          r"see|look)\b", re.I)
@@ -1222,7 +1223,8 @@ def run_agent(user, text, files=None, channel="dashboard"):
         else:
             reply = f"Nothing is running right now. {done_today} finished today."
         return _chat_reply(uid, tid, reply)
-    if WEBCAM_NOUN.search(text) and WEBCAM_VERB.search(text) and len(text) < 90:
+    webcam_ask = len(text) < 90 and (WEBCAM_WORD.search(text) or (WEBCAM_NOUN.search(text) and WEBCAM_VERB.search(text)))
+    if webcam_ask:
         shot = bool(WEBCAM_SHOT_RE.search(text))
         if shot:
             res = tools.execute(user, "webcam_snapshot", {})
