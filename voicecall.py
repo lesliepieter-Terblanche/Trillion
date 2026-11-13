@@ -791,7 +791,17 @@ def _incoming(sock, data, addr, reply):
     m = re.search(r"sip:([^@;>\s]+)@", frm)
     user = _user_for(m.group(1) if m else "")
     reg = registered(user) if user else None
-    if not user or not reg or reg["ip"] != addr[0]:
+    # Accept the call if the phone is signed in from this address, OR it's calling from the user's own saved
+    # phone address (so a restart - which clears the in-memory sign-in - doesn't 403 incoming calls until the
+    # phone happens to re-register). Both still require a real Trillion user calling from a Tailscale address.
+    saved_ok = False
+    if user:
+        try:
+            p = prefs(user)
+            saved_ok = bool(p["target"]) and _resolve(p["target"]) == addr[0]
+        except Exception:
+            saved_ok = False
+    if not user or not ((reg and reg["ip"] == addr[0]) or saved_ok):
         _seen(addr, "a call was refused: only a phone signed in to Trillion can call it.")
         reply(403, "Forbidden")
         return
