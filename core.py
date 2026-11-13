@@ -37,7 +37,7 @@ DEFAULT_SETTINGS = {
     "phone_auto_unlock": False,        # unlock the phone by herself with the saved code when a command needs it
     "fast_answers": True,              # plain questions go to the small quick model; anything she has to do uses the full one
     "fast_model": "qwen2.5:3b",
-    "security_monitor": False,         # owner-only: watch this PC + home network for attacks/intruders and alert
+    "security_monitor": True,          # owner-only: watch this PC + home network for attacks/intruders and alert
     "security_autodefend": False,      # also act (block the attacker's IP, stop a rogue program) - not just alert
     "wa_inbox": True,                  # show incoming WhatsApp messages (read from the phone's notifications) on the dashboard
     "freevideo_url": "",               # where FreeVideo listens on this PC; empty means the usual http://127.0.0.1:8188

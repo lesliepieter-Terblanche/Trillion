@@ -277,6 +277,14 @@ def watch_once(user):
     s = core.settings(user)
     if not s.get("security_monitor") or not available():
         return
+    if not _read_baseline():
+        # first run: learn what's normal on this PC, then compare from the next pass on (so we don't flag
+        # every existing device/port/admin as if it were new)
+        try:
+            set_baseline(user)
+        except Exception:
+            pass
+        return
     res = scan(user)
     findings = [f for f in res.get("findings", []) if f.get("sev") in ("high", "med")]
     if not findings:

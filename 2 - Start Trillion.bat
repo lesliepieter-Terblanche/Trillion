@@ -1,13 +1,21 @@
 @echo off
 title Trillion
-rem --- Run as administrator. If this window is not elevated, relaunch it elevated and close this one.
-rem     (Windows shows its usual "Do you want to allow this app to make changes?" prompt - click Yes.)
+rem --- Run as administrator. If we're already elevated, carry on.
 net session >nul 2>&1
-if %errorlevel% neq 0 (
-  echo Asking Windows for administrator rights...
-  powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+if %errorlevel% equ 0 goto elevated
+rem Not elevated. Prefer the registered "Trillion" startup task, which starts her elevated with NO prompt.
+schtasks /Query /TN "Trillion" >nul 2>&1
+if %errorlevel% equ 0 (
+  echo Starting Trillion as administrator ^(no prompt^)...
+  schtasks /Run /TN "Trillion" >nul 2>&1
   exit /b
 )
+rem No task set up yet: fall back to the normal Windows admin prompt (click Yes). Run "5 - Start with Windows.bat"
+rem once to set up the no-prompt elevated start.
+echo Asking Windows for administrator rights...
+powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+exit /b
+:elevated
 cd /d "%~dp0"
 if not exist ".venv\Scripts\python.exe" (
   echo Trillion is not set up yet. Double-click "1 - Setup.bat" first.
