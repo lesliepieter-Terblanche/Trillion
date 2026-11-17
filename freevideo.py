@@ -39,17 +39,30 @@ def status(user):
             "note": "Ready." if ok else "ComfyUI is running but FreeVideo is not installed in it."}
 
 
-def free_graphics_memory():
-    """Her own brain models sit in the graphics card's memory for hours; the video model needs that room."""
+def free_graphics_memory(wait=30):
+    """Her own brain models sit in the graphics card's memory for hours; the video model needs that room.
+    Ask Ollama to unload them, then WAIT until the card is actually clear - otherwise the video job starts
+    while the brain is still loaded and runs out of memory."""
     freed = []
     try:
         for m in httpx.get(core.OLLAMA + "/api/ps", timeout=3).json().get("models", []):
             name = m.get("name") or m.get("model")
             if name:
-                httpx.post(core.OLLAMA + "/api/generate", json={"model": name, "keep_alive": 0}, timeout=20)
+                try:
+                    httpx.post(core.OLLAMA + "/api/generate", json={"model": name, "keep_alive": 0}, timeout=20)
+                except Exception:
+                    pass
                 freed.append(name)
     except Exception:
-        pass
+        return freed
+    deadline = time.time() + wait                     # unloading is asynchronous; wait for the VRAM to actually free
+    while time.time() < deadline:
+        try:
+            if not httpx.get(core.OLLAMA + "/api/ps", timeout=3).json().get("models", []):
+                break
+        except Exception:
+            break
+        time.sleep(1.5)
     return freed
 
 
@@ -125,9 +138,12 @@ def create(llm, user, prompt, seconds=5, fmt="vertical", progress=None):
     say("Making room on the graphics card")
     freed = free_graphics_memory()
 
+    # Two-pass doubles quality but also the graphics-card memory it needs. On a 16 GB card it is the usual cause
+    # of "not enough memory", so it is off by default; turn it on with the "freevideo_hq" setting when the card can spare it.
+    hq = bool(core.settings(user).get("freevideo_hq"))
     graph = {"1": {"class_type": "FreeVideoGenerate",
                    "inputs": {"text": shot, "width": w, "height": h, "seconds": seconds,
-                              "seed": random.randint(1, 2 ** 31), "two_pass": True}}}
+                              "seed": random.randint(1, 2 ** 31), "two_pass": hq}}}
     try:
         r = httpx.post(base + "/prompt", json={"prompt": graph, "client_id": f"trillion-{uid}"}, timeout=60)
         data = r.json()

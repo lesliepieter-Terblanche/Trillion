@@ -23,6 +23,7 @@ DEFAULT_SETTINGS = {
     "local_model": "qwen3:14b",    # strong at calling tools; falls back to whatever is installed (see pick_local_model)
     "heavy_model": "mistral-small:24b",   # the bigger local brain for hard/coding jobs (fits 16 GB VRAM at Q4)
     "vision_model": "",                    # local model used to SEE images (webcam) - blank = auto-pick what's installed
+    "freevideo_hq": False,                 # two-pass AI video (higher quality, needs more VRAM) - off keeps 16 GB cards happy
     "heavy_answers": True,                 # route hard jobs (code, deep reasoning) to the heavy model when it is installed
     "cloud_model": "gemini-2.5-flash",
     "voice": "browser",            # browser | kokoro (free, on this PC) | elevenlabs
