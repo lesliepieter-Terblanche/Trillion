@@ -20,8 +20,9 @@ DEFAULT_SETTINGS = {
     "accent": "#ffb454",
     "site": "",
     "brain": "local",              # local | gemini | anthropic
-    "local_model": "qwen2.5:14b",
+    "local_model": "qwen3:14b",    # strong at calling tools; falls back to whatever is installed (see pick_local_model)
     "heavy_model": "mistral-small:24b",   # the bigger local brain for hard/coding jobs (fits 16 GB VRAM at Q4)
+    "vision_model": "",                    # local model used to SEE images (webcam) - blank = auto-pick what's installed
     "heavy_answers": True,                 # route hard jobs (code, deep reasoning) to the heavy model when it is installed
     "cloud_model": "gemini-2.5-flash",
     "voice": "browser",            # browser | kokoro (free, on this PC) | elevenlabs
@@ -36,7 +37,7 @@ DEFAULT_SETTINGS = {
     "quick_actions": ["whatsapp", "ring", "find", "briefing", "video", "openwa"],   # the buttons on this login's home screen
     "phone_auto_unlock": False,        # unlock the phone by herself with the saved code when a command needs it
     "fast_answers": True,              # plain questions go to the small quick model; anything she has to do uses the full one
-    "fast_model": "qwen2.5:3b",
+    "fast_model": "qwen3:4b",
     "security_monitor": True,          # owner-only: watch this PC + home network for attacks/intruders and alert
     "security_autodefend": False,      # also act (block the attacker's IP, stop a rogue program) - not just alert
     "security_watch_devices": True,    # also alert on new/unknown devices on the Wi-Fi (off = watch this PC only)
@@ -398,15 +399,26 @@ def models():
     return v
 
 
+# Local models ranked by how reliably they drive tools, best first. When the chosen brain isn't installed we
+# fall back to the best of these that is, instead of just the first model in the list (which could be a tiny one).
+# Everyday-brain fallback order (14B-class first so the chat stays fast and fits 16 GB VRAM; the 24B
+# mistral-small is the heavy model for hard jobs, so it's last here, not the constant chat brain).
+TOOL_MODEL_RANK = ["qwen3", "qwen2.5", "llama3.1", "llama3.3", "hermes3", "command-r", "gemma3", "mistral-small"]
+
+
 def pick_local_model(pref):
     names = [m["name"] for m in models()["list"] if "embed" not in m["name"]]
     if not names:
-        raise RuntimeError("No local model is installed yet. Run Setup, or 'ollama pull qwen2.5:14b'.")
+        raise RuntimeError("No local model is installed yet. Run Setup, or 'ollama pull qwen3:14b'.")
     if pref in names:
         return pref
-    for n in names:
+    for n in names:                                   # same family, any size (qwen3:14b -> qwen3:8b etc.)
         if n.split(":")[0] == pref.split(":")[0]:
             return n
+    for fam in TOOL_MODEL_RANK:                        # else the best tool-caller that is installed
+        hit = next((n for n in names if n.split(":")[0] == fam), None)
+        if hit:
+            return hit
     return names[0]
 
 

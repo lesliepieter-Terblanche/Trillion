@@ -186,7 +186,7 @@ def llm_chat(user, messages, tool_specs=None, fast=False, live=False):
             core.log(uid, f"Cloud brain ({brain}) failed, used the local one instead: {type(e).__name__}", "waiting")
     model = core.pick_local_model(s.get("local_model", "qwen2.5:14b"))
     if fast:   # a plain question needs no tools: the small model answers several times faster
-        small = core.pick_local_model(s.get("fast_model") or "qwen2.5:3b")
+        small = core.pick_local_model(s.get("fast_model") or "qwen3:4b")
         if small.split(":")[0] in ("qwen2.5", "gemma3", "llama3.2", "phi4-mini") and small != model:
             model = small
     elif s.get("heavy_answers", True) and _wants_heavy(messages):
@@ -320,6 +320,7 @@ Today is {datetime.datetime.now().strftime('%A %d %B %Y, %H:%M')}. Their home fo
 
 How to work:
 - Use your tools to actually do things. Never say something was done unless a tool result confirms it.
+- You CAN control this computer and its hardware through your tools: open and run apps, open the webcam and take pictures, scan the PC and network for security, read the screen, cast media, send WhatsApps, and more. When the user asks for something one of your tools does, CALL THAT TOOL. Never reply that you "cannot control hardware", "don't have the capability", or "need permissions" - find the matching tool and call it. If no tool fits, say what you can do instead.
 - To get a go-ahead, call the tool - it creates the approval card by itself. Never ask "ready to proceed?" in words and wait; just call the tool.
 - Deleting files and running commands need approval: the tool will report waiting_for_approval. Then tell the user it is waiting for them on the dashboard, and do not retry it.
 - To reverse-engineer an app on the phone, call rea_phone_app with the app's name - it pulls the APK and hands it to Claude Code. To see what servers an app talks to, call rea_phone_traffic. Do not take screenshots for either, and do not ask the user to approve first; they run on their own.
@@ -1231,8 +1232,9 @@ def run_agent(user, text, files=None, channel="dashboard"):
             if isinstance(res, dict) and res.get("error"):
                 return _chat_reply(uid, tid, res["error"])
             url = res.get("image_url", "") if isinstance(res, dict) else ""
-            return _chat_reply(uid, tid, f"Here's what your webcam sees.\n\n![webcam]({url})" if url
-                               else "I took a webcam picture.")
+            seen = res.get("seen") if isinstance(res, dict) else ""
+            lead = seen or "Here's what your webcam sees."
+            return _chat_reply(uid, tid, f"{lead}\n\n![webcam]({url})" if url else (seen or "I took a webcam picture."))
         # Live view. On the dashboard, open a popup that streams the webcam (and do NOT open the Windows
         # Camera app - it would grab the camera and the stream would go black). On a call, there's no
         # screen to pop up on, so open the Camera app on the PC instead.

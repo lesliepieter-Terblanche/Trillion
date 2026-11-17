@@ -58,7 +58,9 @@ if ($LASTEXITCODE -ne 0) { Write-Host "Skipped OpenCV; the webcam still works th
 if (-not $SkipModels) {
   Step "Downloading the local models (about 15 GB the first time)"
   if (-not (Works "ollama" "list")) { Start-Process "ollama" "serve" -WindowStyle Hidden; Start-Sleep 5 }
-  foreach ($m in @("qwen2.5:3b", "nomic-embed-text", "qwen2.5:14b", "gemma3:4b")) {
+  # qwen3:14b is the main brain - much more reliable at calling Trillion's tools than qwen2.5.
+  # moondream is a tiny vision model so Trillion can actually "see" the webcam ("what do you see").
+  foreach ($m in @("qwen3:4b", "nomic-embed-text", "qwen3:14b", "moondream")) {
     Write-Host "Model: $m"
     ollama pull $m
   }

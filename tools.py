@@ -52,9 +52,10 @@ SPECS = [
        "Only works on cameras that support ONVIF.", {"camera": S, "action": S}, ["camera", "action"]),
     fn("webcam_open", "Turn on the user's webcam and show the LIVE picture on this PC's screen by opening the Windows "
        "Camera app. Use this for 'open my webcam', 'activate my camera', 'show my webcam on screen', 'turn on my camera'.", {}),
-    fn("webcam_snapshot", "Take a single still picture from the user's own webcam on THIS PC (built-in or USB camera) and "
-       "show it on the dashboard. Use for 'take a photo with my camera', 'what do you see'. For a live on-screen view use "
-       "webcam_open instead; this is the local PC camera, not a network/security camera (those use camera_snapshot).", {}),
+    fn("webcam_snapshot", "Take a still picture from the user's own webcam on THIS PC and LOOK at it - returns a 'seen' "
+       "description of what's in view plus shows the photo. Use for 'what do you see', 'is anyone there', 'what am I "
+       "holding', 'take a photo with my camera'. For a live on-screen view use webcam_open; this is the local PC camera, "
+       "not a network/security camera (those use camera_snapshot).", {}),
     fn("seo_rankings", "Google rankings of the user's websites for their tracked search words, from SerpBear.", {"domain": S}, []),
     fn("competitor_watch", "Watch competitor websites for changes (prices, specials, new products and pages) and report "
        "what changed. action: add (url, optional name and hours between checks), list, remove (url or name), "
@@ -965,7 +966,15 @@ def t_webcam_snapshot(user):
     except Exception as e:
         return {"error": f"Could not open the webcam: {type(e).__name__}."}
     url = f"http://{cast.lan_ip()}:{cast.PORT}/cam/snap/{fn}"
-    return {"image_url": url, "show": {"image": url}, "note": "Picture from this PC's webcam."}
+    out = {"image_url": url, "show": {"image": url}, "note": "Picture from this PC's webcam."}
+    # If a local vision model is installed, actually look at the frame and describe it.
+    try:
+        import vision
+        if vision.available(core.settings(user).get("vision_model", "")):
+            out["seen"] = vision.describe(cameras.SNAP_DIR / fn, model=core.settings(user).get("vision_model", ""))
+    except Exception:
+        pass
+    return out
 
 
 def t_camera_move(user, camera, action):
