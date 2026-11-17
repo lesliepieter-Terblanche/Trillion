@@ -936,11 +936,12 @@ def t_camera_snapshot(user, camera, display=""):
         return {"error": str(e)}
     except Exception as e:
         return {"error": f"Could not take the picture: {type(e).__name__}."}
-    url = f"http://{cast.lan_ip()}:{cast.PORT}/cam/snap/{fn}"
-    out = {"camera": cam["name"], "image_url": url, "show": {"image": url}}
+    rel = f"/cam/snap/{fn}"                                   # relative: loads over Tailscale, LAN or localhost alike
+    lan = f"http://{cast.lan_ip()}:{cast.PORT}{rel}"          # absolute LAN URL only a TV/Chromecast can fetch
+    out = {"camera": cam["name"], "image_url": rel, "show": {"image": rel}}
     if display:
         try:
-            out["shown_on"] = cast.cast_url(url, display, "image/jpeg", title=cam["name"])
+            out["shown_on"] = cast.cast_url(lan, display, "image/jpeg", title=cam["name"])
         except Exception as e:
             out["display_error"] = f"Took the picture but could not put it on {display}: {type(e).__name__}."
     return out
@@ -965,7 +966,7 @@ def t_webcam_snapshot(user):
         return {"error": str(e)}
     except Exception as e:
         return {"error": f"Could not open the webcam: {type(e).__name__}."}
-    url = f"http://{cast.lan_ip()}:{cast.PORT}/cam/snap/{fn}"
+    url = f"/cam/snap/{fn}"      # relative so it loads on the phone over Tailscale (an absolute LAN IP is a black box there)
     out = {"image_url": url, "show": {"image": url}, "note": "Picture from this PC's webcam."}
     # If a local vision model is installed, actually look at the frame and describe it.
     try:
