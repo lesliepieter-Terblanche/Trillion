@@ -1026,8 +1026,11 @@ def t_run_command(user, command):
 
 # ---------- self-update ----------
 def _git(*args, timeout=120):
-    env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
-    r = subprocess.run(["git", *args], cwd=str(core.BASE), capture_output=True, text=True, timeout=timeout, env=env)
+    # The repo is public, so pulling needs no login. Bypass Git's credential manager entirely - on some PCs its
+    # store (e.g. Windows "wincredman") breaks and makes git demand a username, which fails the self-update.
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GCM_INTERACTIVE="never", GIT_ASKPASS="echo")
+    pre = ["-c", "credential.helper=", "-c", "credential.interactive=false", "-c", "core.askPass="]
+    r = subprocess.run(["git", *pre, *args], cwd=str(core.BASE), capture_output=True, text=True, timeout=timeout, env=env)
     return r.returncode, (r.stdout + r.stderr).strip()
 
 
