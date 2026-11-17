@@ -122,12 +122,17 @@ def _loads(text):
 def make(user, brief, fmt="vertical", scene_count=4, job_id=None, progress=None):
     """Plan -> one AI clip per scene (saved, resumable) -> one branded video. Returns {saved,...} or {error}."""
     say = progress or (lambda t: None)
-    st = freevideo.status(user)
-    if not st["running"]:
-        return {"error": freevideo.NOT_RUNNING}
-    if not st["ready"]:
-        return {"error": "ComfyUI is running but FreeVideo is not installed in it. Double-click "
-                         "\"6 - Install FreeVideo.bat\" in the Trillion folder and finish its setup, then ask again."}
+    import genvideo
+    if genvideo.engine(user) == "handoff":
+        # Can't auto-assemble on hand-off: plan it and hand back the per-scene prompts to run in the Claude app.
+        p = plan(user, brief, fmt, scene_count)
+        return {"handoff": True, "plan": p,
+                "note": "Video engine is set to Claude hand-off, so I planned the video instead of rendering it. "
+                        "Generate each scene prompt in the Claude app, then switch the engine to Local or Cloud (Settings) "
+                        "and ask again to have me assemble it with voiceover and branding."}
+    ok, why = genvideo.ready(user)
+    if not ok:
+        return {"error": why}
 
     job_id = job_id or (_slug(brief)[:24] + "-" + time.strftime("%Y%m%d-%H%M%S"))
     jdir = JOBS / job_id
@@ -170,10 +175,10 @@ def make(user, brief, fmt="vertical", scene_count=4, job_id=None, progress=None)
             # screenshot failed: fall back to a cinematic AI scene for this feature
             sc.setdefault("prompt", f"A cinematic, photorealistic shot evoking {sc.get('headline') or p['brand']}. "
                                     "Golden-hour light, slow camera move. No on-screen text.")
-        say(f"Scene {i + 1}/{len(scenes)}: generating the clip on the graphics card (about 8 min each)")
-        res = freevideo.create(core.LLM, user, sc.get("prompt") or sc.get("narration") or p["brand"],
-                               seconds=sc["seconds"], fmt=fmt,
-                               progress=lambda t, n=i: say(f"Scene {n + 1}/{len(scenes)}: {t}"))
+        say(f"Scene {i + 1}/{len(scenes)}: generating the clip ({genvideo.engine(user)})")
+        res = genvideo.clip(user, sc.get("prompt") or sc.get("narration") or p["brand"],
+                            seconds=sc["seconds"], fmt=fmt,
+                            progress=lambda t, n=i: say(f"Scene {n + 1}/{len(scenes)}: {t}"))
         if res.get("error"):
             manifest.write_text(json.dumps({str(k): v for k, v in done.items()}))
             return {"error": f"Scene {i + 1} failed: {res['error']}", "job_id": job_id,

@@ -1686,11 +1686,14 @@ def t_marketing_video(user, brief, format="vertical", scene_count=4, _task=None)
 
 
 def t_create_ai_clip(user, prompt, seconds=5, format="vertical", _task=None):
-    import freevideo
+    import genvideo
     fmt = str(format or "vertical").lower()
     fmt = "landscape" if fmt in ("landscape", "horizontal", "wide", "youtube") else ("square" if fmt == "square" else "vertical")
     say = (lambda text: core.set_task(_task, detail=text)) if _task else None
-    return freevideo.create(core.LLM, user, prompt, seconds, fmt, progress=say)
+    res = genvideo.clip(user, prompt, seconds, fmt, progress=say)
+    if res.get("handoff"):                       # engine is Claude hand-off: give the prompt to run in the Claude app
+        return {"note": res["note"], "prompt_to_use": res["prompt"]}
+    return res
 
 
 def t_create_ebook(user, prompt, chapters=5, _task=None, sources=None, images=None, pictures=False):

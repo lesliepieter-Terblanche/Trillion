@@ -1208,6 +1208,12 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
       <label class="field"><span>Kokoro voice</span><select id="s-kokoro_voice"><option value="bf_emma">Emma (British, female)</option><option value="bf_isabella">Isabella (British, female)</option><option value="bf_alice">Alice (British, female)</option><option value="bm_george">George (British, male)</option><option value="bm_fable">Fable (British, male)</option><option value="bm_lewis">Lewis (British, male)</option><option value="af_heart">Heart (American, female)</option><option value="af_bella">Bella (American, female)</option><option value="af_nicole">Nicole (American, female)</option><option value="am_michael">Michael (American, male)</option><option value="am_fenrir">Fenrir (American, male)</option><option value="am_puck">Puck (American, male)</option></select></label>
       <div class="msg muted" id="kokoro-msg" style="font-size:12px"></div>
       <label class="field"><span>ElevenLabs voice ID</span><input id="s-eleven_voice_id"></label>
+      <div class="panel" style="background:var(--well)"><b>AI video engine</b>
+        <div class="muted" style="font-size:13px">Where cinematic clips for marketing videos come from.</div>
+        <label class="field"><span>Make clips with</span><select id="s-video_engine"><option value="local">Local - FreeVideo on this PC (free)</option><option value="cloud">Cloud - top quality via Replicate (paid, needs key)</option><option value="handoff">Claude hand-off - I plan it, you generate in the Claude app</option></select></label>
+        <label class="field"><span>Cloud video model</span><input id="s-cloud_video_model" placeholder="wan-video/wan-2.2-t2v-a14b"></label>
+        <div class="muted" style="font-size:12px">Cloud needs a Replicate API key under the Keys tab (name it <b>replicate</b>). The model is a Replicate slug, e.g. wan-video/wan-2.2-t2v-a14b.</div>
+      </div>
       <div class="panel" style="background:var(--well)"><b>Microphone on this device</b>
         <div class="muted" style="font-size:13px">This choice is kept for this browser on this device only. A webcam's microphone is usually not the one Windows picks by itself, so choose it here.</div>
         <div class="grid2">
@@ -2195,7 +2201,7 @@ $('skform').onsubmit=async e=>{e.preventDefault();const url=$('skurl').value.tri
   }catch(e){$('skmsg').className='msg bad';$('skmsg').textContent=e.message;}};
 $('cnsave').onclick=async()=>{try{await api('/api/connectors',{json:{name:$('cnname').value,description:$('cndesc').value,command:$('cncmd').value}});$('cnname').value=$('cndesc').value=$('cncmd').value='';$('cnmsg').textContent='';loadSkills();}catch(e){$('cnmsg').className='msg bad';$('cnmsg').textContent=e.message;}};
 // settings
-const SK=['personality','assistant_name','brand','site','accent','brain','local_model','cloud_model','voice','eleven_voice_id','kokoro_voice'];
+const SK=['personality','assistant_name','brand','site','accent','brain','local_model','cloud_model','voice','eleven_voice_id','kokoro_voice','video_engine','cloud_video_model'];
 const LABEL={gemini:'Google Gemini',anthropic:'Claude (API key)',elevenlabs:'ElevenLabs voice',pixabay:'Pixabay stock footage (free key from pixabay.com/api/docs)'};
 async function loadPhone(){
   let p;try{p=await (await api('/api/phone')).json();}catch(e){p={adb:false,error:'Could not check the phone just now: '+e.message};}let h='';
@@ -2235,7 +2241,7 @@ function drawThemes(){const cur=(S.user.settings.theme||'night');
   $('themes').innerHTML=THEMES.map(t=>`<button type="button" class="sw ${t[0]===cur?'on':''}" data-th="${t[0]}" aria-pressed="${t[0]===cur}"><i>${t[4].map(c=>`<span style="background:${c}"></span>`).join('')}</i><b>${t[1]}</b><small>${t[2]}</small></button>`).join('');
   $('themes').querySelectorAll('[data-th]').forEach(b=>b.onclick=async()=>{const t=THEMES.find(x=>x[0]===b.dataset.th);
     try{await api('/api/settings',{method:'PUT',json:{theme:t[0],accent:t[3]}});await tick();$('s-accent').value=t[3];drawThemes();$('thmsg').className='msg ok';$('thmsg').textContent=t[1]+' mode is on.';}catch(e){$('thmsg').className='msg bad';$('thmsg').textContent=e.message;}});}
-const SECF={look:['assistant_name','personality','brand','site','accent'],brain:['brain','local_model','cloud_model','voice','eleven_voice_id','kokoro_voice']};
+const SECF={look:['assistant_name','personality','brand','site','accent'],brain:['brain','local_model','cloud_model','voice','eleven_voice_id','kokoro_voice','video_engine','cloud_video_model']};
 const SC_MARK={ok:'●',warn:'▲',fail:'✕'},SC_CLS={ok:'ok',warn:'muted',fail:'bad'};
 async function runSelfCheck(){const L=$('sc-list'),P=$('sc-pill');P.textContent='checking...';P.className='pill';L.innerHTML='';
   try{const r=await (await api('/api/selfcheck')).json();
