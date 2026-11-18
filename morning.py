@@ -90,6 +90,17 @@ def build(user, sites=None, now=None):
         except Exception:
             pass
 
+    # TrueHome business (only if its stats endpoint is set up for this login).
+    try:
+        import sitestats
+        if sitestats.configured(user):
+            s = sitestats.spoken(user)
+            if s:
+                lines.append(s)
+                spoken.append(s)
+    except Exception:
+        pass
+
     # Competitor sites that changed since yesterday (only once Competitor watch is installed and has sites).
     try:
         import apps
