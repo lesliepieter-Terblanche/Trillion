@@ -25,7 +25,7 @@ def ready(user):
 
 
 def _token(user):
-    return core.get_secret(user["id"], "replicate")
+    return (core.get_secret(user["id"], "replicate") or "").strip()
 
 
 def create(llm, user, prompt, seconds=5, fmt="vertical", progress=None):
@@ -64,8 +64,11 @@ def create(llm, user, prompt, seconds=5, fmt="vertical", progress=None):
     if r.status_code == 404:
         return {"error": f"The cloud video model '{model}' was not found on Replicate. Set a valid model in Settings "
                          "(for example wan-video/wan-2.2-t2v-a14b)."}
-    if r.status_code == 401:
-        return {"error": "Replicate refused the API key. Check the key in Settings."}
+    if r.status_code in (401, 403):
+        return {"error": "Replicate refused your API key (401). Get a fresh token at replicate.com/account/api-tokens "
+                         "- it starts with 'r8_'. Copy the whole token with no spaces, paste it under Settings, Keys, "
+                         "Replicate, and make sure billing is set up on your Replicate account (it needs a card even for "
+                         "pay-as-you-go). Then try again."}
     if r.status_code >= 300:
         return {"error": f"The cloud video service refused the job ({r.status_code}): {r.text[:200]}"}
     pred = r.json()

@@ -26,6 +26,28 @@ def _slug(text, fallback="marketing"):
     return s[:50] or fallback
 
 
+# Words that mean the model just echoed the request instead of writing a real on-screen line. A headline
+# or title containing any of these (or a URL) is command text, not ad copy, and must never be shown.
+_BANNED = re.compile(r"\b(marketing|promo\w*|advert\w*|commercial|video|clip|showcas\w*|showing|feature[sd]?|"
+                     r"cinematic|voice ?over|voiceover|narrat\w*|generate|premium|scene|footage)\b|https?://|www\.", re.I)
+
+
+def _clean_head(text, fallback=""):
+    """A short on-screen headline, or the fallback if the model echoed the brief/command instead of ad copy."""
+    t = re.sub(r"[\"“”'’`]", "", str(text or "")).strip(" .,:;-–—")
+    t = re.sub(r"\s+", " ", t)
+    if not t or _BANNED.search(t) or len(t) > 32 or len(t.split()) > 6:
+        return fallback
+    return t[:40]
+
+
+def _clean_caption(text):
+    """A supporting on-screen line. Dropped if it is command text rather than real copy."""
+    t = re.sub(r"[\"“”'’`]", "", str(text or "")).strip()
+    t = re.sub(r"\s+", " ", t)
+    return "" if (not t or _BANNED.search(t) or len(t) > 90) else t[:80]
+
+
 def _brand_bits(user, brief):
     """Business name, website and accent colour to brand the video with."""
     s = core.settings(user)
@@ -74,8 +96,9 @@ def plan(user, brief, fmt="vertical", scene_count=4):
     data = _loads(text)
     scenes = data.get("scenes") if isinstance(data, dict) else None
     if isinstance(scenes, list) and scenes:
-        out["title"] = str(data.get("title") or out["title"])[:80]
-        out["cta"] = str(data.get("cta") or out["cta"])[:60]
+        # The title brands the file and the video; never let the raw brief/command become it.
+        out["title"] = _clean_head(data.get("title"), brand) or brand
+        out["cta"] = _clean_caption(data.get("cta")) or out["cta"]
         out["music_mood"] = str(data.get("music_mood") or out["music_mood"])[:40]
         clean = []
         for sc in scenes[:6]:
@@ -89,16 +112,43 @@ def plan(user, brief, fmt="vertical", scene_count=4):
                 secs = max(4.0, min(8.0, float(sc.get("seconds") or 5)))
             except (TypeError, ValueError):
                 secs = 5.0
-            clean.append({"kind": kind, "headline": str(sc.get("headline") or "")[:40],
-                          "caption": str(sc.get("caption") or "")[:80], "narration": str(sc.get("narration") or "")[:200],
+            clean.append({"kind": kind, "headline": _clean_head(sc.get("headline")),
+                          "caption": _clean_caption(sc.get("caption")), "narration": str(sc.get("narration") or "")[:200],
                           "prompt": prompt[:1200], "page": str(sc.get("page") or "").strip()[:40], "seconds": secs})
         out["scenes"] = clean
-    if not out["scenes"]:                                   # brain gave nothing usable: one safe scene from the brief
-        out["scenes"] = [{"kind": "scene", "headline": brand[:40], "caption": "", "narration": f"{brand}. {brief}"[:200],
-                          "prompt": f"A cinematic, photorealistic establishing shot for {brand}: {brief}. Golden-hour light, "
-                                    "slow confident camera move, rich detail, matching ambient sound. No on-screen text.",
-                          "page": "", "seconds": 5.0}]
+    # Guarantee the video is actually cinematic: at least two moving AI scenes, at most two website
+    # screenshots, and it never opens or closes on a flat screenshot. A weak brain often returns all
+    # "feature" scenes (just the site) or scenes with no prompt - that produced flat, footage-less videos.
+    cine = [s for s in out["scenes"] if s["kind"] == "scene" and len(s.get("prompt", "")) >= 20]
+    feat = [s for s in out["scenes"] if s["kind"] == "feature"][:2]
+    while len(cine) < 2:
+        cine.append(_default_scene(brand, brief, len(cine)))
+    ordered = [cine[0]]                                     # open on a cinematic shot
+    rest = cine[1:]
+    for k, fsc in enumerate(feat):                          # weave the site screenshots between the moving shots
+        ordered.append(fsc)
+        if rest:
+            ordered.append(rest.pop(0))
+    ordered += rest
+    if ordered and ordered[-1]["kind"] == "feature" and cine:   # never end on a flat screenshot
+        ordered.append(_default_scene(brand, brief, len(cine)))
+    out["scenes"] = ordered[:6]
     return out
+
+
+# A few varied cinematic shots to fall back on when the brain can't plan real moving scenes, so the video
+# always has flowing footage rather than flat slides. Each is a complete text-to-video prompt.
+_CINE_MOVES = ("a slow confident push-in", "a gentle aerial drift", "a smooth dolly gliding past",
+               "a rising crane reveal", "a slow orbit")
+
+
+def _default_scene(brand, brief, i):
+    move = _CINE_MOVES[i % len(_CINE_MOVES)]
+    return {"kind": "scene", "headline": "", "caption": "", "narration": "",
+            "prompt": (f"A cinematic, photorealistic shot that captures the feeling of {brand}. {brief}. "
+                       f"Golden-hour light, {move}, shallow depth of field, rich natural detail, soft ambient "
+                       "sound. Photoreal, filmic colour. No on-screen text, no words, no signage, no logos.")[:1200],
+            "page": "", "seconds": 5.0}
 
 
 def _loads(text):

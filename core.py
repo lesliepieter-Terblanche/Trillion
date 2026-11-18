@@ -248,6 +248,7 @@ def _fernet():
 
 
 def set_secret(uid, name, value, enabled=True):
+    value = (value or "").strip()   # pasted keys often carry a trailing space or newline, which breaks auth
     x("INSERT INTO secrets(user_id,name,value,enabled) VALUES(?,?,?,?) "
       "ON CONFLICT(user_id,name) DO UPDATE SET value=excluded.value, enabled=excluded.enabled",
       (uid, name, _fernet().encrypt(value.encode()), 1 if enabled else 0))
