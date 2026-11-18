@@ -2202,7 +2202,7 @@ $('skform').onsubmit=async e=>{e.preventDefault();const url=$('skurl').value.tri
 $('cnsave').onclick=async()=>{try{await api('/api/connectors',{json:{name:$('cnname').value,description:$('cndesc').value,command:$('cncmd').value}});$('cnname').value=$('cndesc').value=$('cncmd').value='';$('cnmsg').textContent='';loadSkills();}catch(e){$('cnmsg').className='msg bad';$('cnmsg').textContent=e.message;}};
 // settings
 const SK=['personality','assistant_name','brand','site','accent','brain','local_model','cloud_model','voice','eleven_voice_id','kokoro_voice','video_engine','cloud_video_model'];
-const LABEL={gemini:'Google Gemini',anthropic:'Claude (API key)',elevenlabs:'ElevenLabs voice',pixabay:'Pixabay stock footage (free key from pixabay.com/api/docs)'};
+const LABEL={gemini:'Google Gemini',anthropic:'Claude (API key)',elevenlabs:'ElevenLabs voice',pixabay:'Pixabay stock footage (free key from pixabay.com/api/docs)',google_places:'Google Places',replicate:'Replicate (AI video — token from replicate.com/account/api-tokens)'};
 async function loadPhone(){
   let p;try{p=await (await api('/api/phone')).json();}catch(e){p={adb:false,error:'Could not check the phone just now: '+e.message};}let h='';
   if(!p.adb){h=`<div class="bad">${esc(p.error)}</div>`;}
