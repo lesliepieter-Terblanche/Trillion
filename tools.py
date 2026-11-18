@@ -158,6 +158,13 @@ SPECS = [
        "FreeVideo. Use only when the user asks for an AI video, AI clip or generated clip. Takes several minutes. "
        "format is vertical, square or landscape.",
        {"prompt": S, "seconds": {"type": "integer"}, "format": S}, ["prompt"]),
+    fn("stickman_video", "Direct an animated STICKMAN video from a script or topic for a faceless YouTube channel: the "
+       "brain breaks the story into scenes with a voiceover, keeps the same stick-figure character across every shot, "
+       "renders each scene and stitches them with narration and captions. Use for 'make a stickman video from this "
+       "script', 'turn this into a stickman video for YoreTales', 'animate my script'. brief = the script or topic; "
+       "look is classic, noir, paper, neon or storybook; format is vertical, square or landscape. Saves each scene so "
+       "it resumes rather than restarting.",
+       {"brief": S, "look": S, "format": S, "scene_count": {"type": "integer"}}, ["brief"]),
     fn("marketing_video", "Make a cinematic MARKETING video for one of the user's businesses: the brain plans scenes, "
        "FreeVideo generates a moving AI clip for each, then they're assembled into a branded 1080p video with headlines, "
        "captions, the brand accent, music and a call-to-action. Use for 'make a marketing video for TackleTrail', 'promo "
@@ -401,6 +408,7 @@ def describe(name, a):
         "create_video": "Creating a video",
         "revise_video": "Changing the video",
         "create_ai_clip": "Generating an AI clip", "marketing_video": "Making a marketing video",
+        "stickman_video": "Directing a stickman video",
         "montage_video": "Completing your scenes into a video",
         "create_ebook": "Writing an ebook",
         "search_manual": f"Searching the manual for {g('query')}", "read_manual_page": f"Reading manual page {g('page')}",
@@ -497,8 +505,8 @@ def execute(user, name, args, task_id=None, approved=False, direct=False):
             watch.alert(user, "approval", "Trillion needs your OK", summary)
             return {"status": "waiting_for_approval",
                     "note": "Not done yet. The user must approve this on the dashboard."}
-        if name in ("create_video", "revise_video", "create_ai_clip", "marketing_video", "montage_video", "create_ebook",
-                    "boardroom", "boardroom_ask", "before_after_card", "get_transcript"):
+        if name in ("create_video", "revise_video", "create_ai_clip", "marketing_video", "stickman_video", "montage_video",
+                    "create_ebook", "boardroom", "boardroom_ask", "before_after_card", "get_transcript"):
             args = dict(args, _task=task_id)
         out = globals()["t_" + name](user, **args)
         core.log(uid, describe(name, args), "done")
@@ -1678,6 +1686,14 @@ def t_revise_video(user, video_id, change, _task=None):
     if words:                               # a real wording/subject change -> steer the script for this new version
         prompt = f"{base}\n\nChange for this new version: {c}"
     return t_create_video(user, prompt, seconds, fmt, bool(voiceover), _task=_task, media=media)
+
+
+def t_stickman_video(user, brief, look="classic", format="vertical", scene_count=6, _task=None):
+    import stickman
+    fmt = str(format or "vertical").lower()
+    fmt = "landscape" if fmt in ("landscape", "horizontal", "wide", "youtube") else ("square" if fmt == "square" else "vertical")
+    say = (lambda text: core.set_task(_task, detail=text)) if _task else None
+    return stickman.make(user, brief, look=str(look or "classic").lower(), fmt=fmt, scene_count=scene_count, progress=say)
 
 
 def t_marketing_video(user, brief, format="vertical", scene_count=4, _task=None):
