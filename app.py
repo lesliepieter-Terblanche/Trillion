@@ -3766,6 +3766,15 @@ def secret_test(name: str, user=Depends(auth)):
         elif name == "pexels":
             r = httpx.get("https://api.pexels.com/v1/search", headers={"Authorization": key},
                           params={"query": "office", "per_page": 1}, timeout=15)
+        elif name == "replicate":
+            r = httpx.get("https://api.replicate.com/v1/account", timeout=15,
+                          headers={"Authorization": f"Token {key.strip()}"})
+            note = ""
+            if r.status_code != 200:
+                note = ("The token was rejected. Copy the whole token (starts r8_) with no spaces, and set up billing on "
+                        "your Replicate account - it needs a card even for pay-as-you-go." if r.status_code in (401, 403)
+                        else (r.text[:200]))
+            return {"ok": r.status_code == 200, "status": r.status_code, "note": note}
         elif name == "google_places":
             r = httpx.post("https://places.googleapis.com/v1/places:searchText", timeout=15,
                            headers={"X-Goog-Api-Key": key, "X-Goog-FieldMask": "places.id",
