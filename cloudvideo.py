@@ -17,7 +17,7 @@ import core
 API = "https://api.replicate.com/v1"
 MAX_WAIT = int(os.environ.get("TRILLION_CLOUDVIDEO_WAIT", 20 * 60))
 POLL = 4
-RATIO = {"vertical": "9:16", "square": "1:1", "landscape": "16:9"}
+RATIO = {"vertical": "9:16", "square": "9:16", "landscape": "16:9"}   # the default model has no square; use portrait
 
 
 def ready(user):
@@ -35,7 +35,7 @@ def create(llm, user, prompt, seconds=5, fmt="vertical", progress=None):
     if not token:
         return {"error": "No Replicate API key is set. Add it in Settings (video) to use the cloud video engine, "
                          "or switch the engine to Local to use your own graphics card for free."}
-    model = (core.settings(user).get("cloud_video_model") or "wan-video/wan-2.2-t2v-a14b").strip().strip("/")
+    model = (core.settings(user).get("cloud_video_model") or "zsxkib/wan-2.2-unified").strip().strip("/")
     # Keep the prompt clean (no on-screen text/logos - those are added later by the reel).
     shot = re.sub(r"\s+", " ", str(prompt or "")).strip()[:1500]
     if llm:
@@ -51,9 +51,11 @@ def create(llm, user, prompt, seconds=5, fmt="vertical", progress=None):
             pass
 
     headers = {"Authorization": f"Token {token}", "Content-Type": "application/json", "Prefer": "wait=1"}
-    # Common inputs across video models; models ignore keys they don't take.
+    # Inputs for the default model (zsxkib/wan-2.2-unified). It takes num_frames (81-100), not a duration, and has
+    # no square ratio. A different model in Settings may want different fields - then tune this.
+    frames = max(81, min(100, int(round(seconds * 16))))
     body = {"input": {"prompt": shot, "aspect_ratio": RATIO.get(fmt, "9:16"),
-                      "duration": int(round(seconds)), "num_frames": int(round(seconds * 16))}}
+                      "resolution": "720p", "num_frames": frames, "frames_per_second": 16}}
     say("Sending the shot to the cloud video model")
     try:
         r = httpx.post(f"{API}/models/{model}/predictions", headers=headers, json=body, timeout=60)
