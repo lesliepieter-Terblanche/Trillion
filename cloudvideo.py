@@ -35,7 +35,7 @@ def create(llm, user, prompt, seconds=5, fmt="vertical", progress=None):
     if not token:
         return {"error": "No Replicate API key is set. Add it in Settings (video) to use the cloud video engine, "
                          "or switch the engine to Local to use your own graphics card for free."}
-    model = (core.settings(user).get("cloud_video_model") or "zsxkib/wan-2.2-unified").strip().strip("/")
+    model = (core.settings(user).get("cloud_video_model") or "wan-video/wan-2.2-t2v-fast").strip().strip("/")
     # Keep the prompt clean (no on-screen text/logos - those are added later by the reel).
     shot = re.sub(r"\s+", " ", str(prompt or "")).strip()[:1500]
     if llm:
@@ -51,7 +51,7 @@ def create(llm, user, prompt, seconds=5, fmt="vertical", progress=None):
             pass
 
     headers = {"Authorization": f"Token {token}", "Content-Type": "application/json", "Prefer": "wait=1"}
-    # Inputs for the default model (zsxkib/wan-2.2-unified). It takes num_frames (81-100), not a duration, and has
+    # Inputs for the default model (wan-video/wan-2.2-t2v-fast). It takes num_frames (81-100), not a duration, and has
     # no square ratio. A different model in Settings may want different fields - then tune this.
     frames = max(81, min(100, int(round(seconds * 16))))
     body = {"input": {"prompt": shot, "aspect_ratio": RATIO.get(fmt, "9:16"),
@@ -63,7 +63,7 @@ def create(llm, user, prompt, seconds=5, fmt="vertical", progress=None):
         return {"error": f"Could not reach the cloud video service ({type(e).__name__})."}
     if r.status_code == 404:
         return {"error": f"The cloud video model '{model}' was not found on Replicate. Set a valid model in Settings "
-                         "(for example wan-video/wan-2.2-t2v-a14b)."}
+                         "(for example wan-video/wan-2.2-t2v-fast)."}
     if r.status_code in (401, 403):
         return {"error": "Replicate refused your API key (401). Get a fresh token at replicate.com/account/api-tokens "
                          "- it starts with 'r8_'. Copy the whole token with no spaces, paste it under Settings, Keys, "

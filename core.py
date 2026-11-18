@@ -25,7 +25,7 @@ DEFAULT_SETTINGS = {
     "vision_model": "",                    # local model used to SEE images (webcam) - blank = auto-pick what's installed
     "freevideo_hq": False,                 # two-pass AI video (higher quality, needs more VRAM) - off keeps 16 GB cards happy
     "video_engine": "local",               # where AI clips come from: local (free, FreeVideo) | cloud (paid API) | handoff (Claude app)
-    "cloud_video_model": "zsxkib/wan-2.2-unified",  # the Replicate model used when video_engine is "cloud"
+    "cloud_video_model": "wan-video/wan-2.2-t2v-fast",  # the Replicate model used when video_engine is "cloud"
     "heavy_answers": True,                 # route hard jobs (code, deep reasoning) to the heavy model when it is installed
     "cloud_model": "gemini-2.5-flash",
     "voice": "browser",            # browser | kokoro (free, on this PC) | elevenlabs
