@@ -114,7 +114,21 @@ def _why(entry):
     return ""
 
 
+import threading
+_RENDER_LOCK = threading.Lock()   # only one clip may render at a time - two at once run the 16 GB card out of memory
+
+
 def create(llm, user, prompt, seconds=5, fmt="vertical", progress=None):
+    if not _RENDER_LOCK.acquire(blocking=False):
+        return {"error": "A video clip is already being generated on the graphics card. Wait for it to finish or "
+                         "cancel it, then try again - two at once run out of memory."}
+    try:
+        return _create(llm, user, prompt, seconds, fmt, progress)
+    finally:
+        _RENDER_LOCK.release()
+
+
+def _create(llm, user, prompt, seconds=5, fmt="vertical", progress=None):
     import video                                             # her own video maker: only for ffmpeg and the videos folder
     say = progress or (lambda text: None)
     uid = user["id"]
