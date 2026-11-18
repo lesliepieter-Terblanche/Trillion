@@ -1006,7 +1006,7 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
   <div class="panel"><b>Make a video</b>
     <label class="field"><span>What is it about?</span><textarea id="vprompt" rows="2" placeholder="A premium cinematic video about our newest listings in Johannesburg"></textarea></label>
     <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end">
-      <label class="field"><span>Kind</span><select id="vkind"><option value="edit">Edited video (footage, voice, titles)</option><option value="ai">AI-generated clip (FreeVideo, on this PC)</option></select></label>
+      <label class="field"><span>Kind</span><select id="vkind"><option value="marketing">Marketing video — AI scenes + voiceover + your site</option><option value="stickman">Stickman video — animated story</option><option value="edit">Edited video — stock footage, voice, titles</option><option value="ai">Single AI clip</option></select></label>
       <label class="field"><span>Length</span><select id="vsec"><option value="15">15 seconds</option><option value="20" selected>20 seconds</option><option value="30">30 seconds</option><option value="45">45 seconds</option></select></label>
       <label class="field"><span>Shape</span><select id="vfmt"><option value="vertical">Vertical (TikTok, Reels, Shorts)</option><option value="square">Square</option><option value="landscape">Landscape (YouTube)</option></select></label>
       <label style="display:flex;gap:10px;align-items:center;min-height:44px"><input type="checkbox" id="vvo" checked style="width:22px;height:22px"> Voice-over</label>
@@ -1824,23 +1824,36 @@ async function loadVideos(){
     if(sending){$('vmsg').textContent='She is busy with another job.';return;}
     $('vmsg').textContent='Changing the video. This takes a few minutes; watch progress in the Control Room.';
     await send(`Change video #${b.dataset.vch}: ${what.trim()}`,false);$('vmsg').textContent='';loadVideos();});
+  fvCheck();
 }
-async function fvCheck(){const ai=$('vkind').value==='ai';$('vfv').style.display=ai?'':'none';$('vvo').parentElement.style.display=ai?'none':'';$('vai').parentElement.style.display=ai?'none':'';
-  $('vgo').textContent=ai?'GENERATE AI CLIP':'CREATE VIDEO';$('vtip').style.display=ai?'none':'';
-  $('vsec').innerHTML=(ai?[[5,1],[8,0],[10,0],[15,0]]:[[15,0],[20,1],[30,0],[45,0]]).map(o=>`<option value="${o[0]}"${o[1]?' selected':''}>${o[0]} seconds</option>`).join('');
-  if(!ai)return;
-  $('vfv').textContent='Checking FreeVideo...';
-  try{const s=await (await api('/api/freevideo')).json();
-    $('vfv').innerHTML=s.ready?'<span class="ok">FreeVideo is running and ready.</span> A clip is one continuous shot with sound, 2 to 15 seconds. A 10-second clip takes about 8 minutes on this graphics card; I clear my own brain from the card while it works.'
-      :(s.running?'<span class="bad">ComfyUI is running but FreeVideo is not installed in it.</span> Double-click "6 - Install FreeVideo.bat" in the Trillion folder.'
-      :'<span class="bad">FreeVideo is not running.</span> Open FreeVideo on the PC first. If it is not installed yet, double-click "6 - Install FreeVideo.bat" in the Trillion folder.');
-  }catch(e){$('vfv').textContent='Could not check FreeVideo.';}}
+async function fvCheck(){const k=$('vkind').value, ai=k==='ai', edit=k==='edit', aiengine=(k==='ai'||k==='marketing'||k==='stickman');
+  // Length only matters for a single clip; the other kinds decide their own scene lengths. Voice-over toggle is for the edited video only.
+  $('vsec').parentElement.style.display=ai?'':'none';
+  $('vvo').parentElement.style.display=edit?'':'none';
+  $('vai').parentElement.style.display=edit?'':'none';
+  $('vgo').textContent={marketing:'MAKE MARKETING VIDEO',stickman:'MAKE STICKMAN VIDEO',edit:'CREATE VIDEO',ai:'GENERATE AI CLIP'}[k];
+  if(ai)$('vsec').innerHTML=[[5,1],[8,0],[10,0]].map(o=>`<option value="${o[0]}"${o[1]?' selected':''}>${o[0]} seconds</option>`).join('');
+  else if(edit)$('vsec').innerHTML=[[15,0],[20,1],[30,0],[45,0]].map(o=>`<option value="${o[0]}"${o[1]?' selected':''}>${o[0]} seconds</option>`).join('');
+  $('vtip').style.display=aiengine?'none':'';
+  if(!aiengine){$('vfv').style.display='none';return;}
+  // These kinds use the chosen AI video engine (Settings -> AI video engine): Local (FreeVideo) or Cloud (Replicate).
+  $('vfv').style.display='';$('vfv').textContent='Checking the video engine...';
+  try{const eng=(S&&S.user&&S.user.settings&&S.user.settings.video_engine)||'local';
+    if(eng==='cloud'){$('vfv').innerHTML='<span class="ok">Cloud engine (Replicate).</span> Scenes render in the cloud in a minute or two each - needs your Replicate key under Settings, Keys.';return;}
+    if(eng==='handoff'){$('vfv').innerHTML='Engine is set to Claude hand-off: it will plan the video and give you the prompts to generate in the Claude app.';return;}
+    const s=await (await api('/api/freevideo')).json();
+    $('vfv').innerHTML=(s.ready?'<span class="ok">Local engine (FreeVideo) is ready.</span>':(s.running?'<span class="bad">ComfyUI is running but FreeVideo is not installed.</span> Double-click "6 - Install FreeVideo.bat".':'<span class="bad">FreeVideo is not running.</span> Open it on the PC, or switch to the Cloud engine under Settings.'))
+      +' Each scene is ~8 min on this card. Switch to Cloud (Settings) for a fast render.';
+  }catch(e){$('vfv').textContent='Could not check the video engine.';}}
 $('vkind').onchange=fvCheck;
 $('vgo').onclick=async()=>{const about=$('vprompt').value.trim();if(!about){$('vmsg').textContent='Say what the video is about first.';return;}
   if(sending){$('vmsg').textContent='She is busy with another job.';return;}
+  const k=$('vkind').value, fmt=$('vfmt').value;
   $('vmsg').textContent='Working on it. This takes a few minutes; you can watch progress in the Control Room.';
-  if($('vkind').value==='ai')await send(`Generate an AI clip, ${Math.min(15,+$('vsec').value)} seconds, ${$('vfmt').value}: ${about}`,false);
-  else await send(`Create a ${$('vsec').value} second ${$('vfmt').value} video${$('vvo').checked?'':' with no voice-over'}: ${about}`,false);
+  if(k==='marketing')await send(`make a marketing video (${fmt}) showing the features: ${about}`,false);
+  else if(k==='stickman')await send(`make a stickman video (${fmt}): ${about}`,false);
+  else if(k==='ai')await send(`Generate an AI clip, ${Math.min(10,+$('vsec').value)} seconds, ${fmt}: ${about}`,false);
+  else await send(`Create a ${$('vsec').value} second ${fmt} video${$('vvo').checked?'':' with no voice-over'}: ${about}`,false);
   $('vmsg').textContent='';$('vprompt').value='';loadVideos();};
 // ---------- Complete my own scenes ----------
 let monScenes=[];

@@ -1025,6 +1025,25 @@ MONTAGE_RE = re.compile(r"\b(stick\s?m(?:a|e)n|stick figures?|storyboard|these s
                         r"scene by scene|complete (?:these|my|the) (?:scenes?|pictures?|drawings?|images?)|"
                         r"(?:turn|make) (?:these|my) (?:scenes?|pictures?|drawings?|sketches?|images?) into)\b", re.I)
 REVISE_RE = re.compile(r"\b(change|fix|revise|redo|remake|update|edit)\b[^.?!]{0,30}\bvideo\b\s*#?\s*(\d+)\s*[:,\-]?\s*(.*)", re.I | re.S)
+# a cinematic marketing video for a business, or an animated stickman story - each has its own pipeline,
+# so route them before the generic stock-footage video maker (they all contain the word "video").
+MARKETING_VID_RE = re.compile(r"\b(?:marketing|promo(?:tional)?|advert(?:ising)?|commercial|brand) video\b", re.I)
+STICKMAN_VID_RE = re.compile(r"\bstick\s?m(?:a|e)n video\b", re.I)
+STICKMAN_LOOKS = (("black and white", "noir"), ("black & white", "noir"), ("noir", "noir"),
+                  ("hand-drawn", "paper"), ("hand drawn", "paper"), ("paper", "paper"),
+                  ("neon", "neon"), ("storybook", "storybook"), ("story book", "storybook"), ("classic", "classic"))
+
+
+def _vid_brief(text):
+    """The subject of a marketing/stickman request, with the 'make a ... video (fmt):' command words stripped."""
+    if ":" in text:
+        after = text.split(":", 1)[1].strip()
+        if after:
+            return after
+    b = re.sub(r"^\s*(?:please\s+)?(?:make|create|generate|produce|build|do|render)\b.*?\bvideo\b\s*(?:\([^)]*\))?\s*",
+               "", text, count=1, flags=re.I)
+    b = re.sub(r"^(?:showing (?:the )?features?|about|of|for)\b\s*", "", b.strip(), flags=re.I)
+    return b.strip() or text
 
 
 SITE_RE = re.compile(r"\b(?:check|is|how is|how's)\b.{0,12}\b(?:my|the|our)\s+(?:web ?site|site)\b", re.I)
@@ -1125,6 +1144,17 @@ def video_reply(res):
             f"{'with' if res.get('voice_over') else 'without'} voice-over, {clips} stock clip{'s' if clips != 1 else ''}"
             f"{' and ' + str(res['ai_pictures']) + ' AI-made picture' + ('s' if res['ai_pictures'] != 1 else '') if res.get('ai_pictures') else ''}. "
             f"It is on the Videos page and saved at {res['saved']}. {extra}").strip()
+
+
+def reel_reply(res, kind):
+    """Marketing / stickman videos: scene-based, voiced, assembled by Trillion's own reel."""
+    if "error" in res:
+        return f"I could not make the {kind} video: " + res["error"]
+    n = res.get("scenes", 0)
+    extra = " ".join(res.get("notes", []))
+    return (f"Your {kind} video is ready: {res['title']}, {round(res.get('seconds', 0))} seconds, "
+            f"{n} scene{'s' if n != 1 else ''} with a voiceover. It is on the Videos page and saved at "
+            f"{res['saved']}. {extra}").strip()
 
 
 def update_reply(res):
@@ -1589,6 +1619,30 @@ def run_agent(user, text, files=None, channel="dashboard"):
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="failed" if "error" in res else "completed", detail=reply[:200])
         return {"reply": reply, "task_id": tid, "provider": LAST_PROVIDER.get(uid, "local")}
+    if MARKETING_VID_RE.search(text) and not asking:  # cinematic business marketing video (its own pipeline)
+        try:
+            vr = video_request(text)
+            res = tools.execute(user, "marketing_video",
+                                {"brief": _vid_brief(text), "format": vr.get("format", "vertical")}, task_id=tid)
+        finally:
+            BUSY[uid] = False
+        reply = reel_reply(res, "marketing")
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="failed" if "error" in res else "completed", detail=reply[:200])
+        return {"reply": reply, "task_id": tid, "provider": LAST_PROVIDER.get(uid, "local"), "show": "" if "error" in res else "videos"}
+    if STICKMAN_VID_RE.search(text) and not asking:  # animated stickman story (its own pipeline)
+        low = text.lower()
+        look = next((v for kw, v in STICKMAN_LOOKS if kw in low), "classic")
+        try:
+            vr = video_request(text)
+            res = tools.execute(user, "stickman_video",
+                                {"brief": _vid_brief(text), "look": look, "format": vr.get("format", "vertical")}, task_id=tid)
+        finally:
+            BUSY[uid] = False
+        reply = reel_reply(res, "stickman")
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="failed" if "error" in res else "completed", detail=reply[:200])
+        return {"reply": reply, "task_id": tid, "provider": LAST_PROVIDER.get(uid, "local"), "show": "" if "error" in res else "videos"}
     if VIDEO_RE.search(text) and not asking:  # a long job with fixed steps: run it directly
         try:
             media = [f["path"] for f in files if f["kind"] in ("image", "video")]
