@@ -1157,6 +1157,47 @@ def reel_reply(res, kind):
             f"{res['saved']}. {extra}").strip()
 
 
+TRUEHOME_RE = re.compile(
+    r"\btrue ?home\b.{0,45}\b(stat|doing|going|numbers?|figures?|dashboard|registrations?|sign ?ups?|members?|users?|"
+    r"listings?|properties|sales?|revenue|payments?|earn|income|money|visits?|traffic|today|this week|this month|report|update|how)\b|"
+    r"\b(how(?:'?s| is| are)|hows)\b.{0,15}\btrue ?home\b", re.I)
+
+
+def truehome_reply(user, text):
+    """Answer a 'how's TrueHome doing' style question from the live stats endpoint."""
+    import sitestats
+    res = sitestats.fetch(user)
+    if not res.get("ok"):
+        return res.get("error", "I couldn't reach TrueHome's stats right now.")
+    s = res["stats"]
+    reg, lst, pay, vis = s["registrations"], s["listings"], s["payments"], s["visits"]
+    cur = pay.get("currency", "ZAR")
+    low = text.lower()
+    # A pointed question gets just that metric; otherwise the whole picture.
+    if re.search(r"\b(registrations?|sign ?ups?|members?|users?)\b", low):
+        return (f"TrueHome has {reg['total']} members - {reg['today']} today, {reg['week']} this week, "
+                f"{reg['month']} this month.")
+    if re.search(r"\b(listings?|properties)\b", low):
+        return f"TrueHome has {lst['active']} active listings ({lst['total']} total), {lst['week']} added this week."
+    if re.search(r"\b(sales?|revenue|payments?|earn|income|money)\b", low):
+        rev = pay.get("revenue_month", 0)
+        return (f"TrueHome took {pay['count_month']} payments this month"
+                + (f", worth {cur} {rev:,.0f}" if rev else f" (still pending, so {cur} 0 cleared yet)")
+                + f". Total cleared to date: {cur} {pay.get('revenue_total', 0):,.0f}.")
+    if re.search(r"\b(visits?|traffic)\b", low):
+        tops = ", ".join(f"{p.get('path')} ({p.get('views')})" for p in vis.get("top_pages", [])[:3])
+        return (f"TrueHome had {vis['today']} visits today, {vis['week']} this week, {vis['month']} this month."
+                + (f" Busiest pages: {tops}." if tops else ""))
+    rev = pay.get("revenue_month", 0)
+    lines = [sitestats.spoken(user)]
+    if reg.get("recent"):
+        lines.append("Newest member: " + (reg["recent"][0].get("name") or reg["recent"][0].get("email", "someone")) + ".")
+    if lst.get("recent"):
+        top = lst["recent"][0]
+        lines.append(f"Latest listing: {top.get('title')} in {top.get('suburb')} at {cur} {int(top.get('price') or 0):,}.")
+    return " ".join(x for x in lines if x)
+
+
 def update_reply(res):
     if "error" in res:
         return "I could not update: " + res["error"]
@@ -1474,6 +1515,8 @@ def run_agent(user, text, files=None, channel="dashboard"):
         quick = (f"The processor is at {v['cpu']:.0f} percent and memory is {v['ram_used']:.0f} of {v['ram_total']:.0f} GB used."
                  + (f" The graphics card is using {g['mem_used']:.1f} of {g['mem_total']:.0f} GB and is at {g['temp']:.0f} degrees." if g else "")
                  + (f" The disk has {v['disk']['total'] - v['disk']['used']:.0f} GB free." if v.get("disk") else ""))
+    elif len(text) < 120 and TRUEHOME_RE.search(text) and not VIDEO_RE.search(text):
+        quick = truehome_reply(user, text)
     if quick:
         BUSY[uid] = False
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", quick, time.time()))
@@ -3702,7 +3745,7 @@ def messages(user=Depends(auth)):
 # ---------- settings and keys ----------
 EDITABLE = ["freevideo_url", "wake_word", "video_ai_images", "wa_inbox", "fast_answers", "theme", "quick_actions", "whatsapp_auto_contacts", "phone_own_number", "phone_full_control", "personality", "phone_country_code", "assistant_name", "brand", "accent", "site", "brain", "local_model", "heavy_model", "heavy_answers", "cloud_model", "voice", "kokoro_voice",
             "eleven_voice_id", "daily_review", "call_done_announce", "call_done_device", "desktop_control",
-            "video_engine", "cloud_video_model", "vision_model", "freevideo_hq"]
+            "video_engine", "cloud_video_model", "vision_model", "freevideo_hq", "truehome_stats_url"]
 
 
 @app.put("/api/settings")
@@ -3766,6 +3809,16 @@ def secret_test(name: str, user=Depends(auth)):
         elif name == "pexels":
             r = httpx.get("https://api.pexels.com/v1/search", headers={"Authorization": key},
                           params={"query": "office", "per_page": 1}, timeout=15)
+        elif name == "truehome_stats":
+            url = (core.settings(user).get("truehome_stats_url") or "").strip()
+            if not url:
+                return {"ok": False, "status": 0, "note": "Set the TrueHome stats URL in Settings first."}
+            r = httpx.get(url, timeout=15, headers={"X-Stats-Key": key.strip()})
+            note = "" if r.status_code == 200 else (
+                "The key was rejected - check it matches the STATS_KEY on the site." if r.status_code in (401, 403)
+                else "Endpoint not found (404) - the site may still be publishing to live; try the preview URL." if r.status_code == 404
+                else f"Returned {r.status_code}.")
+            return {"ok": r.status_code == 200, "status": r.status_code, "note": note}
         elif name == "replicate":
             r = httpx.get("https://api.replicate.com/v1/account", timeout=15,
                           headers={"Authorization": f"Token {key.strip()}"})
@@ -3791,6 +3844,13 @@ def secret_test(name: str, user=Depends(auth)):
         return {"ok": r.status_code == 200, "status": r.status_code}
     except Exception as e:
         return {"ok": False, "status": 0, "error": type(e).__name__}
+
+
+# ---------- TrueHome business stats ----------
+@app.get("/api/truehome")
+def truehome_stats(user=Depends(auth)):
+    import sitestats
+    return sitestats.fetch(user)
 
 
 # ---------- files and memory ----------

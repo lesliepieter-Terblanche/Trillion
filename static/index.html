@@ -1001,6 +1001,29 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <div class="panel"><b>Payouts</b><div id="st-payouts"></div></div>
   </div>
 </div>
+<div class="view" id="v-truehome">
+  <h2>TrueHome <span class="muted" style="font-size:14px;font-weight:400;letter-spacing:0;text-transform:none">truehome.co.za</span></h2>
+  <div class="muted" style="font-size:13px;margin-bottom:12px">Live from your TrueHome site — new members, listings, PayFast payments and site traffic. Updates every time you open this page.</div>
+  <div class="panel" id="th-setup" hidden><b>Connect TrueHome</b>
+    <label class="field"><span>Stats endpoint URL</span><input id="th-url" placeholder="https://truehome.co.za/api/stats" inputmode="url" autocomplete="off"></label>
+    <div class="btns" style="justify-content:flex-start"><button class="btn pri" id="th-save">SAVE URL</button></div>
+    <div class="muted" style="font-size:13px">Then add the site's <b>STATS_KEY</b> under Settings → Keys → “TrueHome stats key”. The key is kept encrypted on this PC.</div>
+    <div class="msg" id="th-smsg"></div>
+  </div>
+  <div class="msg bad" id="th-err" style="font-size:14px"></div>
+  <div id="th-body" hidden style="display:flex;flex-direction:column;gap:22px">
+    <div class="sttiles" id="th-tiles"></div>
+    <div class="grid2">
+      <div class="panel"><b>Newest members</b><div id="th-reg" style="font-size:13.5px"></div></div>
+      <div class="panel"><b>Latest listings</b><div id="th-list" style="font-size:13.5px"></div></div>
+    </div>
+    <div class="grid2">
+      <div class="panel"><b>Recent payments</b><div id="th-pay" style="font-size:13.5px"></div></div>
+      <div class="panel"><b>Busiest pages</b><div id="th-vis" style="font-size:13.5px"></div></div>
+    </div>
+    <div class="muted" id="th-when" style="font-size:12px"></div>
+  </div>
+</div>
 <div class="view" id="v-videos">
   <h2>Videos</h2>
   <div class="panel"><b>Make a video</b>
@@ -1295,7 +1318,7 @@ const api=async(u,o={})=>{if(o.json!==undefined){o.method=o.method||'POST';o.hea
 const hm=t=>new Date(t*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false});
 let hold=0,S=null,sending=false,speakNext=false,settingsLoaded=false,cwd='';
 
-const LOADERS={apps:()=>loadApps(),tvremote:()=>loadTvRemote(),growth:()=>loadGrowth(),vendors:()=>loadVendors(),boardroom:()=>loadBoardroom(),sites:()=>{loadSites();loadClones();},bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},projects:()=>loadProjects(),workflow:()=>wfLoad(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);loadStorage();},memory:()=>loadNotes(''),videos:()=>loadVideos(),web:()=>{loadWeb();wbKeyState();wbPexelsState();},dashboard:()=>loadDash(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();loadBackup();kokoroState();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
+const LOADERS={apps:()=>loadApps(),tvremote:()=>loadTvRemote(),growth:()=>loadGrowth(),vendors:()=>loadVendors(),boardroom:()=>loadBoardroom(),sites:()=>{loadSites();loadClones();},bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},truehome:()=>loadTrueHome(),projects:()=>loadProjects(),workflow:()=>wfLoad(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);loadStorage();},memory:()=>loadNotes(''),videos:()=>loadVideos(),web:()=>{loadWeb();wbKeyState();wbPexelsState();},dashboard:()=>loadDash(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();loadBackup();kokoroState();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
 let VIEW='control';
 function go(v){
   VIEW=v;try{if(v!=='settings'&&mtTimer)micTestStop();}catch(e){}
@@ -1810,6 +1833,30 @@ function sgDraw(d){const ready=d.ready,job=d.job||{};
   else if(job.error){m.className='msg bad';m.textContent='Setup failed: '+job.error;}else{m.className='msg';m.textContent='';}}
 $('sg-install')&&($('sg-install').onclick=async()=>{const m=$('sg-msg');m.className='msg muted';m.textContent='Downloading the browser in the background - this takes a few minutes. You can carry on.';try{await api('/api/sitegrab/install',{json:{}});}catch(e){}
   const t=setInterval(async()=>{try{const d=await (await api('/api/sitegrab')).json();sgDraw(d);if(d.ready){clearInterval(t);}else if(d.job&&!d.job.running&&d.job.error){clearInterval(t);}}catch(e){}},8000);});
+async function loadTrueHome(){
+  const su=(S&&S.user.settings)||{};
+  $('th-setup').hidden=false;
+  $('th-url').value=su.truehome_stats_url||'';
+  $('th-save').onclick=async()=>{const m=$('th-smsg');try{await api('/api/settings',{method:'PUT',json:{truehome_stats_url:$('th-url').value.trim()}});await tick();m.className='msg ok';m.textContent='Saved. Loading…';loadTrueHome();}catch(e){m.className='msg bad';m.textContent=e.message;}};
+  $('th-err').textContent='';
+  let r;try{r=await (await api('/api/truehome')).json();}catch(e){r={ok:false,error:e.message};}
+  if(!r.ok){$('th-body').hidden=true;$('th-err').textContent=r.error||'Could not load TrueHome stats.';return;}
+  $('th-body').hidden=false;$('th-err').textContent='';
+  const s=r.stats,reg=s.registrations,ls=s.listings,pay=s.payments,vis=s.visits,cur=pay.currency||'ZAR';
+  const R=n=>cur+' '+Math.round(n||0).toLocaleString('en-ZA');
+  const bd='padding:4px 0;border-bottom:1px solid rgba(255,255,255,.08)';
+  const tiles=[['Members',reg.total,`+${reg.week} this week · ${reg.today} today`],
+    ['Active listings',ls.active,`${ls.total} total · +${ls.week} this week`],
+    ['Payments (month)',pay.count_month,pay.revenue_month?R(pay.revenue_month)+' cleared':'none cleared yet'],
+    ['Visits (week)',vis.week,`${vis.today} today · ${vis.month} this month`]];
+  $('th-tiles').innerHTML=tiles.map(t=>`<div class="tile"><span class="lab">${t[0]}</span><span class="bigv">${(t[1]||0).toLocaleString('en-ZA')}</span><span class="muted" style="font-size:13px">${esc(t[2])}</span></div>`).join('');
+  const d=x=>{try{return new Date(x).toLocaleDateString('en-ZA',{day:'numeric',month:'short'});}catch(e){return'';}};
+  $('th-reg').innerHTML=(reg.recent||[]).slice(0,8).map(x=>`<div style="${bd}">${esc(x.name||x.email||'—')} <span class="muted">${d(x.joined)}</span></div>`).join('')||'<span class="muted">No members yet.</span>';
+  $('th-list').innerHTML=(ls.recent||[]).slice(0,8).map(x=>`<div style="${bd}">${esc(x.title||'—')} <span class="muted">${esc(x.suburb||'')} · ${R(x.price)} · ${d(x.created)}</span></div>`).join('')||'<span class="muted">No listings yet.</span>';
+  $('th-pay').innerHTML=(pay.recent||[]).slice(0,8).map(x=>`<div style="${bd}">${R(x.amount)} <span class="muted">${esc((x.status||'').toLowerCase())} · ${d(x.paid_at)}</span></div>`).join('')||'<span class="muted">No payments yet.</span>';
+  $('th-vis').innerHTML=(vis.top_pages||[]).slice(0,8).map(x=>`<div style="${bd}">${esc(x.path||'/')} <span class="muted">${x.views} view${x.views===1?'':'s'}</span></div>`).join('')||'<span class="muted">No visits tracked yet.</span>';
+  $('th-when').textContent=s.generated_at?('Updated '+new Date(s.generated_at).toLocaleString('en-ZA')):'';
+}
 async function loadVideos(){
   mptLoad();sgLoad();monDraw();
   if(S){$('vai').checked=S.user.settings.video_ai_images!==false;$('vai').onchange=()=>api('/api/settings',{method:'PUT',json:{video_ai_images:$('vai').checked}}).then(tick);}
@@ -2215,7 +2262,7 @@ $('skform').onsubmit=async e=>{e.preventDefault();const url=$('skurl').value.tri
 $('cnsave').onclick=async()=>{try{await api('/api/connectors',{json:{name:$('cnname').value,description:$('cndesc').value,command:$('cncmd').value}});$('cnname').value=$('cndesc').value=$('cncmd').value='';$('cnmsg').textContent='';loadSkills();}catch(e){$('cnmsg').className='msg bad';$('cnmsg').textContent=e.message;}};
 // settings
 const SK=['personality','assistant_name','brand','site','accent','brain','local_model','cloud_model','voice','eleven_voice_id','kokoro_voice','video_engine','cloud_video_model'];
-const LABEL={gemini:'Google Gemini',anthropic:'Claude (API key)',elevenlabs:'ElevenLabs voice',pixabay:'Pixabay stock footage (free key from pixabay.com/api/docs)',google_places:'Google Places',replicate:'Replicate (AI video — token from replicate.com/account/api-tokens)'};
+const LABEL={gemini:'Google Gemini',anthropic:'Claude (API key)',elevenlabs:'ElevenLabs voice',pixabay:'Pixabay stock footage (free key from pixabay.com/api/docs)',google_places:'Google Places',replicate:'Replicate (AI video — token from replicate.com/account/api-tokens)',truehome_stats:'TrueHome stats key (the STATS_KEY from your site)'};
 async function loadPhone(){
   let p;try{p=await (await api('/api/phone')).json();}catch(e){p={adb:false,error:'Could not check the phone just now: '+e.message};}let h='';
   if(!p.adb){h=`<div class="bad">${esc(p.error)}</div>`;}
@@ -2870,7 +2917,7 @@ function loadTvRemote(){
     }catch(e){$('tvr-applist').textContent=e.message;}};
 }
 function drawMore(){
-  const items=[['workflow','Workflow',"What's running now, live"],...(S&&S.bible_on?[['bible','Bible study','Daily verse, reader, notes, helper']]:[]),...(S&&S.store_on?[['store','Store','Gumroad sales, products, codes']]:[]),['videos','Videos','Make and watch videos'],['web','Web Studio','Build a premium site for a business'],['dashboard','Campaign','Lead tracking + email outreach'],['files','Files','Browse your folders'],['sites','Websites','Read a site, make a deck or report'],['apps','Apps','Search rankings and automations'],['tvremote','TV Remote','Control an Android TV from your phone'],['vendors','Vendor intelligence','Your channel portfolio + QBR briefs'],['boardroom','Boardroom','Run a decision past an AI advisor council'],...(S&&S.user.is_admin?[['growth','How Trillion is growing','Learning, skills, automations, activity']]:[]),['memory','Memory','What she remembers'],['routines','Routines','Morning briefing, news, weather'],['skills','Skills','Extra abilities and connectors'],['commands','Commands','Everything you can say'],['settings','Settings','Look, brain, voice, keys']];
+  const items=[['workflow','Workflow',"What's running now, live"],...(S&&S.bible_on?[['bible','Bible study','Daily verse, reader, notes, helper']]:[]),...(S&&S.store_on?[['store','Store','Gumroad sales, products, codes']]:[]),...(S&&S.user.is_admin?[['truehome','TrueHome','Members, listings, payments, traffic']]:[]),['videos','Videos','Make and watch videos'],['web','Web Studio','Build a premium site for a business'],['dashboard','Campaign','Lead tracking + email outreach'],['files','Files','Browse your folders'],['sites','Websites','Read a site, make a deck or report'],['apps','Apps','Search rankings and automations'],['tvremote','TV Remote','Control an Android TV from your phone'],['vendors','Vendor intelligence','Your channel portfolio + QBR briefs'],['boardroom','Boardroom','Run a decision past an AI advisor council'],...(S&&S.user.is_admin?[['growth','How Trillion is growing','Learning, skills, automations, activity']]:[]),['memory','Memory','What she remembers'],['routines','Routines','Morning briefing, news, weather'],['skills','Skills','Extra abilities and connectors'],['commands','Commands','Everything you can say'],['settings','Settings','Look, brain, voice, keys']];
   if(S&&S.user.is_admin)items.push(['family','Family','Logins, update, backup']);
   $('moregrid').innerHTML=items.map(i=>`<button class="mbtn" data-go="${i[0]}"><b>${i[1]}</b><span>${i[2]}</span></button>`).join('')+`<button class="mbtn" id="out2"><b>Sign out</b><span>${S?esc(S.user.name):''}</span></button>`;
   $('out2').onclick=()=>$('out').click();
