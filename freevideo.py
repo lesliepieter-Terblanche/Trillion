@@ -17,7 +17,7 @@ import core
 DEFAULT_URL = os.environ.get("TRILLION_FREEVIDEO_URL", "http://127.0.0.1:8188")
 # sizes the engine was measured at (multiples of 32); "light" keeps a 16 GB card comfortable
 SIZES = {"landscape": (1344, 768), "vertical": (768, 1344), "square": (1024, 1024)}
-MAX_WAIT = int(os.environ.get("TRILLION_FREEVIDEO_WAIT", 90 * 60))
+MAX_WAIT = int(os.environ.get("TRILLION_FREEVIDEO_WAIT", 25 * 60))   # a normal clip is ~8 min; give up well before a stuck job wastes an hour
 POLL = float(os.environ.get("TRILLION_FREEVIDEO_POLL", 5))
 NOT_RUNNING = ("FreeVideo is not running on the PC. Double-click \"6 - Install FreeVideo.bat\" in the Trillion folder: it installs "
                "FreeVideo the first time and opens it after that. Wait until its page opens in the browser, then ask me again.")
@@ -122,7 +122,7 @@ def create(llm, user, prompt, seconds=5, fmt="vertical", progress=None):
         seconds = float(seconds or 5)
     except (TypeError, ValueError):
         seconds = 5.0
-    seconds = max(2.0, min(15.0, seconds))
+    seconds = max(2.0, min(10.0, seconds))   # 10s is the safe ceiling on a 16 GB card; 15s balloons memory and time
     fmt = fmt if fmt in SIZES else "vertical"
     w, h = SIZES[fmt]
     st = status(user)
