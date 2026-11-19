@@ -1028,6 +1028,14 @@ REVISE_RE = re.compile(r"\b(change|fix|revise|redo|remake|update|edit)\b[^.?!]{0
 # a cinematic marketing video for a business, or an animated stickman story - each has its own pipeline,
 # so route them before the generic stock-footage video maker (they all contain the word "video").
 MARKETING_VID_RE = re.compile(r"\b(?:marketing|promo(?:tional)?|advert(?:ising)?|commercial|brand) video\b", re.I)
+# any request for a video or an ad: never sent to the website reader or cloner, even when it names a website
+AD_RE = re.compile(r"\b(?:social(?:\s+media)?\s+ad|video\s+ad|ad\s+for|advert(?:isement)?|commercial|reel|tiktok|"
+                   r"youtube\s+short|mp4|voice[- ]?over)\b", re.I)
+
+
+def video_like(text):
+    return bool(VIDEO_RE.search(text) or MARKETING_VID_RE.search(text) or AD_RE.search(text)
+                or video.is_scripted(text) or video.no_web(text))
 STICKMAN_VID_RE = re.compile(r"\bstick\s?m(?:a|e)n video\b", re.I)
 STICKMAN_LOOKS = (("black and white", "noir"), ("black & white", "noir"), ("noir", "noir"),
                   ("hand-drawn", "paper"), ("hand drawn", "paper"), ("paper", "paper"),
@@ -1571,6 +1579,16 @@ def run_agent(user, text, files=None, channel="dashboard"):
         core.set_task(tid, status="completed", detail=reply[:200])
         return {"reply": reply, "task_id": tid, "provider": "built-in", "show": "videos" if v else ""}
     asking = re.match(r"\s*(how|what|why|which|is|are|does|do|should|where|when|who)\b", text, re.I)   # a question, not an order
+    if video.is_scripted(text) and not files:  # a written-out ad (SCENES, VO, Text): straight to the video maker, exactly as written
+        try:
+            vr = video_request(text)
+            res = tools.execute(user, "create_video", dict(vr, voiceover=True, media=[]), task_id=tid)
+        finally:
+            BUSY[uid] = False
+        reply = video_reply(res)
+        core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
+        core.set_task(tid, status="failed" if "error" in res else "completed", detail=reply[:200])
+        return {"reply": reply, "task_id": tid, "provider": "built-in", "show": "" if "error" in res else "videos"}
     if AICLIP_RE.search(text) and re.search(r"\b(create|make|generate|produce|render)\b", text, re.I) and not asking:
         try:
             res = tools.execute(user, "create_ai_clip", aiclip_request(text), task_id=tid)
@@ -1580,7 +1598,7 @@ def run_agent(user, text, files=None, channel="dashboard"):
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="failed" if "error" in res else "completed", detail=reply[:200])
         return {"reply": reply, "task_id": tid, "provider": "FreeVideo", "show": "" if "error" in res else "videos"}
-    clone_req = siteclone.request(text) if not files else None
+    clone_req = siteclone.request(text) if not files and not video_like(text) else None
     if clone_req and not asking:
         try:
             if clone_req["mode"] == "copy" and not clone_req["permission"] and not siteclone.is_own(user, clone_req["url"]):
@@ -1602,7 +1620,7 @@ def run_agent(user, text, files=None, channel="dashboard"):
         core.x("INSERT INTO messages(user_id,role,content,ts) VALUES(?,?,?,?)", (uid, "assistant", reply, time.time()))
         core.set_task(tid, status="completed" if ok_ else "failed", detail=reply[:200])
         return {"reply": reply, "task_id": tid, "provider": "built-in", "show": "sites" if ok_ else ""}
-    site_req = siteread.request(text) if not files else None
+    site_req = siteread.request(text) if not files and not video_like(text) else None
     if site_req and not asking:
         try:
             j = siteread.start(user, site_req["url"], site_req["outputs"], text, site_req["max_pages"], site_req["show"])

@@ -1582,6 +1582,9 @@ def t_create_video(user, prompt, seconds=20, format="vertical", voiceover=True, 
     fmt = str(format or "vertical").lower()
     fmt = "landscape" if fmt in ("landscape", "horizontal", "wide", "youtube") else ("square" if fmt == "square" else "vertical")
     say = (lambda text: core.set_task(_task, detail=text)) if _task else None
+    # a written-out script, or "do not visit the website": the classic engine follows it exactly and opens no site
+    if video.is_scripted(prompt) or video.no_web(prompt):
+        return video.create(core.LLM, user, prompt, seconds, fmt, bool(voiceover), progress=say, media=media)
     # 'a video for TrueHome' (brand named, no address) -> add the brand's site so it is read and kept on-brand
     prompt = video.with_brand_site(prompt)
     # prefer the cinematic engine (MoneyPrinterTurbo) when it's installed and no personal media was attached;

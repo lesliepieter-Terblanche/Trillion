@@ -636,12 +636,20 @@ def pick_music():
 
 # ---------- 4. the render ----------
 def render(out_path, brand, scenes, website="", accent="#ffb454", fmt="vertical", seconds=20,
-           vo_path=None, captions=None, music=None, progress=None):
+           vo_path=None, captions=None, music=None, progress=None, durs=None, end_len=None):
+    """durs: each scene's own length in seconds (a scripted ad); without it the scenes share the time equally.
+    end_len: how long the closing brand card holds (default END_LEN)."""
     w, h = SIZES.get(fmt, SIZES["vertical"])
     accent = _hex(accent)
-    body = max(seconds - END_LEN, 4.0)
-    per = body / len(scenes)
-    seconds = body + END_LEN
+    end_len = END_LEN if end_len is None else float(end_len)
+    if durs and len(durs) == len(scenes):
+        durs = [max(1.0, float(d)) for d in durs]
+        body = sum(durs)
+    else:
+        body = max(seconds - end_len, 4.0)
+        durs = [body / len(scenes)] * len(scenes)
+    starts = [sum(durs[:i]) for i in range(len(durs) + 1)]
+    seconds = body + end_len
     total = int(seconds * FPS)
     margin = int(w * 0.08)
     wide = fmt == "landscape"
@@ -655,7 +663,8 @@ def render(out_path, brand, scenes, website="", accent="#ffb454", fmt="vertical"
     probe = ImageDraw.Draw(Image.new("RGB", (8, 8)))
     for i, sc in enumerate(scenes):
         sc["head"] = _wrap(probe, str(sc.get("headline", "")).upper(), f_head, w - 2 * margin)[:3]
-        sc["cap"] = [] if captions else _wrap(probe, sc.get("caption", ""), f_cap, w - 2 * margin)[:3]
+        # spoken captions replace the small supporting line - unless the script wrote that line for the screen
+        sc["cap"] = [] if (captions and not sc.get("keep_cap")) else _wrap(probe, sc.get("caption", ""), f_cap, w - 2 * margin)[:3]
         if not sc.get("clip"):
             sc["base"] = None
             if sc.get("image"):
@@ -743,7 +752,8 @@ def render(out_path, brand, scenes, website="", accent="#ffb454", fmt="vertical"
         XF = max(2, int(FPS * 0.35))          # cross-dissolve length between scenes, for smoother flow
         prev_last = None
         for idx, sc in enumerate(scenes):
-            frames_needed = int(round((idx + 1) * per * FPS)) - int(round(idx * per * FPS))
+            per = durs[idx]
+            frames_needed = int(round(starts[idx + 1] * FPS)) - int(round(starts[idx] * FPS))
             two = bool(sc.get("clip") and sc.get("clip2"))
             src = clip_frames(sc["clip"], per / 2 if two else per, w, h) if sc.get("clip") else None
             last = None
@@ -771,7 +781,7 @@ def render(out_path, brand, scenes, website="", accent="#ffb454", fmt="vertical"
                     frame = Image.blend(prev_last, frame, _ease((k + 1) / XF))
                 if k >= frames_needed - 1:
                     prev_last = frame.copy()
-                emit(frame, idx * per + lt, min(1.0, lt / 0.4) if idx == 0 else 1.0)
+                emit(frame, starts[idx] + lt, min(1.0, lt / 0.4) if idx == 0 else 1.0)
             if src is not None:
                 src.close()
         fb = f_brand
@@ -780,7 +790,7 @@ def render(out_path, brand, scenes, website="", accent="#ffb454", fmt="vertical"
         ei = 0
         while n < total:
             lt = n / FPS - body
-            frame = ImageChops.multiply(_camera(end_bg, w, h, max(0, lt) / END_LEN, (1.25, 1.05, 0.3, 0.2)), vig)
+            frame = ImageChops.multiply(_camera(end_bg, w, h, max(0, lt) / end_len, (1.25, 1.05, 0.3, 0.2)), vig)
             layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
             d = ImageDraw.Draw(layer)
             a = _ease(lt / 0.6)
@@ -799,7 +809,7 @@ def render(out_path, brand, scenes, website="", accent="#ffb454", fmt="vertical"
                 frame = Image.blend(prev_last, frame, _ease((ei + 1) / XF))
             ei += 1
             frame.paste(layer, (0, 0), layer)
-            emit(frame, n / FPS, min(1.0, (END_LEN - lt) / 0.6))
+            emit(frame, n / FPS, min(1.0, (end_len - lt) / 0.6))
         enc.stdin.close()
         err = enc.stderr.read().decode(errors="replace")
         if enc.wait() != 0:
@@ -842,10 +852,275 @@ def render(out_path, brand, scenes, website="", accent="#ffb454", fmt="vertical"
     return seconds
 
 
-# ---------- 5. the whole job ----------
-def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progress=None, media=None):
+# ---------- 4b. scripted ads: the person wrote every scene ----------
+# A prompt with a SCENES section (numbered scenes with timings, VO: and Text: lines) is followed exactly:
+# one scene per number, at its timing, the VO lines spoken word for word and the Text lines shown word for word.
+NO_WEB_RE = re.compile(r"\b(do\s+not|don'?t|never)\b[^.\n]{0,60}\b(visit|browse|crawl|study|scrape|research|open|look\s+up)\b"
+                       r"|\buse\s+only\s+the\s+information\s+in\s+this\s+prompt\b|\bskip\s+(all\s+)?(the\s+)?research\b", re.I)
+_SCENE_HEAD = re.compile(r"^\s*(\d{1,2})[.)]\s*\(\s*(\d+(?:\.\d+)?)\s*s?\s*[–—-]\s*(\d+(?:\.\d+)?)\s*s?\s*\)\s*(.*)$")
+_VO_LINE = re.compile(r"^\s*(?:VO|Voice[- ]?over|Narration)\s*:\s*(.+)$", re.I)
+_TEXT_LINE = re.compile(r"^\s*(?:Text|On[- ]screen(?:\s+text)?)\s*:\s*(.+)$", re.I)
+_SECTION = re.compile(r"^\s*[A-Z][A-Z0-9 /&()'-]{2,40}:?\s*$")
+_QUOTED = re.compile(r"[\"“]([^\"”]+)[\"”]")
+
+
+def no_web(prompt):
+    """The request says not to open any website (or gives everything needed itself)."""
+    return bool(NO_WEB_RE.search(prompt or ""))
+
+
+def web_address(prompt):
+    """The web address an ad should show: a spelled-out 'WEB ADDRESS: ... truehome, then a dot, then co ...' line,
+    else the first address written in the prompt. Never looked up."""
+    m = re.search(r"WEB ADDRESS:.*?made of:?\s*([a-z0-9-]+)((?:\s*,\s*then a dot,?\s*then\s*[a-z0-9-]+)+)", prompt or "", re.I | re.S)
+    if m:
+        return ".".join([m.group(1)] + re.findall(r"then a dot,?\s*then\s+([a-z0-9-]+)", m.group(2), re.I)).lower()
+    m = _URL_IN.search(prompt or "")
+    return _domain(m.group(0)) if m else ""
+
+
+def parse_script(prompt):
+    """{'scenes': [...], 'seconds', 'fmt', 'voice', 'speed', 'accent', 'web'} for a prompt with a SCENES section, else None."""
+    lines = str(prompt or "").splitlines()
+    start = next((i for i, l in enumerate(lines) if re.match(r"^\s*SCENES\s*:?\s*$", l, re.I)), None)
+    if start is None:
+        return None
+    web = web_address(prompt)
+    scenes, cur = [], None
+    for l in lines[start + 1:]:
+        m = _SCENE_HEAD.match(l)
+        if not m and _SECTION.match(l) and not _VO_LINE.match(l) and not _TEXT_LINE.match(l):
+            break                                       # the next section (RULES, DELIVER ...) ends the scene list
+        if m:
+            cur = {"start": float(m.group(2)), "end": float(m.group(3)), "desc": m.group(4).strip(), "vo": "", "texts": []}
+            scenes.append(cur)
+            continue
+        if cur is None or not l.strip():
+            continue
+        m = _VO_LINE.match(l)
+        if m:
+            q = _QUOTED.findall(m.group(1))
+            cur["vo"] = " ".join(q if q else [m.group(1)]).strip()
+            continue
+        m = _TEXT_LINE.match(l)
+        if m:
+            q = _QUOTED.findall(m.group(1))
+            cur["texts"] = q if q else [m.group(1).strip()]
+            continue
+        cur["desc"] += " " + l.strip()
+    scenes = [x for x in scenes if x["end"] > x["start"]]
+    if len(scenes) < 2:
+        return None
+    for x in scenes:
+        texts = [t.replace("[WEB]", web or "").strip(" ·") for t in x["texts"]]
+        head = texts[0] if texts else ""
+        cap = " · ".join(texts[1:])
+        if " · " in head and len(head) > 24:            # 'True monthly cost · Fair-price signal · Serious buyers'
+            first, rest = head.split(" · ", 1)
+            head, cap = first, " · ".join([rest] + ([cap] if cap else []))
+        x["headline"], x["caption"] = head[:60], cap[:160]
+        x["vo"] = x["vo"].replace("[WEB]", web.replace(".", " dot ") if web else "")
+        x["visual"] = re.sub(r"\s+", " ", re.sub(r"^\s*[^.]{2,60}\.\s+", "", x["desc"]) or x["desc"])[:300]
+    secs = re.search(r"\b(\d{1,3})\s*seconds?\b", prompt, re.I)
+    low = prompt.lower()
+    fmt_line = next((l for l in lines if re.match(r"^\s*-?\s*\d{1,3}\s*seconds?", l, re.I)), "")
+    fmt = ("landscape" if re.search(r"16\s*:\s*9|landscape|horizontal", fmt_line, re.I) else
+           "square" if re.search(r"\b1\s*:\s*1\b|square", fmt_line, re.I) else "vertical")
+    vm = re.search(r"\b((?:a|b)(?:f|m)_[a-z]+)\b", prompt)
+    sp = re.search(r"\bspeed\s*(\d+(?:\.\d+)?)", low)
+    ac = re.search(r"#[0-9a-fA-F]{6}\b", prompt)
+    return {"scenes": scenes, "seconds": int(secs.group(1)) if secs else int(scenes[-1]["end"]), "fmt": fmt,
+            "voice": vm.group(1) if vm else "", "speed": float(sp.group(1)) if sp else 1.0,
+            "accent": ac.group(0) if ac else "", "web": web,
+            "extra_formats": [f for f, pat in (("square", r"\b1\s*:\s*1\b"), ("landscape", r"16\s*:\s*9"), ("vertical", r"9\s*:\s*16"))
+                              if f != fmt and re.search(pat, prompt.split("DELIVER", 1)[1] if "DELIVER" in prompt else "")]}
+
+
+def is_scripted(prompt):
+    return parse_script(prompt) is not None
+
+
+def _script_searches(llm, user, scenes):
+    """2-4 concrete stock-footage words for each written scene description (one small brain call, with a plain fallback)."""
+    ask = ("For each numbered scene description give 2 to 4 plain concrete words to search a stock video library for it. "
+           "No place names, no brand names. Reply with JSON only: {\"searches\": [\"...\", ...]} in the same order.\n\n"
+           + "\n".join(f"{i + 1}. {x['visual']}" for i, x in enumerate(scenes)))
+    got = []
+    try:
+        text = llm(user, [{"role": "system", "content": "Reply with JSON only."}, {"role": "user", "content": ask}]).get("content") or ""
+        got = json.loads(text[text.index("{"): text.rindex("}") + 1]).get("searches") or []
+    except Exception:
+        got = []
+    out = []
+    for i, x in enumerate(scenes):
+        q = clean_search(got[i]) if i < len(got) and isinstance(got[i], str) else ""
+        if not q:
+            words = [w_ for w_ in re.findall(r"[a-zA-Z]{3,}", x["visual"]) if w_.lower() not in _STOP][:4]
+            q = clean_search(" ".join(words))
+        out.append(q or "modern house exterior")
+    return out
+
+
+def voice_engine(user):
+    """Which voice reads video voice-overs: Kokoro (free, on this PC) unless ElevenLabs was chosen and has a key."""
+    s = core.settings(user)
+    if str(s.get("video_voice_engine") or "kokoro").lower() == "elevenlabs" and core.get_secret(user["id"], "elevenlabs"):
+        return "elevenlabs"
+    return "kokoro"
+
+
+def kokoro_line(text, voice=None, speed=1.0):
+    """One line spoken by Kokoro -> (float32 samples at localvoice.SR). Raises with a clear reason on failure."""
+    import localvoice
+    try:
+        samples, sr = localvoice.synth_wait(text, voice=voice or None, speed=speed or 1.0, wait=600)
+    except Exception as e:
+        raise RuntimeError(f"Kokoro voice failed: {type(e).__name__}: {e}"[:300])
+    if sr != localvoice.SR:
+        import numpy as np
+        n = int(len(samples) * localvoice.SR / sr)
+        samples = np.interp(np.linspace(0, len(samples) - 1, n), np.arange(len(samples)), samples).astype("float32")
+    return samples
+
+
+def scripted_voice(scenes, voice, speed, out_path, lead=0.25, tail=0.45):
+    """Speak each scene's VO line, stretch any scene that is shorter than its line, and lay the lines on one track.
+    Returns (durations, captions)."""
+    import numpy as np
+    import localvoice
+    sr = localvoice.SR
+    lines = [kokoro_line(x["vo"], voice, speed) if x["vo"] else None for x in scenes]
+    durs = []
+    for x, a in zip(scenes, lines):
+        want = x["end"] - x["start"]
+        need = (len(a) / sr + lead + tail) if a is not None else 0
+        durs.append(round(max(want, need), 2))
+    total = sum(durs) + 1.0
+    track = np.zeros(int(total * sr), dtype="float32")
+    caps, t = [], 0.0
+    for d, x, a in zip(durs, scenes, lines):
+        if a is not None:
+            at = int((t + lead) * sr)
+            track[at: at + len(a)] += a[: max(0, len(track) - at)]
+            for a0, b0, words in even_chunks(x["vo"], len(a) / sr):
+                caps.append((t + lead + a0, t + lead + b0, words))
+        t += d
+    Path(out_path).write_bytes(localvoice.wav_bytes(track, sr))
+    return durs, caps
+
+
+def create_scripted(llm, user, prompt, script, progress=None, media=None):
+    """Make the video exactly as written: the person's scenes, timings, spoken lines and screen text."""
     init()
     s = core.settings(user)
+    uid = user["id"]
+    say = progress or (lambda text: None)
+    fmt = script["fmt"] if script["fmt"] in SIZES else "vertical"
+    w, h = SIZES[fmt]
+    notes = []
+    who = brand_for(user, prompt)                           # local lookup only - no website is opened
+    if script["web"]:
+        who["site"] = "https://www." + re.sub(r"^www\.", "", script["web"])
+    if script["accent"] and not _too_dark(script["accent"]):
+        who["accent"] = script["accent"]
+    scenes = [{"headline": x["headline"], "caption": x["caption"], "visual": x["visual"], "keep_cap": bool(x["caption"]),
+               "vo": x["vo"], "start": x["start"], "end": x["end"]} for x in script["scenes"]]
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    title = f"{who['brand'] or 'Scripted'} ad".strip()
+    folder = core.out_dir(user, "Trillion Videos")
+    folder.mkdir(parents=True, exist_ok=True)
+    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:40] or "ad"
+    out = folder / f"{slug}-{stamp}.mp4"
+
+    # 1. the voice: every VO line, spoken word for word. No voice when one was asked for = no video.
+    vo_path, caps, durs = None, None, [x["end"] - x["start"] for x in scenes]
+    if any(x["vo"] for x in scenes):
+        voice = script["voice"] or s.get("kokoro_voice") or "bm_george"
+        say(f"Recording the voice-over (Kokoro, {voice})")
+        vo_path = CACHE / f"vo-{uid}-{stamp}.wav"
+        durs, caps = scripted_voice(scenes, voice, script["speed"], vo_path)
+        notes.append(f"Voice: Kokoro ({voice}).")
+
+    # 2. footage: a different clip for every scene, matched to what the scene describes
+    for x in scenes:
+        x["search"] = ""
+    for x, q in zip(scenes, _script_searches(llm, user, scenes)):
+        x["search"] = q
+    own = [m for m in (media or []) if os.path.exists(m)][:len(scenes)]
+    for x, m in zip(scenes, own):
+        if m.lower().endswith(IMAGE_EXT):
+            x["image"] = m
+        elif media_seconds(m):
+            x["clip"] = m
+    pb_key = core.get_secret(uid, "pixabay")
+    credits, used, fallback_shots = [], set(), list(topic_shots(prompt))
+    if pb_key:
+        for i, x in enumerate(scenes):
+            if x.get("clip") or x.get("image"):
+                continue
+            say(f"Finding footage {i + 1} of {len(scenes)}: {x['search']}")
+            clip, by = pixabay_clip(pb_key, x["search"], w, h, durs[i], used)
+            while not clip and fallback_shots:
+                clip, by = pixabay_clip(pb_key, fallback_shots.pop(0), w, h, durs[i], used)
+            if clip:
+                x["clip"] = clip
+                credits.append(by)
+    made = 0
+    for i, x in enumerate(scenes):
+        if x.get("clip") or x.get("image") or not s.get("video_ai_images", True):
+            continue
+        say(f"Making picture {i + 1} of {len(scenes)}")
+        img = ai_image(x["visual"], w, h, seed=int(time.time()) % 100000 + i)
+        if img:
+            x["image"] = img
+            made += 1
+    if not pb_key:
+        notes.append("Add a free Pixabay key under Settings, Keys for real moving footage in every scene.")
+
+    # 3. render the main version, then any extra sizes the prompt asked for (each saved on its own)
+    music, music_name = pick_music()
+    made_videos = []
+    for f_ in [fmt] + [f for f in script.get("extra_formats", []) if f in SIZES]:
+        path = out if f_ == fmt else folder / f"{slug}-{f_}-{stamp}.mp4"
+        for x in scenes:
+            for k in ("base", "head", "cap", "move"):
+                x.pop(k, None)
+        say(f"Rendering the {f_} version")
+        secs = render(path, who["brand"], scenes, website=who["site"], accent=who["accent"], fmt=f_,
+                      seconds=sum(durs) + 2.0, vo_path=vo_path, captions=caps, music=music,
+                      progress=lambda pct, f_=f_: say(f"Rendering the {f_} version: {pct}"), durs=durs, end_len=2.0)
+        thumb = str(path)[:-4] + ".jpg"
+        subprocess.run([find_ffmpeg(), "-y", "-v", "error", "-ss", "1.6", "-i", str(path), "-frames:v", "1", "-vf", "scale=360:-2", thumb],
+                       capture_output=True)
+        detail = {"scripted": True, "scenes": [x["headline"] for x in scenes], "narration": " ".join(x["vo"] for x in scenes),
+                  "footage": sorted(set(credits)), "footage_source": "Pixabay" if credits else "", "ai_pictures": made,
+                  "music": music_name, "format": f_, "notes": notes, "request": prompt, "voiceover": bool(vo_path), "media": own,
+                  "voice": "Kokoro" if vo_path else ""}
+        name = title if f_ == fmt else f"{title} ({f_})"
+        vid = core.x("INSERT INTO videos(user_id,title,path,thumb,seconds,detail,created) VALUES(?,?,?,?,?,?,?)",
+                     (uid, name, str(path), thumb if os.path.exists(thumb) else "", secs, json.dumps(detail), time.time()))
+        made_videos.append({"video_id": vid, "format": f_, "saved": str(path), "seconds": round(secs, 1)})
+    if vo_path:
+        try:
+            os.unlink(vo_path)
+        except OSError:
+            pass
+    main = made_videos[0]
+    if len(made_videos) > 1:
+        notes.append("Also made: " + ", ".join(f"{m['format']} ({m['saved']})" for m in made_videos[1:]) + ".")
+    return {"video_id": main["video_id"], "title": title, "saved": main["saved"], "seconds": main["seconds"],
+            "footage_clips": len(credits), "ai_pictures": made, "voice_over": bool(vo_path), "notes": notes,
+            "versions": made_videos}
+
+
+# ---------- 5. the whole job ----------
+def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progress=None, media=None):
+    script = parse_script(prompt)
+    if script:                              # every scene written out: follow it exactly, never re-plan it
+        return create_scripted(llm, user, prompt, script, progress=progress, media=media)
+    init()
+    s = core.settings(user)
+    offline = no_web(prompt)                # "do not visit the website": no reading it, no pulling its photos
     uid = user["id"]
     seconds = max(8, min(60, int(seconds or 20)))
     fmt = fmt if fmt in SIZES else "vertical"
@@ -858,23 +1133,24 @@ def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progre
     own = [m for m in (media or []) if os.path.exists(m) and m.lower().endswith(IMAGE_EXT + (".gif", ".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi", ".3gp"))][:8]
     # no photos attached, but the request names a website -> use the site's OWN product photos as the footage
     from_site = False
-    if not own and _URL_IN.search(prompt or "") and s.get("video_site_media", True):
+    if not own and not offline and _URL_IN.search(prompt or "") and s.get("video_site_media", True):
         say("Pulling photos from the site")
         got = site_media(_URL_IN.search(prompt).group(0).rstrip(".,)"), w, h, uid, progress=say)
         if got:
             own, from_site = got, True
             notes.append(f"Footage is {len(got)} real photo{'s' if len(got) != 1 else ''} pulled straight from the site.")
     n_scenes = max(2, min(8, len(own))) if from_site else max(n_scenes, len(own))
-    el_key = core.get_secret(uid, "elevenlabs") if voiceover else None
+    engine = voice_engine(user) if voiceover else ""
+    el_key = core.get_secret(uid, "elevenlabs") if engine == "elevenlabs" else None
     pb_key = core.get_secret(uid, "pixabay")
     find_clip, stock_key, stock_name = pixabay_clip, pb_key, "Pixabay"
 
     who = brand_for(user, orig_request)        # the site named in the request decides the brand, site and colour
-    if _URL_IN.search(prompt or ""):
+    if _URL_IN.search(prompt or "") and not offline:
         say("Reading the website")
         prompt = site_subject(llm, user, prompt)
     say("Writing the script")
-    p = plan(llm, user, prompt, seconds, n_scenes, bool(el_key), brand=who["brand"], site=who["site"])
+    p = plan(llm, user, prompt, seconds, n_scenes, bool(engine), brand=who["brand"], site=who["site"])
     fallback_shots = [q for q in topic_shots(prompt)]
     stamp = time.strftime("%Y%m%d-%H%M%S")
     slug = re.sub(r"[^a-z0-9]+", "-", p["title"].lower()).strip("-")[:40] or "video"
@@ -883,8 +1159,18 @@ def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progre
     out = folder / f"{slug}-{stamp}.mp4"
 
     vo_path, caps = None, None
-    if voiceover and not el_key:
-        notes.append("No voice-over: add an ElevenLabs key in Settings to get one.")
+    if engine == "kokoro" and p["narration"]:
+        voice = s.get("kokoro_voice") or "bm_george"
+        say(f"Recording the voice-over (Kokoro, {voice})")
+        vo_path = CACHE / f"vo-{uid}-{stamp}.wav"
+        import localvoice
+        samples = kokoro_line(p["narration"], voice, float(s.get("kokoro_speed") or 1.0))   # raises: no music-only video
+        vo_path.write_bytes(localvoice.wav_bytes(samples, localvoice.SR))
+        dur = len(samples) / localvoice.SR
+        caps = even_chunks(p["narration"], dur)
+        if dur + 0.9 > seconds - END_LEN:
+            seconds = min(75, int(dur + 0.9 + END_LEN + 0.999))
+        notes.append(f"Voice: Kokoro ({voice}).")
     if el_key and p["narration"]:
         say("Recording the voice-over")
         vo_path = CACHE / f"vo-{uid}-{stamp}.mp3"
@@ -896,9 +1182,13 @@ def create(llm, user, prompt, seconds=20, fmt="vertical", voiceover=True, progre
                 caps = even_chunks(p["narration"], dur or (seconds - END_LEN - 1))
             if dur and dur + 0.9 > seconds - END_LEN:
                 seconds = min(75, int(dur + 0.9 + END_LEN + 0.999))
+        except httpx.HTTPStatusError as e:      # say exactly what ElevenLabs answered, and make no music-only video
+            code = e.response.status_code
+            why = {401: "the API key is wrong", 402: "the account is out of credits", 429: "the account is out of credits or "
+                   "rate-limited", 404: "the voice ID is not on this account"}.get(code, "it refused the request")
+            raise RuntimeError(f"The ElevenLabs voice-over failed ({code}: {why}). {e.response.text[:200]}")
         except Exception as e:
-            vo_path, caps = None, None
-            notes.append(f"The voice-over failed ({type(e).__name__}), so this one has music and titles only.")
+            raise RuntimeError(f"The voice-over failed: {type(e).__name__}: {e}"[:300])
 
     credits, used = [], set()
     per = (seconds - END_LEN) / len(p["scenes"])

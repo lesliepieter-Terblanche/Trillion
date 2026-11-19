@@ -239,6 +239,8 @@ def crawl(start, max_pages=DEFAULT_PAGES, show=False, shots_dir=None, say=None, 
                 # pages linked from the menu first, then the shallowest
                 queue.sort(key=lambda t: (not t[2], t[1]))
                 url, depth, _ = queue.pop(0)
+                if PRIVATE_PATH.search(urlparse(url).path or "/"):   # sign-in pages only show a login form: skip them
+                    continue
                 if not rp.can_fetch("Trillion-SiteReader", url):
                     blocked += 1
                     continue
@@ -649,12 +651,18 @@ VERB = re.compile(r"\b(read|analy[sz]e|analysis|go through|crawl|scan|review|stu
 SITE_WORD = re.compile(r"\b(web ?site|site|web ?page|url|domain|home ?page)\b", re.I)
 SHOW = re.compile(r"\b(open|show)\b[^.?!]{0,30}\b(browser|edge|chrome|window|screen)\b|\bon (my|the) (pc|screen)\b", re.I)
 PAGES = re.compile(r"\b(\d{1,3})\s*pages?\b", re.I)
+# "do NOT visit / crawl / study the site" names the verbs but means the opposite
+NEGATED = re.compile(r"\b(do\s+not|don'?t|never|no\s+need\s+to)\b[^.\n]{0,60}\b(read|visit|browse|crawl|scan|study|research|"
+                     r"analy[sz]e|audit|review|open)\b", re.I)
+CHAT_PAGES = 10          # a read asked for in chat stops at 10 pages unless the person names more ("read 40 pages of ...")
+PRIVATE_PATH = re.compile(r"/(dashboard|login|log-in|signin|sign-in|signup|sign-up|register|account|admin|checkout|cart|saved|"
+                          r"settings|profile|logout)(/|$)", re.I)
 
 
 def request(text):
     """(url, outputs, show, pages) when the words ask to read a website, else None."""
     m = URL_IN.search(text)
-    if not m or not VERB.search(text):
+    if not m or not VERB.search(text) or NEGATED.search(text):
         return None
     if "@" in text[max(0, m.start() - 1):m.start() + 1]:
         return None
@@ -663,7 +671,7 @@ def request(text):
         return None
     pm = PAGES.search(text)
     return {"url": m.group(1), "outputs": wants(text), "show": bool(SHOW.search(text)),
-            "max_pages": int(pm.group(1)) if pm else DEFAULT_PAGES}
+            "max_pages": int(pm.group(1)) if pm else CHAT_PAGES}
 
 
 def started_reply(j):
@@ -673,4 +681,5 @@ def started_reply(j):
     return (f"I am reading {j['domain']} now, up to {j['max_pages']} pages"
             + (", in a browser window on the PC so you can watch" if j["show"] else "")
             + f". Then I will analyse it and make {what}. A small site takes a few minutes; you can follow it on the "
-              "Websites page, and I will say when it is done.")
+              "Websites page, and I will say when it is done."
+            + (f" For a deeper read, say \"read 40 pages of {j['domain']}\"." if j["max_pages"] <= CHAT_PAGES else ""))
