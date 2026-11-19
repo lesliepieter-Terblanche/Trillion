@@ -2374,7 +2374,10 @@ async function loadContacts(m,fresh){
 }
 function drawQA(){
   if(!S)return;const on=(S.user.settings.quick_actions||[]).filter(k=>QA[k]);
-  $('qa').innerHTML=(S.user.settings.links||[]).filter(l=>l&&l.id&&l.url).map(l=>`<button type="button" class="lk" data-lk="${esc(l.id)}">${esc(l.name)}</button>`).join('')+on.map(k=>`<button type="button" data-q="${k}">${esc(QA[k].label)}</button>`).join('')+`<button type="button" data-go="commands" style="color:var(--dim)">All commands</button>`;
+  $('qa').innerHTML=(S.user.settings.links||[]).filter(l=>l&&l.id&&l.url).map(l=>
+      /truehome\.co\.za/i.test(l.url)&&S.user.is_admin   // a link to TrueHome opens its live dashboard, not the page-screenshot viewer
+        ?`<button type="button" data-go="truehome">${esc(l.name)}</button>`
+        :`<button type="button" class="lk" data-lk="${esc(l.id)}">${esc(l.name)}</button>`).join('')+on.map(k=>`<button type="button" data-q="${k}">${esc(QA[k].label)}</button>`).join('')+`<button type="button" data-go="commands" style="color:var(--dim)">All commands</button>`;
   $('qa').querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>qaClick(b.dataset.q,b));
   $('qa').querySelectorAll('[data-lk]').forEach(b=>b.onclick=()=>showLink(b.dataset.lk));
 }
