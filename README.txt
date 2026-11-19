@@ -22,6 +22,10 @@ WHAT WORKS IN THIS VERSION
 - She evolves daily: every night she learns lasting knowledge from the whole day's conversation (on by default), AND looks for things you do by hand that she could automate. Safe, reversible automations (morning briefing, check-ins) she can switch on herself if you allow it on the Workflow page; anything that sends, pays or deletes always waits for your OK
 - Free natural voice (Kokoro): pick "Kokoro natural voice" under Settings, Brain and voice. It downloads once
   (about 120 MB) and runs on this PC, so no ElevenLabs tokens. Phone calls use it too.
+- Stickman videos ("make a stickman video ..."): cartoon characters drawn by code - big round heads, hats, outfits,
+  stick arms and legs - placed in detailed real-looking sets, so every character looks the same in every shot. Fast
+  cuts, close-ups, talking and reactions, Kokoro narration and one-word-at-a-time captions. Every shot is saved, so
+  asking again with the same words resumes. Say "AI stickman video" for the old AI-engine version.
 - Scripted ads: write the scenes yourself (a SCENES section with numbered scenes, timings, VO: and Text: lines) and the
   video maker follows it exactly - your words spoken by Kokoro, your on-screen text, a different clip per scene, plus
   any 1:1 or 16:9 versions listed under DELIVER. A video or ad request never starts a website read, and "do not

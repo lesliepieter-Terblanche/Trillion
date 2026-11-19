@@ -1694,6 +1694,8 @@ def run_agent(user, text, files=None, channel="dashboard"):
     if STICKMAN_VID_RE.search(text) and not asking:  # animated stickman story (its own pipeline)
         low = text.lower()
         look = next((v for kw, v in STICKMAN_LOOKS if kw in low), "classic")
+        if re.search(r"\bai[- ](?:stick\s?m[ae]n|video|generated)\b", low):   # only then the AI engine (it redraws the
+            look = "ai-" + look                                                 # character every scene)
         try:
             vr = video_request(text)
             res = tools.execute(user, "stickman_video",

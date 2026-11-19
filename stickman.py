@@ -100,8 +100,19 @@ def plan(user, brief, look="classic", fmt="vertical", scene_count=6):
 
 
 def make(user, brief, look="classic", fmt="vertical", scene_count=6, job_id=None, progress=None):
-    """Plan -> one stickman clip per scene (saved, resumable) -> stitched video with voiceover. {saved,...} or {error}."""
+    """Plan -> one stickman clip per scene (saved, resumable) -> stitched video with voiceover. {saved,...} or {error}.
+    By default the characters are drawn by code (toon.py), so they look the same in every shot. Only a look starting
+    'ai-' (the person asked for an AI stickman video) uses the AI video engine, which redraws the character each scene."""
     say = progress or (lambda t: None)
+    look = str(look or "classic").lower()
+    if not look.startswith("ai-"):
+        import toon
+        try:
+            return toon.make(user, brief, fmt=fmt, look=look, progress=progress)
+        except Exception as e:
+            return {"error": f"{type(e).__name__}: {e}"[:400] + " Ask again with the same words to carry on from the last "
+                    "finished shot."}
+    look = look[3:]
     if genvideo.engine(user) == "handoff":
         p = plan(user, brief, look, fmt, scene_count)
         return {"handoff": True, "plan": p,
