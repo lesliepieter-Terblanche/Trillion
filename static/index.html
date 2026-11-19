@@ -826,6 +826,10 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
 <div class="view" id="v-growth">
   <h2>How Trillion is growing</h2>
   <div class="muted">What she's learned, the skills and automations she's gained, and how busy she's been — all from this PC.</div>
+  <div class="panel" style="flex-direction:row;align-items:center;gap:12px;flex-wrap:wrap">
+    <div id="gr-last" class="muted" style="flex:1;min-width:200px;font-size:13px">She learns from your chats every night at 23:30, and catches up on the next start if the PC was off.</div>
+    <button class="btn pri" id="gr-learn" style="min-height:40px;font-size:12px">LEARN NOW</button>
+  </div>
   <div id="gr-tiles" style="display:flex;flex-wrap:wrap;gap:12px"></div>
   <div class="panel"><b>Activity — last 30 days</b><div class="muted" style="font-size:12px">Green = jobs done · amber = things that needed you</div>
     <div id="gr-chart" style="display:flex;align-items:flex-end;gap:2px;height:140px;margin-top:16px"></div></div>
@@ -837,47 +841,6 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
     <div class="panel"><b>Playbooks she drafted</b><div id="gr-skills" class="muted" style="font-size:13px;margin-top:8px"></div></div>
     <div class="panel"><b>Self-repairs</b><div id="gr-heals" class="muted" style="font-size:13px;margin-top:8px"></div></div>
   </div>
-</div>
-
-<div class="view" id="v-tvremote">
-  <h2>TV Remote</h2>
-  <div class="muted">Control an Android TV over your network — your phone becomes the remote. The TV needs ADB / network debugging switched on; if it isn't, Connect will tell you.</div>
-  <div class="panel" style="gap:12px">
-    <div class="two"><label class="field" style="flex:3"><span>TV address (IP or name)</span><input id="tvr-target" placeholder="192.168.68.111"></label>
-      <div style="display:flex;align-items:flex-end"><button class="btn pri" id="tvr-connect" style="min-height:40px;font-size:12px">CONNECT</button></div></div>
-    <div class="msg" id="tvr-msg"></div>
-  </div>
-  <div class="panel" id="tvr-pad" style="gap:14px;max-width:360px;margin:0 auto;align-items:center">
-    <div style="display:grid;grid-template-columns:repeat(3,64px);grid-template-rows:repeat(3,64px);gap:8px;justify-content:center">
-      <div></div><button class="tvk" data-k="up">▲</button><div></div>
-      <button class="tvk" data-k="left">◀</button><button class="tvk" data-k="ok" style="font-size:14px;font-weight:700">OK</button><button class="tvk" data-k="right">▶</button>
-      <div></div><button class="tvk" data-k="down">▼</button><div></div>
-    </div>
-    <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-      <button class="tvk wide" data-k="back">↩ Back</button>
-      <button class="tvk wide" data-k="home">⌂ Home</button>
-      <button class="tvk wide" data-k="menu">☰ Menu</button>
-    </div>
-    <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-      <button class="tvk wide" data-k="vol_down">🔉 Vol −</button>
-      <button class="tvk wide" data-k="mute">🔇 Mute</button>
-      <button class="tvk wide" data-k="vol_up">🔊 Vol +</button>
-    </div>
-    <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-      <button class="tvk wide" data-k="play_pause">⏯ Play</button>
-      <button class="tvk wide" data-k="prev">⏮</button>
-      <button class="tvk wide" data-k="next">⏭</button>
-      <button class="tvk wide" data-k="power">⏻ Power</button>
-    </div>
-    <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-      <button class="tvk wide" data-k="input">⇄ Source / HDMI</button>
-      <button class="tvk wide" data-k="settings">⚙ Settings</button>
-    </div>
-    <div class="two" style="width:100%"><label class="field" style="flex:3"><span>Type into the TV (search boxes etc.)</span><input id="tvr-text" placeholder="e.g. YouTube"></label>
-      <div style="display:flex;align-items:flex-end"><button class="btn" id="tvr-send" style="min-height:40px;font-size:12px">SEND</button></div></div>
-  </div>
-  <div class="panel" style="gap:10px"><div style="display:flex;justify-content:space-between;align-items:center"><b>Apps on the TV</b><button class="btn" id="tvr-apps" style="min-height:36px;font-size:12px">LOAD APPS</button></div>
-    <div id="tvr-applist" class="muted" style="font-size:13px">Connect, then load the apps to launch one.</div></div>
 </div>
 
 <div class="view" id="v-sites">
@@ -1318,7 +1281,7 @@ const api=async(u,o={})=>{if(o.json!==undefined){o.method=o.method||'POST';o.hea
 const hm=t=>new Date(t*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:false});
 let hold=0,S=null,sending=false,speakNext=false,settingsLoaded=false,cwd='';
 
-const LOADERS={apps:()=>loadApps(),tvremote:()=>loadTvRemote(),growth:()=>loadGrowth(),vendors:()=>loadVendors(),boardroom:()=>loadBoardroom(),sites:()=>{loadSites();loadClones();},bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},truehome:()=>loadTrueHome(),projects:()=>loadProjects(),workflow:()=>wfLoad(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);loadStorage();},memory:()=>loadNotes(''),videos:()=>loadVideos(),web:()=>{loadWeb();wbKeyState();wbPexelsState();},dashboard:()=>loadDash(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();loadBackup();kokoroState();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
+const LOADERS={apps:()=>loadApps(),growth:()=>loadGrowth(),vendors:()=>loadVendors(),boardroom:()=>loadBoardroom(),sites:()=>{loadSites();loadClones();},bible:()=>{if(S&&!S.bible_on){go('control');return;}loadBible();},store:()=>{if(S&&!S.store_on){go('control');return;}loadStore(true);snEbooks();},truehome:()=>loadTrueHome(),projects:()=>loadProjects(),workflow:()=>wfLoad(),phone:()=>loadPhonePage(),routines:()=>loadRoutines(),files:()=>{loadEbooks();loadFiles(cwd);loadStorage();},memory:()=>loadNotes(''),videos:()=>loadVideos(),web:()=>{loadWeb();wbKeyState();wbPexelsState();},dashboard:()=>loadDash(),skills:()=>loadSkills(),settings:()=>{loadSettings();micSettingsShow();loadBackup();kokoroState();},family:()=>loadFamily(),commands:()=>drawCommands(),more:()=>drawMore()};
 let VIEW='control';
 function go(v){
   VIEW=v;try{if(v!=='settings'&&mtTimer)micTestStop();}catch(e){}
@@ -2883,8 +2846,13 @@ $('br-adv-add')&&($('br-adv-add').onclick=async()=>{const name=($('br-adv-name')
   try{const r=await (await api('/api/boardroom/advisor',{json:{name,pillar:($('br-adv-pillar').value||'').trim()}})).json();
     if(r.error){m.className='msg bad';m.textContent=r.error;}else{m.className='msg ok';m.textContent=r.added+' added — '+r.pillar+'.';$('br-adv-name').value='';$('br-adv-pillar').value='';loadBoardroom();}
   }catch(e){m.className='msg bad';m.textContent=e.message;}finally{btn.disabled=false;btn.textContent=was;}});
-async function loadGrowth(){let d;try{d=await (await api('/api/growth')).json();}catch(e){return;}
+async function loadGrowth(){
+  $('gr-learn').onclick=async()=>{const b=$('gr-learn');b.disabled=true;b.textContent='LEARNING…';$('gr-last').textContent='Reading the last 24 hours of chats and filing what is worth keeping…';
+    try{const r=await (await api('/api/review',{method:'POST'})).json();$('gr-last').textContent=r.error?r.error:('Done: '+(r.learned||0)+' new thing'+((r.learned||0)==1?'':'s')+' learned.');}catch(e){$('gr-last').textContent='Learning failed: '+e.message;}
+    b.disabled=false;b.textContent='LEARN NOW';loadGrowth();};
+  let d;try{const r=await api('/api/growth');d=await r.json();if(!r.ok&&!d.error)d={error:'The growth page could not load ('+r.status+').'};}catch(e){$('gr-tiles').innerHTML='<div class="muted">Could not load: '+esc(e.message)+'</div>';return;}
   if(d.error){$('gr-tiles').innerHTML='<div class="muted">'+esc(d.error)+'</div>';return;}
+  if(d.last_review){const lr=d.last_review,when=new Date(lr.when*1000).toLocaleString();$('gr-last').innerHTML=(lr.ok?'✓ ':'⚠ ')+esc(lr.text)+' <span style="opacity:.7">('+esc(when)+')</span>';}
   const t=d.tiles||{};
   const tiles=[['Things learned',t.learned,(t.learned_week||0)+' this week','#7c5cff'],
     ['Skills',t.skills,(t.skills_draft||0)+' drafts waiting','#2fe6c0'],
@@ -2901,26 +2869,8 @@ async function loadGrowth(){let d;try{d=await (await api('/api/growth')).json();
   $('gr-skills').innerHTML=(d.draft_skills||[]).map(x=>`<div style="padding:5px 0;border-top:1px solid var(--edge2)"><b style="color:var(--text)">${esc(x.name)}</b><div>${esc(x.description)}</div></div>`).join('')||'No drafted playbooks yet — she proposes them as she spots patterns.';
   $('gr-heals').innerHTML=(d.selfheal_recent||[]).map(x=>`<div style="padding:4px 0">${esc(x.text.replace(/^Self-heal: /,'🔧 '))}</div>`).join('')||'No self-repairs needed recently.';
 }
-function tvrTarget(){return ($('tvr-target').value||'').trim();}
-async function tvrKey(k){const t=tvrTarget();if(!t){tvrNeed();return;}try{const r=await (await api('/api/tv/key',{json:{target:t,key:k}})).json();if(r.error||r.ok===false){$('tvr-msg').className='msg bad';$('tvr-msg').textContent=r.error||r.note||'The TV did not respond. Is ADB on?';}}catch(e){$('tvr-msg').className='msg bad';$('tvr-msg').textContent=e.message;}}
-function tvrNeed(){$('tvr-msg').className='msg bad';$('tvr-msg').textContent='Enter the TV address and press Connect first.';}
-function loadTvRemote(){
-  try{const last=localStorage.getItem('trillion_tvr');if(last&&!$('tvr-target').value)$('tvr-target').value=last;}catch(e){}
-  $('tvr-connect').onclick=async()=>{const t=tvrTarget();if(!t){tvrNeed();return;}try{localStorage.setItem('trillion_tvr',t);}catch(e){}
-    $('tvr-msg').className='msg muted';$('tvr-msg').textContent='Connecting to the TV…';
-    try{const r=await (await api('/api/tv/connect',{json:{target:t}})).json();$('tvr-msg').className='msg '+(r.ok?'ok':'bad');$('tvr-msg').textContent=(r.ok?'Connected — use the buttons below.':(r.note||r.error||'Could not connect.'));}catch(e){$('tvr-msg').className='msg bad';$('tvr-msg').textContent=e.message;}};
-  document.querySelectorAll('.tvk[data-k]').forEach(b=>b.onclick=()=>tvrKey(b.dataset.k));
-  $('tvr-send').onclick=async()=>{const t=tvrTarget(),s=($('tvr-text').value||'').trim();if(!t){tvrNeed();return;}if(!s)return;
-    try{const r=await (await api('/api/tv/text',{json:{target:t,text:s}})).json();if(r.ok!==false&&!r.error){$('tvr-text').value='';$('tvr-msg').className='msg ok';$('tvr-msg').textContent='Sent “'+s+'” to the TV.';}else{$('tvr-msg').className='msg bad';$('tvr-msg').textContent=r.error||r.note||'Could not type.';}}catch(e){$('tvr-msg').className='msg bad';$('tvr-msg').textContent=e.message;}};
-  $('tvr-apps').onclick=async()=>{const t=tvrTarget();if(!t){tvrNeed();return;}$('tvr-applist').textContent='Loading apps…';
-    try{const r=await (await api('/api/tv/apps?target='+encodeURIComponent(t))).json();if(r.error){$('tvr-applist').innerHTML='<span class="bad">'+esc(r.error||r.note)+'</span>';return;}
-      const pks=(r.packages||[]).filter(p=>!/^(android|com\.android|com\.google\.android\.(gsf|gms|tts|packageinstaller))/.test(p));
-      $('tvr-applist').innerHTML=pks.length?pks.map(p=>`<button class="btn" data-launch="${esc(p)}" style="min-height:34px;font-size:11px;margin:3px">${esc(p.split('.').slice(-1)[0])}</button>`).join(''):'No launchable apps found.';
-      $('tvr-applist').querySelectorAll('[data-launch]').forEach(b=>b.onclick=async()=>{try{await api('/api/tv/launch',{json:{target:t,package:b.dataset.launch}});$('tvr-msg').className='msg ok';$('tvr-msg').textContent='Opening '+b.dataset.launch+' on the TV.';}catch(e){}});
-    }catch(e){$('tvr-applist').textContent=e.message;}};
-}
 function drawMore(){
-  const items=[['workflow','Workflow',"What's running now, live"],...(S&&S.bible_on?[['bible','Bible study','Daily verse, reader, notes, helper']]:[]),...(S&&S.store_on?[['store','Store','Gumroad sales, products, codes']]:[]),...(S&&S.user.is_admin?[['truehome','TrueHome','Members, listings, payments, traffic']]:[]),['videos','Videos','Make and watch videos'],['web','Web Studio','Build a premium site for a business'],['dashboard','Campaign','Lead tracking + email outreach'],['files','Files','Browse your folders'],['sites','Websites','Read a site, make a deck or report'],['apps','Apps','Search rankings and automations'],['tvremote','TV Remote','Control an Android TV from your phone'],['vendors','Vendor intelligence','Your channel portfolio + QBR briefs'],['boardroom','Boardroom','Run a decision past an AI advisor council'],...(S&&S.user.is_admin?[['growth','How Trillion is growing','Learning, skills, automations, activity']]:[]),['memory','Memory','What she remembers'],['routines','Routines','Morning briefing, news, weather'],['skills','Skills','Extra abilities and connectors'],['commands','Commands','Everything you can say'],['settings','Settings','Look, brain, voice, keys']];
+  const items=[['workflow','Workflow',"What's running now, live"],...(S&&S.bible_on?[['bible','Bible study','Daily verse, reader, notes, helper']]:[]),...(S&&S.store_on?[['store','Store','Gumroad sales, products, codes']]:[]),...(S&&S.user.is_admin?[['truehome','TrueHome','Members, listings, payments, traffic']]:[]),['videos','Videos','Make and watch videos'],['web','Web Studio','Build a premium site for a business'],['dashboard','Campaign','Lead tracking + email outreach'],['files','Files','Browse your folders'],['sites','Websites','Read a site, make a deck or report'],['apps','Apps','Search rankings and automations'],['vendors','Vendor intelligence','Your channel portfolio + QBR briefs'],['boardroom','Boardroom','Run a decision past an AI advisor council'],...(S&&S.user.is_admin?[['growth','How Trillion is growing','Learning, skills, automations, activity']]:[]),['memory','Memory','What she remembers'],['routines','Routines','Morning briefing, news, weather'],['skills','Skills','Extra abilities and connectors'],['commands','Commands','Everything you can say'],['settings','Settings','Look, brain, voice, keys']];
   if(S&&S.user.is_admin)items.push(['family','Family','Logins, update, backup']);
   $('moregrid').innerHTML=items.map(i=>`<button class="mbtn" data-go="${i[0]}"><b>${i[1]}</b><span>${i[2]}</span></button>`).join('')+`<button class="mbtn" id="out2"><b>Sign out</b><span>${S?esc(S.user.name):''}</span></button>`;
   $('out2').onclick=()=>$('out').click();

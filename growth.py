@@ -7,8 +7,18 @@ import core
 
 
 def _one(q, a=()):
-    r = core.q(q, a, one=True)
-    return (r[0] if r else 0) or 0
+    try:
+        r = core.q(q, a, one=True)
+        return (r[0] if r else 0) or 0
+    except Exception:                 # a table that does not exist yet counts as nothing, never a blank page
+        return 0
+
+
+def _rows(q, a=()):
+    try:
+        return core.q(q, a)
+    except Exception:
+        return []
 
 
 def summary(user):
@@ -21,27 +31,28 @@ def summary(user):
     learned_total = _one("SELECT COUNT(*) FROM notes WHERE user_id=? AND title LIKE 'Learned %'", (uid,))
     learned_week = _one("SELECT COUNT(*) FROM notes WHERE user_id=? AND title LIKE 'Learned %' AND ts>=?",
                         (uid, now - 7 * 86400))
-    learned = [{"title": r["title"], "body": (r["body"] or "")[:160]} for r in core.q(
+    learned = [{"title": r["title"], "body": (r["body"] or "")[:160]} for r in _rows(
         "SELECT title, body FROM notes WHERE user_id=? AND title LIKE 'Learned %' ORDER BY id DESC LIMIT 8", (uid,))]
 
     # memory + documents
     notes_total = _one("SELECT COUNT(*) FROM notes WHERE user_id=?", (uid,))
-    docs_sources = _one("SELECT COUNT(DISTINCT source) FROM corpus WHERE user_id=?", (uid,)) \
-        if core.q("SELECT name FROM sqlite_master WHERE type='table' AND name='corpus'", one=True) else 0
+    docs_sources = _one("SELECT COUNT(DISTINCT source) FROM corpus WHERE user_id=?", (uid,))
     docs_passages = _one("SELECT COUNT(*) FROM corpus WHERE user_id=?", (uid,)) if docs_sources else 0
 
     # automations (evolve suggestions)
     sug = {"pending": 0, "applied": 0, "dismissed": 0}
-    for r in core.q("SELECT status, COUNT(*) c FROM suggestions WHERE user_id=? GROUP BY status", (uid,)):
+    for r in _rows(
+"SELECT status, COUNT(*) c FROM suggestions WHERE user_id=? GROUP BY status", (uid,)):
         sug[r["status"]] = r["c"]
-    applied_recent = [r["title"] for r in core.q(
+    applied_recent = [r["title"] for r in _rows(
         "SELECT title FROM suggestions WHERE user_id=? AND status='applied' ORDER BY id DESC LIMIT 6", (uid,))]
 
     # skills gained
     skills = {"active": 0, "draft": 0}
-    for r in core.q("SELECT status, COUNT(*) c FROM skills GROUP BY status"):
+    for r in _rows(
+"SELECT status, COUNT(*) c FROM skills GROUP BY status"):
         skills[r["status"]] = r.get("c", 0) if isinstance(r, dict) else r["c"]
-    draft_skills = [{"name": r["name"], "description": (r["description"] or "")[:140]} for r in core.q(
+    draft_skills = [{"name": r["name"], "description": (r["description"] or "")[:140]} for r in _rows(
         "SELECT name, description FROM skills WHERE status='draft' ORDER BY COALESCE(created,0) DESC LIMIT 6")]
 
     # connectors
@@ -60,10 +71,14 @@ def summary(user):
         days.append({"day": time.strftime("%d/%m", time.localtime(start)), "done": done, "waiting": wait})
 
     # self-heal history
-    heals = [{"text": r["text"], "when": r["ts"]} for r in core.q(
+    heals = [{"text": r["text"], "when": r["ts"]} for r in _rows(
         "SELECT text, ts FROM activity WHERE user_id=? AND text LIKE 'Self-heal:%' ORDER BY id DESC LIMIT 6", (uid,))]
 
+    last = _rows("SELECT text, ts, kind FROM activity WHERE user_id=? AND (text LIKE 'Daily review%' OR text LIKE "
+                 "'Daily learning%') ORDER BY id DESC LIMIT 1", (uid,))
+    last_review = {"text": last[0]["text"], "when": last[0]["ts"], "ok": last[0]["kind"] == "done"} if last else None
     return {
+        "last_review": last_review,
         "tiles": {
             "learned": learned_total, "learned_week": learned_week,
             "skills": skills["active"], "skills_draft": skills["draft"],

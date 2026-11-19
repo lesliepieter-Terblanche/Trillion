@@ -4873,10 +4873,16 @@ def admin_backup_zip(user=Depends(admin)):
 
 
 # ---------- background: site watch and the daily review ----------
-def daily_review(user):
+def daily_review(user, since=None):
+    """Learn lasting knowledge from the chats since the last review (today's, if none). Raises if the brain fails,
+    so the caller can log it and try again later instead of silently skipping the day."""
     uid = user["id"]
-    rows = core.q("SELECT role, content FROM messages WHERE user_id=? AND ts>=? ORDER BY id", (uid, core.day_start()))
+    if since is None:
+        since = core.settings(user).get("last_review_ts") or core.day_start()
+    since = max(float(since), time.time() - 7 * 86400)            # never more than a week back
+    rows = core.q("SELECT role, content FROM messages WHERE user_id=? AND ts>=? ORDER BY id", (uid, since))
     if len(rows) < 2:
+        core.log(uid, "Daily review done: no new conversations to learn from", "done")
         return 0
     convo = "\n".join(f"{r['role']}: {r['content'][:500]}" for r in rows)[-9000:]
     m = llm_chat(user, [
@@ -4886,6 +4892,8 @@ def daily_review(user):
          "(PERSONAL or WORK). Reply [] if nothing is worth keeping."},
         {"role": "user", "content": convo}])
     text = (m.get("content") or "").strip()
+    if not text:
+        raise RuntimeError("the brain gave no answer")
     try:
         items = json.loads(text[text.index("["): text.rindex("]") + 1])
     except Exception:
@@ -4899,10 +4907,16 @@ def daily_review(user):
 
 @app.post("/api/review")
 def review_now(user=Depends(auth)):
+    """'Learn now' on the growth page: learn from the last 24 hours of chats straight away."""
     try:
-        return {"learned": daily_review(user)}
+        n = daily_review(user, since=time.time() - 86400)
     except Exception as e:
-        raise HTTPException(500, str(e))
+        core.log(user["id"], f"Daily learning failed: {type(e).__name__}: {e}"[:300], "waiting")
+        return {"error": f"Learning failed: {type(e).__name__}: {e}"[:300]}
+    s = core.settings(user)
+    s["last_review"], s["last_review_ts"] = core.today(), time.time()
+    core.save_settings(user["id"], s)
+    return {"learned": n}
 
 
 def background():
@@ -4968,20 +4982,32 @@ def background():
                     pass
             if now.hour == 23 and now.minute >= 30:
                 core.prune_steps()                    # drop old workflow trails
-                for u in core.q("SELECT * FROM users"):
+            # Learning: every night at 23:30, AND catch up on any night the PC was off or asleep (on the next start,
+            # she learns from everything since her last review). A failure is logged and retried 2 hours later.
+            for u in core.q("SELECT * FROM users"):
+                s = core.settings(u)
+                if not s.get("daily_review", True):
+                    continue
+                last = float(s.get("last_review_ts") or 0)
+                nightly = now.hour == 23 and now.minute >= 30 and s.get("last_review") != core.today()
+                missed = time.time() - last > 26 * 3600
+                retry_ok = time.time() - float(s.get("last_review_try") or 0) > 2 * 3600
+                if not ((nightly or missed) and retry_ok):
+                    continue
+                s["last_review_try"] = time.time()
+                core.save_settings(u["id"], s)
+                try:
+                    daily_review(u, since=last or (time.time() - 86400))   # learn lasting knowledge since last time
                     s = core.settings(u)
-                    if s.get("last_review") != core.today():
-                        s["last_review"] = core.today()
-                        core.save_settings(u["id"], s)
-                        if s.get("daily_review"):
-                            try:
-                                daily_review(u)          # learn lasting knowledge from the day
-                            except Exception:
-                                pass
-                        try:
-                            evolve.suggest(u, llm_chat)  # spot what to automate; apply safe ones if allowed
-                        except Exception:
-                            pass
+                    s["last_review"], s["last_review_ts"] = core.today(), time.time()
+                    core.save_settings(u["id"], s)
+                except Exception as e:
+                    core.log(u["id"], f"Daily learning failed, will retry in 2 hours: {type(e).__name__}: {e}"[:300], "waiting")
+                    continue
+                try:
+                    evolve.suggest(u, llm_chat)  # spot what to automate; apply safe ones if allowed
+                except Exception as e:
+                    core.log(u["id"], f"Automation suggestions failed: {type(e).__name__}"[:200], "waiting")
         except Exception:
             pass
         time.sleep(60)
