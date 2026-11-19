@@ -8,6 +8,7 @@ Every scene clip is saved as it finishes, so a long render (a clip is ~8 min) on
 finished scene - never from scratch (the user's standing rule). Finished clips live in a job folder and are
 reused on a re-run with the same job id.
 """
+import hashlib
 import json
 import re
 import time
@@ -184,7 +185,9 @@ def make(user, brief, fmt="vertical", scene_count=4, job_id=None, progress=None)
     if not ok:
         return {"error": why}
 
-    job_id = job_id or (_slug(brief)[:24] + "-" + time.strftime("%Y%m%d-%H%M%S"))
+    # Stable per request, so a re-run of the SAME brief reuses the clips already rendered (and paid for)
+    # instead of generating them again - only the final assembly re-runs.
+    job_id = job_id or (_slug(brief)[:20] + "-" + hashlib.sha1(f"{brief}|{fmt}|{scene_count}".encode()).hexdigest()[:8])
     jdir = JOBS / job_id
     jdir.mkdir(parents=True, exist_ok=True)
     planfile = jdir / "plan.json"

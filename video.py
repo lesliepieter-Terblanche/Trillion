@@ -737,7 +737,7 @@ def render(out_path, brand, scenes, website="", accent="#ffb454", fmt="vertical"
         enc.stdin.write(frame.tobytes())
         n += 1
         if progress and n % 45 == 0:
-            progress(int(100 * n / total))
+            progress(f"Assembling the final video ({int(100 * n / total)}%)")
 
     try:
         XF = max(2, int(FPS * 0.35))          # cross-dissolve length between scenes, for smoother flow

@@ -7,6 +7,7 @@ on the chosen engine (local FreeVideo for free, or cloud), then stitched with th
 
 Every scene clip is saved as it finishes, so a long render resumes from the last finished scene, never from scratch.
 """
+import hashlib
 import json
 import re
 import time
@@ -111,7 +112,8 @@ def make(user, brief, look="classic", fmt="vertical", scene_count=6, job_id=None
     if not ok:
         return {"error": why}
 
-    job_id = job_id or (_slug(brief, "stickman")[:24] + "-" + time.strftime("%Y%m%d-%H%M%S"))
+    # Stable per request, so a re-run reuses the scene clips already rendered (and paid for).
+    job_id = job_id or (_slug(brief, "stickman")[:18] + "-" + hashlib.sha1(f"{brief}|{look}|{fmt}|{scene_count}".encode()).hexdigest()[:8])
     jdir = JOBS / job_id
     jdir.mkdir(parents=True, exist_ok=True)
     planfile = jdir / "plan.json"
