@@ -240,6 +240,26 @@ def make(user, brief, fmt="vertical", scene_count=4, job_id=None, progress=None)
         sc["clip"] = res["saved"]
         manifest.write_text(json.dumps({str(k): v for k, v in done.items()}))   # resumable: saved after each scene
 
+    # Animated titles (the HeyGen-HyperFrames idea, done natively): burn a motion title onto each video scene and
+    # tell the assembler not to re-stamp flat text on those. Silently falls back to flat text if the browser is absent.
+    titled = set()
+    if core.settings(user).get("animated_titles", True):
+        try:
+            import motiontext
+            if motiontext.available():
+                accent = p.get("accent") or motiontext.ACCENT
+                for i, sc in enumerate(scenes):
+                    if not sc.get("clip") or not str(sc.get("headline", "")).strip():
+                        continue
+                    tp = motiontext.title_clip(sc["clip"], str(jdir / f"titled-{i}.mp4"), sc.get("headline", ""),
+                                               sc.get("caption", ""), accent=accent, seconds=float(sc.get("seconds") or 5),
+                                               fmt=fmt, progress=lambda t, n=i: say(f"Scene {n + 1}/{len(scenes)}: {t}"))
+                    if tp:
+                        sc["clip"] = tp
+                        titled.add(i)
+        except Exception:
+            titled = set()
+
     # Voiceover: read the scene narration lines as one continuous advert, in the free Kokoro voice.
     vo_path, vo_secs = None, 0.0
     script = " ".join(sc.get("narration", "").strip() for sc in scenes if sc.get("narration", "").strip())
@@ -264,9 +284,10 @@ def make(user, brief, fmt="vertical", scene_count=4, job_id=None, progress=None)
     out = folder / f"{_slug(p.get('title') or p['brand'])}-marketing-{time.strftime('%Y%m%d-%H%M%S')}.mp4"
     scene_secs = sum(float(sc.get("seconds") or 5) for sc in scenes)
     total = max(scene_secs, vo_secs) + 3.0                 # fit the scenes to the voiceover length when there is one
-    rscenes = [{"headline": sc.get("headline", ""), "caption": sc.get("caption", ""),
+    rscenes = [{"headline": "" if i in titled else sc.get("headline", ""),
+                "caption": "" if i in titled else sc.get("caption", ""),
                 **({"clip": sc["clip"]} if sc.get("clip") else {}), **({"image": sc["image"]} if sc.get("image") else {})}
-               for sc in scenes]
+               for i, sc in enumerate(scenes)]
     music = _pick_music()
     try:
         video.render(str(out), p["brand"], rscenes, website=p.get("website", ""), accent=p.get("accent", "#ffb454"),

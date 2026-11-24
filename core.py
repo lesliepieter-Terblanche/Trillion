@@ -54,6 +54,7 @@ DEFAULT_SETTINGS = {
     "call_done_announce": True,    # when a "call me when done" job finishes, also announce it on a Google Home
     "call_done_device": "",        # which cast speaker to announce on (empty = the only/first one)
     "truehome_stats_url": "https://truehome.co.za/api/stats",  # TrueHome's read-only stats endpoint (key = secret 'truehome_stats')
+    "animated_titles": True,       # motion-graphics titles/branding on videos (needs the headless browser); falls back to flat text
 }
 SECRET_NAMES = ["gemini", "anthropic", "elevenlabs", "pixabay", "google_places", "replicate", "truehome_stats"]
 LLM = None  # set by app.py: the brain, for jobs that need it outside the chat loop

@@ -1199,6 +1199,7 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
         <label class="field"><span>Make clips with</span><select id="s-video_engine"><option value="local">Local - FreeVideo on this PC (free)</option><option value="cloud">Cloud - top quality via Replicate (paid, needs key)</option><option value="handoff">Claude hand-off - I plan it, you generate in the Claude app</option></select></label>
         <label class="field"><span>Cloud video model</span><input id="s-cloud_video_model" placeholder="wan-video/wan-2.2-t2v-fast"></label>
         <div class="muted" style="font-size:12px">Cloud needs a Replicate API key under the Keys tab (name it <b>replicate</b>). The model is a Replicate slug, e.g. wan-video/wan-2.2-t2v-fast.</div>
+        <label class="tickrow" style="align-items:center;margin-top:10px"><input type="checkbox" id="s-animated_titles"><span>Animated titles &amp; branding on videos (motion-graphics text over the scenes; off = plain text)</span></label>
       </div>
       <div class="panel" style="background:var(--well)"><b>Microphone on this device</b>
         <div class="muted" style="font-size:13px">This choice is kept for this browser on this device only. A webcam's microphone is usually not the one Windows picks by itself, so choose it here.</div>
@@ -2275,6 +2276,7 @@ async function runSelfCheck(){const L=$('sc-list'),P=$('sc-pill');P.textContent=
   }catch(e){P.textContent='failed';L.innerHTML='<div class="bad">'+esc(e.message)+'</div>';}}
 async function loadSettings(){
   if(!S)return;const s=S.user.settings;$('setver').textContent='Trillion version '+S.version;SK.forEach(k=>$('s-'+k).value=s[k]??'');$('s-daily_review').checked=!!s.daily_review;$('s-fast_answers').checked=s.fast_answers!==false;$('s-wake_word').checked=!!s.wake_word;$('wakeex').textContent=s.assistant_name||'Trillion';drawThemes();
+  if($('s-animated_titles')){$('s-animated_titles').checked=s.animated_titles!==false;$('s-animated_titles').onchange=()=>api('/api/settings',{method:'PUT',json:{animated_titles:$('s-animated_titles').checked}}).then(tick);}
   if($('sc')){$('sc').hidden=!S.user.is_admin;const b=$('sc-go');if(b&&!b._w){b._w=1;b.onclick=runSelfCheck;}}
   drawLinks();
   const on=s.quick_actions||[];$('qapick').innerHTML=Object.keys(QA).filter(k=>k!=='store'||S.store_on).map(k=>`<label class="tickrow" style="align-items:center"><input type="checkbox" data-qa="${k}" ${on.includes(k)?'checked':''}><span>${esc(QA[k].label)}</span></label>`).join('');
