@@ -26,6 +26,7 @@ TPL_DIR = Path(__file__).resolve().parent / "webtemplates"
 TEMPLATES = {
     "premium":   {"file": "premium.html", "photo": False},                 # animated WebGL shader-gradient hero
     "cinematic": {"file": "cinematic.html", "photo": True, "dark": True},   # full-bleed real photo, Ken-Burns + scrim
+    "cinematic3d": {"file": "cinematic3d.html", "photo": True, "dark": True},  # real photo on a 3D-tilt stage + live WebGL light/grain, parallax depth
     "object3d":  {"file": "object3d.html", "photo": False, "dark": True},   # Three.js 3D crystal hero, lit + parallax
     "editorial": {"file": "editorial.html", "photo": False},               # clean split layout, light & professional
     "estate":    {"file": "estate.html", "photo": True, "dark": True},      # premium full-bleed photo hero, editorial & luxe
@@ -202,20 +203,20 @@ def _dark_style(category):
 LAYOUT_POOLS = [
     (EDITORIAL_WORDS, ["estate", "editorial", "premium", "ribbons", "object3d", "stack", "glow", "bento", "frost"]),
     (("restaurant", "cafe", "coffee", "bar", "bistro", "grill", "diner", "eatery", "bakery", "deli", "restaur",
-      "hotel", "guest", "lodge", "pub", "takeaway"), ["cinematic", "ember", "premium", "orb", "duotone"]),
+      "hotel", "guest", "lodge", "pub", "takeaway"), ["cinematic3d", "cinematic", "ember", "premium", "orb", "duotone"]),
     (("salon", "beauty", "spa", "hair", "barber", "nail", "wellness", "yoga", "pilates", "massage", "aesthetic",
-      "skin", "therap"), ["cinematic", "orb", "neuro", "premium", "resonance", "bells", "frost", "glow", "duotone"]),
+      "skin", "therap"), ["cinematic3d", "cinematic", "orb", "neuro", "premium", "resonance", "bells", "frost", "glow", "duotone"]),
     (("gym", "fitness", "crossfit", "boxing", "club", "night", "lounge", "gaming", "esport"),
-     ["streams", "premium", "portal", "laser", "dotgrid", "spotlight", "marquee", "parallax", "duotone"]),
+     ["cinematic3d", "streams", "premium", "portal", "laser", "dotgrid", "spotlight", "marquee", "parallax", "duotone"]),
     (("music", "sound", "audio", "recording", "dj", "venue", "event", "wedding", "church", "choir", "piano", "guitar"),
      ["resonance", "bells", "swirl", "portal", "streams", "premium", "marquee", "parallax"]),
     (("auto", "detailing", "car ", "motor", "tyre", "spares", "mechanic", "panel", "workshop"),
      ["liquid", "object3d", "premium", "streams", "spotlight"]),
     (("jewel", "watch", "luxury", "boutique", "fashion", "interior", "decor", "furniture", "florist"),
-     ["estate", "cinematic", "liquid", "glass", "premium", "frost", "stack", "duotone"]),
+     ["cinematic3d", "estate", "cinematic", "liquid", "glass", "premium", "frost", "stack", "duotone"]),
     (("property", "estate", "real estate", "letting", "rental", "architect", "construct", "build", "solar",
       "landscap", "garden", "farm", "eco-", "eco ", "green", "travel", "tour", "lodge", "guest", "outdoor", "survey", "mining"),
-     ["estate", "cinematic", "aurora", "topo", "premium", "editorial", "object3d", "glow", "stack", "parallax"]),
+     ["cinematic3d", "estate", "cinematic", "aurora", "topo", "premium", "editorial", "object3d", "glow", "stack", "parallax"]),
     (("tech", "software", "it service", "it support", "digital", "agency", "data", "cloud", "cyber", "network",
       "startup", "security", "print", "signage", "telecom", "fibre", "isp"),
      ["mesh", "dotgrid", "constellation", "neuro", "globe", "ribbons", "object3d", "spotlight", "bento", "parallax", "glow"]),
