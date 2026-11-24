@@ -25,6 +25,7 @@ TPL_DIR = Path(__file__).resolve().parent / "webtemplates"
 # the look library: each entry is a self-contained, hand-built, verified template
 TEMPLATES = {
     "premium":   {"file": "premium.html", "photo": False},                 # animated WebGL shader-gradient hero
+    "cinelive":  {"file": "cinelive.html", "photo": False, "dark": True},   # generative animated WebGL hero (cinehero): one of 7 archetypes, trade-mapped + seeded per business
     "cinematic": {"file": "cinematic.html", "photo": True, "dark": True},   # full-bleed real photo, Ken-Burns + scrim
     "cinematic3d": {"file": "cinematic3d.html", "photo": True, "dark": True},  # real photo on a 3D-tilt stage + live WebGL light/grain, parallax depth
     "object3d":  {"file": "object3d.html", "photo": False, "dark": True},   # Three.js 3D crystal hero, lit + parallax
@@ -1064,6 +1065,12 @@ def render(content, palette, photos_rel, template="premium", font=None):
     content["FONT"] = body_fam
     content["FONTDEF"] = fontdef
     content["SLIDERJS"] = SLIDER_ASSETS + MOTION_ASSETS
+    if "__HERO_ENGINE__" in html and not content.get("HERO_ENGINE"):
+        try:
+            import cinehero
+            content["HERO_ENGINE"] = cinehero.engine(content.get("_hero_effect") or "aurora")
+        except Exception:
+            content["HERO_ENGINE"] = ""
     if tpl.get("video"):
         content.setdefault("HERO_VIDEO", "")
         content.setdefault("HERO_PHOTO", "")
@@ -1072,11 +1079,13 @@ def render(content, palette, photos_rel, template="premium", font=None):
         content["GALLERY_SECTION"] = _gallery_section(photos_rel[1:] if tpl.get("photo") else photos_rel)
         if tpl.get("photo"):
             content["HERO_PHOTO"] = photos_rel[0] if photos_rel else ""
+    for k, v in content.items():
+        if isinstance(v, str):
+            html = html.replace("__" + k + "__", v)
+    # palette LAST so colour tokens inside injected content (e.g. the hero engine) are also filled
     for k, v in palette.items():
         if k != "mode":
             html = html.replace("__" + k + "__", v)
-    for k, v in content.items():
-        html = html.replace("__" + k + "__", v)
     # a varied scroll animation each build (AOS), so no two sites move the same way
     html = html.replace("__AOS__", random.choice(["fade-up", "fade-up", "zoom-in", "fade-right",
                                                    "fade-left", "fade-up", "zoom-in-up"]))
@@ -1307,15 +1316,19 @@ def build(user, info, progress=None):
     except Exception:
         media = {}
     # choose the look (template), then a palette that suits it
+    import cinehero
+    hero_effect = cinehero.pick(cat, name)       # which animated archetype suits this trade (seeded per business)
     if look == "video" and media.get("video"):
-        template = "video"                       # owner explicitly asked for the video hero
-    elif media.get("video") and look in ("", "auto"):
-        # A real walkthrough clip of this trade is the strongest "pertains to this business" hero, so it's
-        # weighted heavily - but seed the pick by the business name so two same-trade sites don't all land on
-        # the identical video layout: some get a cinematic photo hero built from the same trade-matched stock.
-        import hashlib as _hl
-        seed = int(_hl.sha1(name.lower().encode("utf-8")).hexdigest()[:8], 16)
-        template = ["video", "video", "video", "estate", "cinematic3d"][seed % 5]
+        template = "video"                       # owner explicitly asked for the real trade video
+    elif look in ("", "auto"):
+        # Every auto site gets a LIVING hero - never a static photo. Default is the generative animated WebGL
+        # hero (one of 7 cinematic archetypes, trade-mapped + seeded so two same-trade sites differ); when a
+        # real trade clip was found, some sites instead use that video. Seeded by the business name.
+        seed = cinehero._seed(name)
+        if media.get("video"):
+            template = ["cinelive", "cinelive", "video"][seed % 3]
+        else:
+            template = "cinelive"
     else:
         template = pick_template(cat, photos_rel, info.get("look") or "")
     style = info.get("style") or pick_style(cat, name)
@@ -1334,6 +1347,7 @@ def build(user, info, progress=None):
     say("Writing the copy")
     content = plan(core.LLM if hasattr(core, "LLM") else (lambda u, m: {"content": ""}), user, info)
     content.update(_addons(info, palette))      # optional features the owner ticked
+    content["_hero_effect"] = hero_effect        # which animated archetype the generative hero draws
     if template == "video":
         content["HERO_VIDEO"] = media.get("video") or "hero.mp4"
         content["HERO_PHOTO"] = media.get("poster") or (photos_rel[0] if photos_rel else "")
