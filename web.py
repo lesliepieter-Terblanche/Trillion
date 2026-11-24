@@ -28,6 +28,7 @@ TEMPLATES = {
     "cinematic": {"file": "cinematic.html", "photo": True, "dark": True},   # full-bleed real photo, Ken-Burns + scrim
     "object3d":  {"file": "object3d.html", "photo": False, "dark": True},   # Three.js 3D crystal hero, lit + parallax
     "editorial": {"file": "editorial.html", "photo": False},               # clean split layout, light & professional
+    "estate":    {"file": "estate.html", "photo": True, "dark": True},      # premium full-bleed photo hero, editorial & luxe
     # hero visuals adapted from ThreeUI Community (github.com/MengTo/threeui, MIT), recoloured to the site's palette
     "ribbons":   {"file": "threeui-ribbons.html", "photo": False, "dark": True},    # dotted light ribbons, text left
     "orb":       {"file": "threeui-orb.html", "photo": False, "dark": True},        # glowing smoke orb, text left
@@ -113,6 +114,16 @@ PALETTES = {
     "slate":   dict(mode="light", C_BG="#ffffff", C_ACCENT="#5b5bf0", C_ACCENT2="#8b5cf6", C_GLOW="#dcdcff",
                     C_SURFACE="#f7f7fb", C_CARD="#ffffff", C_BORDER="rgba(20,20,45,.09)", C_TEXT="#13132a",
                     C_MUTED="#5a5a72", C_HEROTEXT="#13132a", C_HEROMUTED="#44445e", C_VIGN="rgba(255,255,255,.4)"),
+    # refined luxe schemes (not the AI-cliche purple gradient): warm gold on ink, brass on deep teal, warm sand light
+    "noir":    dict(mode="dark", C_BG="#0b0d11", C_ACCENT="#c9a96a", C_ACCENT2="#e4c98a", C_GLOW="#4a3a1e",
+                    C_SURFACE="#0b0d11", C_CARD="#161a21", C_BORDER="rgba(255,255,255,.08)", C_TEXT="#eef1f6",
+                    C_MUTED="#9aa6b6", C_HEROTEXT="#f5f7fb", C_HEROMUTED="#cdd4df", C_VIGN="rgba(0,0,0,.62)"),
+    "oxford":  dict(mode="dark", C_BG="#07121a", C_ACCENT="#d6a85a", C_ACCENT2="#6fd0c8", C_GLOW="#113040",
+                    C_SURFACE="#07121a", C_CARD="#0f1d28", C_BORDER="rgba(255,255,255,.08)", C_TEXT="#eaf2f6",
+                    C_MUTED="#8fa4b2", C_HEROTEXT="#f1f7fa", C_HEROMUTED="#bcd0da", C_VIGN="rgba(0,0,0,.6)"),
+    "bone":    dict(mode="light", C_BG="#faf8f4", C_ACCENT="#a8763c", C_ACCENT2="#2f6b5e", C_GLOW="#ece3d4",
+                    C_SURFACE="#ffffff", C_CARD="#fbf9f5", C_BORDER="rgba(40,30,20,.12)", C_TEXT="#1c1a16",
+                    C_MUTED="#6b6459", C_HEROTEXT="#1c1a16", C_HEROMUTED="#4a443b", C_VIGN="rgba(255,255,255,.35)"),
 }
 DARK_WORDS = ("restaurant", "bar", "cafe", "coffee", "bistro", "grill", "diner", "eatery", "pub", "lounge",
               "club", "salon", "barber", "beauty", "spa", "tattoo", "gym", "fitness", "studio", "photography",
@@ -142,6 +153,11 @@ FONT_PAIRS = [
     {"head": "Archivo", "body": "Inter", "hw": "600;700;800", "serif": False},
     {"head": "Bricolage Grotesque", "body": "Inter", "hw": "600;700;800", "serif": False},
     {"head": "Epilogue", "body": "Inter", "hw": "600;700;800", "serif": False},
+    {"head": "Instrument Serif", "body": "Inter", "hw": "400", "serif": True},
+    {"head": "Familjen Grotesk", "body": "Inter", "hw": "500;600;700", "serif": False},
+    {"head": "Libre Caslon Display", "body": "DM Sans", "hw": "400", "serif": True},
+    {"head": "Syne", "body": "Inter", "hw": "600;700;800", "serif": False},
+    {"head": "Unbounded", "body": "Inter", "hw": "500;600;700", "serif": False},
 ]
 
 
@@ -168,19 +184,23 @@ def pick_style(category, hint=""):
 
 
 def _dark_style(category):
-    """A dark palette suited to the trade — cinematic photo heroes need one for legible text over the scrim."""
+    """A dark palette suited to the trade — cinematic photo heroes need one for legible text over the scrim.
+    Picks at random from a fitting set so two sites in the same trade don't share a palette."""
     c = str(category).lower()
     if any(w in c for w in ("restaurant", "cafe", "coffee", "grill", "bistro", "bakery", "deli", "diner")):
-        return "ember"
+        return random.choice(["ember", "noir"])
     if any(w in c for w in ("gym", "fitness", "spa", "yoga", "auto", "detailing")):
-        return "teal"
-    return "violet"
+        return random.choice(["teal", "oxford"])
+    if any(w in c for w in ("property", "estate", "real estate", "law", "attorney", "legal", "architect", "jewel",
+                            "watch", "luxury", "boutique", "financ", "consult", "hotel", "lodge", "interior")):
+        return random.choice(["noir", "oxford"])
+    return random.choice(["violet", "noir", "oxford"])
 
 
 # When the look is left on Auto, pick at RANDOM from a category-appropriate set so no two sites share a
 # layout — but every option in the set still suits that kind of business, so it stays on-brand.
 LAYOUT_POOLS = [
-    (EDITORIAL_WORDS, ["editorial", "premium", "ribbons", "object3d", "stack", "glow", "bento", "frost"]),
+    (EDITORIAL_WORDS, ["estate", "editorial", "premium", "ribbons", "object3d", "stack", "glow", "bento", "frost"]),
     (("restaurant", "cafe", "coffee", "bar", "bistro", "grill", "diner", "eatery", "bakery", "deli", "restaur",
       "hotel", "guest", "lodge", "pub", "takeaway"), ["cinematic", "ember", "premium", "orb", "duotone"]),
     (("salon", "beauty", "spa", "hair", "barber", "nail", "wellness", "yoga", "pilates", "massage", "aesthetic",
@@ -192,10 +212,10 @@ LAYOUT_POOLS = [
     (("auto", "detailing", "car ", "motor", "tyre", "spares", "mechanic", "panel", "workshop"),
      ["liquid", "object3d", "premium", "streams", "spotlight"]),
     (("jewel", "watch", "luxury", "boutique", "fashion", "interior", "decor", "furniture", "florist"),
-     ["cinematic", "liquid", "glass", "premium", "frost", "stack", "duotone"]),
+     ["estate", "cinematic", "liquid", "glass", "premium", "frost", "stack", "duotone"]),
     (("property", "estate", "real estate", "letting", "rental", "architect", "construct", "build", "solar",
       "landscap", "garden", "farm", "eco-", "eco ", "green", "travel", "tour", "lodge", "guest", "outdoor", "survey", "mining"),
-     ["aurora", "topo", "premium", "editorial", "object3d", "glow", "stack", "parallax"]),
+     ["estate", "cinematic", "aurora", "topo", "premium", "editorial", "object3d", "glow", "stack", "parallax"]),
     (("tech", "software", "it service", "it support", "digital", "agency", "data", "cloud", "cyber", "network",
       "startup", "security", "print", "signage", "telecom", "fibre", "isp"),
      ["mesh", "dotgrid", "constellation", "neuro", "globe", "ribbons", "object3d", "spotlight", "bento", "parallax", "glow"]),
