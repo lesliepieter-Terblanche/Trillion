@@ -1307,8 +1307,15 @@ def build(user, info, progress=None):
     except Exception:
         media = {}
     # choose the look (template), then a palette that suits it
-    if media.get("video") and look in ("", "auto", "video"):
-        template = "video"                       # a real walkthrough clip of this trade beats an abstract hero
+    if look == "video" and media.get("video"):
+        template = "video"                       # owner explicitly asked for the video hero
+    elif media.get("video") and look in ("", "auto"):
+        # A real walkthrough clip of this trade is the strongest "pertains to this business" hero, so it's
+        # weighted heavily - but seed the pick by the business name so two same-trade sites don't all land on
+        # the identical video layout: some get a cinematic photo hero built from the same trade-matched stock.
+        import hashlib as _hl
+        seed = int(_hl.sha1(name.lower().encode("utf-8")).hexdigest()[:8], 16)
+        template = ["video", "video", "video", "estate", "cinematic3d"][seed % 5]
     else:
         template = pick_template(cat, photos_rel, info.get("look") or "")
     style = info.get("style") or pick_style(cat, name)
