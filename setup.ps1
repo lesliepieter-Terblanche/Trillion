@@ -69,6 +69,9 @@ if (-not $SkipModels) {
   if (-not $SkipModelsHeavy) {
     Write-Host "Model: mistral-small:24b (the smart brain - about 14 GB)"
     ollama pull mistral-small:24b
+    # qwen2.5-coder:14b designs bespoke websites from a prompt (free, local, ~9 GB, fits your 16 GB card).
+    Write-Host "Model: qwen2.5-coder:14b (the website design brain - about 9 GB)"
+    ollama pull qwen2.5-coder:14b
   }
 }
 

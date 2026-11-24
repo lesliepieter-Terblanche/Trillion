@@ -1058,7 +1058,11 @@ a.btn{color:var(--ink)}a.btn.pri{color:var(--onA)}
       <label class="field"><span>Hours</span><input id="wb-hours" placeholder="Mon–Sat, 7am–6pm"></label></div>
     <div class="two"><label class="field" style="max-width:50%"><span>Colour style</span><select id="wb-style">
         <option value="">Auto (match the trade)</option><option value="violet">Dark · Violet</option><option value="ember">Dark · Ember</option><option value="teal">Dark · Teal</option>
-        <option value="azure">Light · Azure</option><option value="emerald">Light · Emerald</option><option value="slate">Light · Slate</option></select></label></div>
+        <option value="azure">Light · Azure</option><option value="emerald">Light · Emerald</option><option value="slate">Light · Slate</option></select></label>
+      <label class="field" style="max-width:50%"><span>Design mode</span><select id="wb-mode">
+        <option value="hybrid">Premium templates (reliable)</option>
+        <option value="bespoke">Bespoke — design from the brief</option></select></label></div>
+    <div class="muted" id="wb-mode-note" style="font-size:12px;margin:-6px 0 2px"></div>
     <div class="field"><span>Add-on features (also your pitch upsells)</span>
       <div style="display:flex;flex-wrap:wrap;gap:16px;font-size:14px;padding-top:4px">
         <label style="display:flex;gap:7px;align-items:center"><input type="checkbox" id="wb-wa" checked> WhatsApp button</label>
@@ -1944,7 +1948,13 @@ $('fn-off')&&($('fn-off').onclick=async()=>{const m=$('fn-msg');m.className='msg
 let webPoll=null;
 async function loadWeb(){
   try{const d=await (await api('/api/gensites')).json();drawWeb(d.sites||[]);}catch(e){}
+  const m=$('wb-mode');if(m&&S){m.value=S.user.settings.web_design_mode||'hybrid';wbModeNote();
+    m.onchange=()=>{api('/api/settings',{method:'PUT',json:{web_design_mode:m.value}}).then(tick);wbModeNote();};}
 }
+function wbModeNote(){const n=$('wb-mode-note');if(!n)return;
+  n.textContent=$('wb-mode').value==='bespoke'
+    ?'Designs each site from scratch with your local coding model (or Gemini) — more unique, slightly slower. Falls back to a premium template if it can’t.'
+    :'';}
 $('pr-go')&&($('pr-go').onclick=async()=>{const urls=($('pr-urls').value||'').split(/[\s,]+/).filter(Boolean),m=$('pr-msg'),o=$('pr-out');
   if(!urls.length){m.className='msg bad';m.textContent='Paste at least one website address.';return;}
   const b=$('pr-go');b.disabled=true;const was=b.textContent;b.textContent='RATING…';m.className='msg';m.textContent='';o.innerHTML='';

@@ -1333,7 +1333,22 @@ def build(user, info, progress=None):
     font_idx = info.get("font_idx")
     if not isinstance(font_idx, int):
         font_idx = random.randrange(len(FONT_PAIRS))     # a different typeface pairing each build
-    html = render(content, palette, photos_rel, template, font=font_idx)
+    # Bespoke mode: design the page from the brief (free local coder, else free Gemini). Finish-checked, and
+    # it falls back to the premium template build on any failure, so the studio always returns a good site.
+    html = None
+    if core.settings(user).get("web_design_mode") == "bespoke":
+        try:
+            import webgen_bespoke
+            if webgen_bespoke.available(user):
+                info.setdefault("name", name)
+                info.setdefault("category", cat)
+                html = webgen_bespoke.generate(user, info, folder, photos_rel, progress=say)
+                if html:
+                    template = "bespoke"
+        except Exception:
+            html = None
+    if not html:
+        html = render(content, palette, photos_rel, template, font=font_idx)
     (folder / "index.html").write_text(html, encoding="utf-8")
     try:
         (folder / "pitch.html").write_text(
