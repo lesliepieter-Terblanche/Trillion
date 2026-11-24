@@ -79,24 +79,37 @@ def _strip_html(text):
 
 
 _TASTE = (
-    "You are a world-class web designer who ships sites at the level of Awwwards and the motion.dev template "
-    "gallery. You write ONE complete, self-contained HTML document and nothing else.\n"
-    "NON-NEGOTIABLE RULES:\n"
+    "You are an award-winning art director who ships sites that WIN Awwwards Site of the Day and look like the "
+    "igloo.inc / motion.dev / studio-grade gallery. You write ONE complete, self-contained HTML document and "
+    "nothing else. This must feel expensive, bespoke and cinematic - never like a Bootstrap/template site.\n"
+    "\nULTRA-PREMIUM DIRECTION (this is what separates a winning site from a generic one):\n"
+    "- A dramatic full-viewport hero with a LIVING animated background you build in <canvas> or CSS (a flowing "
+    "gradient/particle/light field, grain overlay, subtle parallax) - NOT a flat colour. The hero type is huge "
+    "(clamp up to ~8vw), tight letter-spacing, and animates in word-by-word.\n"
+    "- Editorial, confident layout: generous whitespace, a strong type scale, asymmetry and large section "
+    "numbers/labels. Avoid centre-everything and avoid rows of identical drop-shadow cards.\n"
+    "- A refined, restrained palette: usually a deep dark base with ONE accent that fits the trade, fine 1px "
+    "borders, soft glows - not the cliche purple-to-blue gradient on white. Add a faint film-grain/noise layer.\n"
+    "- Craft details: a sticky header that shrinks/condenses on scroll, smooth-scroll, hover micro-interactions, "
+    "an accent underline/line-draw, number counters or a marquee where it fits. Every section reveals on scroll "
+    "from a VISIBLE resting state.\n"
+    "- Real, persuasive, specific copy from the brief (benefit-led, mentions the business by name). The site must "
+    "feel made for THIS business and no other.\n"
+    "\nNON-NEGOTIABLE RULES (a beautiful but broken page is a FAIL):\n"
     "- Output only the HTML document (<!doctype html> ... </html>). No explanation, no markdown fence.\n"
+    "- Include <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"> in the head.\n"
     "- All CSS in one <style> tag in the head. All JS in one <script> tag before </body>.\n"
     "- Fonts: you MAY use Google Fonts via <link href=\"https://fonts.googleapis.com/...\">. Pick a characterful "
     "display face + a clean body face that SUIT THIS SPECIFIC BUSINESS; never reuse a default pairing.\n"
-    "- Animation: you MAY load GSAP and/or AOS from https://cdnjs.cloudflare.com only. Use motion with restraint "
-    "- a hero entrance and scroll reveals from a VISIBLE resting state (never leave content stuck at opacity:0).\n"
-    "- IMAGES: use ONLY the exact photo filenames provided, as <img src=\"filename.jpg\">. Do NOT invent image "
-    "URLs or hotlink stock - any other image host will be blank. If no photos are given, design without photos "
-    "(gradients, type, SVG, canvas).\n"
-    "- Give THIS site its own identity: a palette, type and layout no other site would have. Pick a colour "
-    "scheme that fits the trade and mood - avoid the cliché purple-to-blue gradient on white.\n"
-    "- Real copy from the brief - the business's real name, services, hours, contact. Never lorem ipsum, never "
-    "a leftover placeholder or a __TOKEN__.\n"
-    "- Responsive: must work at 400px wide with NO horizontal scroll; stack to one column on phones; images "
-    "max-width:100%.\n"
+    "- Animation libs: you MAY load GSAP and/or AOS from https://cdnjs.cloudflare.com only. Never leave content "
+    "stuck at opacity:0 if its reveal fails - reveals must end visible.\n"
+    "- IMAGES: use ONLY the exact photo filenames provided, as <img src=\"filename.jpg\"> with loading=\"lazy\". "
+    "Do NOT invent image URLs or hotlink stock - any other image host will be blank. If no photos are given, "
+    "design a striking site without photos (animated gradient/canvas, bold type, SVG).\n"
+    "- RESPONSIVE (critical): must work at 390px wide with NO horizontal scroll; everything stacks to one column "
+    "on phones; images max-width:100%. The header nav MUST collapse into a hamburger/toggle menu on phones - "
+    "never let the full nav links stack down the page and fill the screen. Use a @media (max-width:860px) query "
+    "with a working button that shows/hides the menu.\n"
     "- Include, in a sensible order: a header/nav with the business name, a hero (headline + subline + 1-2 "
     "buttons), a services/offer section, a gallery if photos exist, a reviews/testimonials section, a clear "
     "contact section with the phone and address, and a footer. Fold in any requested add-ons.\n"
@@ -145,7 +158,66 @@ def generate(user, info, folder, photos_rel, progress=None):
         fixed = _strip_html(fix)
         if _looks_like_page(fixed):
             html = fixed
-    return html if _looks_like_page(html) else None
+    if not _looks_like_page(html):
+        return None
+    return _inject_nav_fix(html)   # guarantee a working mobile menu + no sideways scroll, deterministically
+
+
+_NAV_FIX = """
+<style id="t-navfix">
+@media(max-width:860px){
+ html,body{overflow-x:hidden!important;max-width:100%!important}
+ .t-burger{display:flex!important;position:fixed!important;top:12px!important;right:12px!important;
+  z-index:100000!important;width:48px!important;height:48px!important;align-items:center!important;
+  justify-content:center!important;border-radius:12px!important;border:1px solid rgba(255,255,255,.28)!important;
+  background:rgba(18,18,20,.62)!important;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  cursor:pointer!important;padding:0!important;margin:0!important;box-shadow:none!important;outline:none!important;
+  -webkit-appearance:none!important;appearance:none!important;color:#fff!important}
+ .t-burger:hover,.t-burger:focus,.t-burger:active{background:rgba(18,18,20,.62)!important;box-shadow:none!important}
+ .t-burger span,.t-burger span::before,.t-burger span::after{content:"";position:absolute;width:22px;height:2px;
+  background:#fff!important;border-radius:2px;transition:.25s;left:50%;margin-left:-11px}
+ .t-burger span{top:50%}.t-burger span::before{top:-7px}.t-burger span::after{top:7px}
+ body.t-open .t-burger span{background:transparent}
+ body.t-open .t-burger span::before{top:0;transform:rotate(45deg)}
+ body.t-open .t-burger span::after{top:0;transform:rotate(-45deg)}
+ [data-tnav]{position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:auto!important;
+  display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;
+  gap:6px!important;width:100%!important;max-width:100%!important;height:100vh!important;height:100dvh!important;
+  bottom:0!important;margin:0!important;padding:84px 20px 32px!important;list-style:none!important;
+  background:#0b0b0d!important;-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
+  transform:translateY(-104%);transition:transform .34s cubic-bezier(.4,0,.2,1);z-index:99990;overflow:auto}
+ body.t-open [data-tnav]{transform:translateY(0)}
+ [data-tnav]>*{width:auto!important;text-align:center!important;font-size:19px!important}
+}
+@media(min-width:861px){.t-burger{display:none!important}}
+</style>
+<script>(function(){try{
+ if(document.querySelector('.t-burger'))return;
+ var nav=document.querySelector('header nav ul,header ul,header nav,nav ul,nav');
+ if(!nav)return;
+ nav.setAttribute('data-tnav','');
+ var b=document.createElement('button');b.type='button';b.className='t-burger';
+ b.setAttribute('aria-label','Menu');b.innerHTML='<span></span>';b.style.display='none';
+ document.body.appendChild(b);
+ b.addEventListener('click',function(){document.body.classList.toggle('t-open');});
+ nav.addEventListener('click',function(e){if(e.target.closest('a'))document.body.classList.remove('t-open');});
+ addEventListener('resize',function(){if(innerWidth>860)document.body.classList.remove('t-open');});
+}catch(e){}})();</script>
+"""
+
+
+def _inject_nav_fix(html):
+    """Guarantee a working collapsible mobile menu on any bespoke page, whatever markup the model wrote.
+    Also forces no-horizontal-scroll on phones. Deterministic - doesn't rely on the model getting it right."""
+    if not html or "t-navfix" in html:
+        return html
+    h = html
+    if "name=\"viewport\"" not in h.lower() and "name='viewport'" not in h.lower():
+        h = re.sub(r"(<head[^>]*>)", r'\1<meta name="viewport" content="width=device-width, initial-scale=1">',
+                   h, count=1, flags=re.I)
+    if re.search(r"</body>", h, re.I):
+        return re.sub(r"</body>", _NAV_FIX + "</body>", h, count=1, flags=re.I)
+    return h + _NAV_FIX
 
 
 def _looks_like_page(html):
