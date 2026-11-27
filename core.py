@@ -57,8 +57,15 @@ DEFAULT_SETTINGS = {
     "animated_titles": True,       # motion-graphics titles/branding on videos (needs the headless browser); falls back to flat text
     "web_design_mode": "hybrid",   # website studio: "hybrid" (premium templates) | "bespoke" (design from the brief, local coder/Gemini)
     "design_model": "qwen2.5-coder:14b",  # local coding model used for bespoke website design (free, fits 16 GB)
+    "wa_url": "",                  # OpenWA gateway base URL on this PC; empty = http://127.0.0.1:2785
+    "wa_session": "trillion",      # the OpenWA session name Trillion links its WhatsApp to
+    "wa_public_base": "",          # URL the OpenWA container can reach Trillion on (empty = Tailscale funnel, else host.docker.internal:8787)
+    "wa_auto_reply": False,        # OFF by default: when a WhatsApp comes in, let Trillion answer it automatically
+    "wa_voice_notes": False,       # reply to incoming WhatsApp voice notes with a spoken voice note (off = reply in text)
+    "funnel_dns": "",              # this PC's Tailscale Funnel hostname, if known (used to build public URLs)
 }
-SECRET_NAMES = ["gemini", "anthropic", "elevenlabs", "pixabay", "google_places", "replicate", "truehome_stats"]
+SECRET_NAMES = ["gemini", "anthropic", "elevenlabs", "pixabay", "google_places", "replicate", "truehome_stats",
+                "wa", "wa_hmac"]
 LLM = None  # set by app.py: the brain, for jobs that need it outside the chat loop
 
 

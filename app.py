@@ -3766,7 +3766,8 @@ def messages(user=Depends(auth)):
 EDITABLE = ["freevideo_url", "wake_word", "video_ai_images", "wa_inbox", "fast_answers", "theme", "quick_actions", "whatsapp_auto_contacts", "phone_own_number", "phone_full_control", "personality", "phone_country_code", "assistant_name", "brand", "accent", "site", "brain", "local_model", "heavy_model", "heavy_answers", "cloud_model", "voice", "kokoro_voice",
             "eleven_voice_id", "daily_review", "call_done_announce", "call_done_device", "desktop_control",
             "video_engine", "cloud_video_model", "vision_model", "freevideo_hq", "truehome_stats_url", "animated_titles",
-            "web_design_mode", "design_model"]
+            "web_design_mode", "design_model",
+            "wa_url", "wa_session", "wa_public_base", "wa_auto_reply", "wa_voice_notes", "funnel_dns"]
 
 
 @app.put("/api/settings")
@@ -3849,6 +3850,19 @@ def secret_test(name: str, user=Depends(auth)):
                         "your Replicate account - it needs a card even for pay-as-you-go." if r.status_code in (401, 403)
                         else (r.text[:200]))
             return {"ok": r.status_code == 200, "status": r.status_code, "note": note}
+        elif name == "wa":
+            import wa as wamod
+            st = wamod.status(user)
+            note = {"no_key": "Save the OpenWA API key first.",
+                    "no_session": "Key works, but the 'trillion' session isn't created yet - click Link WhatsApp.",
+                    "unreachable": "Can't reach OpenWA - is the gateway running on this PC (http://127.0.0.1:2785)?",
+                    "error": "OpenWA answered with an error - check the API key and session name."}.get(st["status"], "")
+            if st["linked"]:
+                note = "Connected and linked to WhatsApp."
+            ok = st["status"] not in ("no_key", "unreachable", "error")
+            return {"ok": ok, "status": st["status"], "linked": st["linked"], "note": note}
+        elif name == "wa_hmac":
+            return {"ok": True, "status": "saved", "note": "Webhook signing secret saved - use the same value in OpenWA."}
         elif name == "google_places":
             r = httpx.post("https://places.googleapis.com/v1/places:searchText", timeout=15,
                            headers={"X-Goog-Api-Key": key, "X-Goog-FieldMask": "places.id",
@@ -3872,6 +3886,160 @@ def secret_test(name: str, user=Depends(auth)):
 def truehome_stats(user=Depends(auth)):
     import sitestats
     return sitestats.fetch(user)
+
+
+# ---------- WhatsApp via the OpenWA gateway ----------
+@app.get("/api/wa")
+def wa_state(user=Depends(auth)):
+    import wa as wamod
+    s = core.settings(user)
+    st = wamod.status(user)
+    return {**st, "auto_reply": bool(s.get("wa_auto_reply")), "voice_notes": bool(s.get("wa_voice_notes")),
+            "public_base": wamod.public_base(user), "url": wamod.base_url(user)}
+
+
+@app.post("/api/wa/link")
+def wa_link(user=Depends(auth)):
+    """Create/ensure the session and point its webhook back at Trillion, then return the QR to scan."""
+    import wa as wamod
+    if not wamod.configured(user):
+        raise HTTPException(400, "Save your OpenWA API key in Settings first.")
+    try:
+        wamod.start_session(user)
+    except Exception as e:
+        raise HTTPException(502, f"Could not reach OpenWA on {wamod.base_url(user)}: {e}")
+    try:
+        code = wamod.qr(user)
+    except Exception:
+        code = ""
+    return {"ok": True, "qr": code, "status": wamod.status(user)}
+
+
+@app.get("/api/wa/qr")
+def wa_qr(user=Depends(auth)):
+    import wa as wamod
+    try:
+        return {"qr": wamod.qr(user), "status": wamod.status(user)}
+    except Exception as e:
+        raise HTTPException(502, str(e))
+
+
+@app.post("/api/wa/send")
+def wa_send_msg(p: dict = Body(...), user=Depends(auth)):
+    import wa as wamod
+    to, text = str(p.get("to") or "").strip(), str(p.get("message") or "").strip()
+    if not to or not text:
+        raise HTTPException(400, "Need a recipient and a message.")
+    try:
+        (wamod.send_voice if p.get("voice") else wamod.send_text)(user, to, text)
+    except Exception as e:
+        raise HTTPException(502, f"Send failed: {e}")
+    return {"ok": True}
+
+
+@app.get("/api/wa/media/{name}")
+def wa_media(name: str):
+    """Serve an outgoing voice note so the OpenWA gateway can fetch it by URL. No auth: the filename is a random
+    token and the file is deleted within the hour."""
+    import wa as wamod
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", name):
+        raise HTTPException(404, "no")
+    f = wamod.MEDIA / name
+    if not f.exists():
+        raise HTTPException(404, "no")
+    mt = "audio/ogg" if name.endswith(".ogg") else "application/octet-stream"
+    return FileResponse(str(f), media_type=mt, filename=name)
+
+
+@app.post("/api/wa/hook")
+async def wa_hook(request: Request):
+    """Incoming WhatsApp events from OpenWA. Verifies the HMAC signature, then handles the message off-thread."""
+    import wa as wamod
+    raw = await request.body()
+    rows = core.q("SELECT * FROM users ORDER BY id LIMIT 1")
+    user = rows[0] if rows else None
+    if not user:
+        return {"ok": True}
+    sig = request.headers.get("X-OpenWA-Signature") or request.headers.get("x-openwa-signature")
+    if not wamod.verify_signature(user, raw, sig):
+        raise HTTPException(401, "bad signature")
+    try:
+        payload = json.loads(raw.decode("utf-8") or "{}")
+    except Exception:
+        return {"ok": True}
+    msg = wamod.parse_incoming(payload)
+    if msg and not msg["from_me"] and not msg["is_group"]:
+        threading.Thread(target=_wa_handle, args=(user, msg), daemon=True).start()
+    return {"ok": True}
+
+
+def _wa_handle(user, msg):
+    import wa as wamod
+    try:
+        try:
+            core.x("INSERT INTO notes(user_id,domain,title,body,ts) VALUES(?,?,?,?,?)",
+                   (user["id"], "whatsapp", msg["from"], msg["text"] or f"[{msg['type']}]", time.time()))
+        except Exception:
+            pass
+        s = core.settings(user)
+        if not s.get("wa_auto_reply"):
+            return
+        text = msg["text"]
+        if msg["type"] in ("audio", "ptt", "voice") and not text:
+            text = _wa_transcribe(user, msg)
+        if not (text or "").strip():
+            return
+        answer = _wa_answer(user, text)
+        if not answer:
+            return
+        (wamod.send_voice if s.get("wa_voice_notes") else wamod.send_text)(user, msg["from"], answer)
+    except Exception:
+        pass
+
+
+def _wa_answer(user, text):
+    sysmsg = ("You are the WhatsApp assistant for the owner's business, replying to a customer who messaged on "
+              "WhatsApp. Be warm, concise and genuinely helpful: 1-3 short sentences, plain text, no markdown. "
+              "If you cannot do something, say the owner will follow up. Never invent prices, stock or promises.")
+    try:
+        out = llm_chat(user, [{"role": "system", "content": sysmsg},
+                              {"role": "user", "content": str(text)[:1500]}], fast=True)
+        return (out.get("content") or "").strip()[:1500]
+    except Exception:
+        return ""
+
+
+def _wa_transcribe(user, msg):
+    """Download an incoming voice note and transcribe it with the local call model. '' if not possible yet."""
+    import wa as wamod
+    data = None
+    try:
+        url = msg.get("media_url") or ""
+        if url:
+            if not url.startswith("http"):
+                url = wamod.base_url(user)[:-4].rstrip("/") + url   # strip trailing /api for a relative media path
+            rr = httpx.get(url, headers={"X-API-Key": wamod.key(user)}, timeout=30)
+            if rr.status_code == 200:
+                data = rr.content
+        elif msg.get("media_base64"):
+            import base64
+            data = base64.b64decode(msg["media_base64"])
+    except Exception:
+        data = None
+    if not data:
+        return ""
+    try:
+        import tempfile, voicecall
+        tf = tempfile.NamedTemporaryFile(suffix=".ogg", delete=False)
+        tf.write(data)
+        tf.close()
+        model = voicecall.call_model()
+        if not model:
+            return ""
+        segs, _ = model.transcribe(tf.name, language="en", vad_filter=True)
+        return " ".join(seg.text for seg in segs).strip()
+    except Exception:
+        return ""
 
 
 # ---------- files and memory ----------
